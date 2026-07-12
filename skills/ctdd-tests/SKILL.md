@@ -4,7 +4,8 @@ description: >-
   Write and review tests as the executable spec for backend APIs and
   microservices, following Contract- and Test-Driven Development (CTDD). Use
   whenever the task is about tests themselves: writing or naming tests,
-  reviewing or judging test quality, fixing flaky or brittle tests, adding
+  reviewing or judging test quality, de-flaking or improving brittle tests
+  without changing what they assert, adding
   regression, characterization, or property-based tests, or improving coverage
   of a backend service — even if the user never says "CTDD". Enforces
   behavior-level (not implementation-coupled) naming, flags tests a
@@ -15,7 +16,10 @@ description: >-
   good", "name these tests", "add property tests", "add a regression test",
   "test this endpoint", "why is this test brittle", "pin the current
   behavior", "add characterization tests before we refactor", "assert this
-  can never happen", "my refactor broke these tests". Not for visual/UX
+  can never happen", "my refactor broke these tests", "generate the
+  authorization matrix from the contract", "propose SLO checks for this
+  endpoint". If a fix would change an asserted expectation, this skill stops
+  and hands off to ctdd-change. Not for visual/UX
   correctness (testable state logic qualifies wherever it lives) and not for
   authoring load/performance test scripts (k6, NBomber, JMeter); when a
   feature is being built end to end, ctdd-change drives the workflow and
@@ -27,6 +31,15 @@ description: >-
 **Use this skill when tests are the unit of work** — writing tests in isolation, reviewing or critiquing existing tests, judging test quality, or adding property tests. It owns the *craft* of tests. If you are building or changing a feature end to end, use the `ctdd-change` skill instead; it drives the workflow and will invoke this skill when it is time to write tests.
 
 Tests are the executable specification of how a backend service behaves — the artifact the agent and future engineers read to know what the service does. They only serve that purpose if they assert **observable behavior**, not implementation details. This skill writes and reviews tests to that standard.
+
+## Routing rule: changes to existing intent tests
+
+Fire on the ambiguous ask — "my refactor broke these tests", "fix this flaky test" — and **triage before touching anything**:
+
+- **Asserted behavior unchanged** → stay here. De-flaking (control the clock, IDs, randomness), fixing altitude (implementation-coupled → behavior-level), renaming, reducing mock weight, adding missing coverage, characterization and property work — that is this skill's craft.
+- **The expected outcome changes, an intent test is deleted, or the ask is "update the tests to match the new code"** → stop. That is not test work; it is an **amendment to the spec**. Hand off to `ctdd-change` for the implementation-plan gate — old-vs-new assertion, risk level, NFR budgets, hold-out decision where load-bearing — and say explicitly which expectation changed and why the gate applies.
+
+A failing characterization test (`currently_*`) is the one case that belongs to neither lane at first: it raises a human question — was the pinned behavior intent or accident? — before any fix (see the characterization section below).
 
 ## The one rule
 

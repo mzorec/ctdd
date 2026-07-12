@@ -66,5 +66,13 @@
   {
     "query": "review this data-migration script before I run it on prod",
     "should_trigger": false
+  },
+  {
+    "query": "review just the changed tests and the OpenAPI diff in this PR",
+    "should_trigger": true
+  },
+  {
+    "query": "sanity-check this diff before I open the PR",
+    "should_trigger": true
   }
 ]

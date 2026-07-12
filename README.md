@@ -55,15 +55,15 @@ On the other side of the merge:
 
 **`ctdd-change`** — drives a backend change the CTDD way. Reads the existing contract and the relevant slice of tests, drafts the contract change, produces a reviewable pre-coding implementation plan (risk call, NFR budgets, hold-out decision for load-bearing semantics, changed tests shown old-vs-new assertion), gates coding on approval — a trivial skip is itself declared in one visible line you can veto — and closes with a human review of the tests and contract as the spec. Amendments to behavior an existing test asserts are routed as reviewed spec changes, never silent test updates. Prompts for an append-only ADR when a structural decision is involved, and also handles standalone ADR requests ("write an ADR for choosing RabbitMQ"). Ceremony scales to the risk of the change.
 
-**`ctdd-tests`** — writes and reviews tests as the spec. Enforces behavior-level (not implementation-coupled) naming, flags brittle tests that break on refactor, checks contract coverage and test↔contract alignment, distinguishes characterization observations (`currently_*`) from asserted intent, adds property-based tests for invariants (idempotency, ordering, validation, state-machine rules) including the contract-derived authorization matrix, and suggests mutation testing on the critical core.
+**`ctdd-tests`** — writes and reviews tests as the spec. Enforces behavior-level (not implementation-coupled) naming, flags brittle tests that break on refactor, checks contract coverage and test↔contract alignment, distinguishes characterization observations (`currently_*`) from asserted intent, routes any change to an asserted expectation out to `ctdd-change` (test craft never changes requirements), adds property-based tests for invariants (idempotency, ordering, validation, state-machine rules) including the contract-derived authorization matrix, and suggests mutation testing on the critical core.
 
-**`ctdd-review`** — the reviewer's side. Runs the PR checklist against a finished diff: changed or deleted tests are changed requirements, contract diffs are boundary changes, new behavior needs a behavior-level test, structural decisions need an ADR, thin-coverage or distributed-systems changes escalate severity, and an implicated-but-unstated NFR budget — or a missing hold-out record on a high-risk diff — is a finding, not a pass.
+**`ctdd-review`** — the reviewer's side. Runs the deterministic spec-surface inventory first when `scripts/check-spec-surface.py` is available, then the PR checklist against a finished diff: changed or deleted tests are changed requirements, contract diffs are boundary changes, new behavior needs a behavior-level test, structural decisions need an ADR, thin-coverage or distributed-systems changes escalate severity, and an implicated-but-unstated NFR budget — or a missing hold-out record on a high-risk diff — is a finding, not a pass.
 
 `ctdd-change` defers to `ctdd-tests` for the test-writing discipline; `ctdd-review` calls it for the test portion of a diff; `ctdd-tests` also stands alone whenever you just need to write or review tests.
 
 Triggering is description-driven: the skills fire on natural phrases ("implement this endpoint", "review these tests", "check this before I merge"). If one doesn't fire when you expect — or fires too eagerly — edit its `description` frontmatter; nothing about the workflow changes. A trigger eval set ships in `evals/` (one file per skill, should/shouldn't-trigger queries), so the `skill-creator` optimizer can tune a description empirically instead of by feel. Nothing runs the eval sets automatically yet — treat them as a release-checklist step.
 
-**Enforcement honesty:** almost everything in this plugin is *prompted* — a skill is prose a model follows, not a gate. The deterministic pieces are exactly three: the spec-edit hook (when a team enables it; advisory, not blocking), `scripts/check-plan.py` (when run; an omission detector for the plan), and the hook's own test suite. The only genuinely *blocking* gate in the whole workflow is Claude Code plan mode, which the plugin recommends but the host provides.
+**Enforcement honesty:** almost everything in this plugin is *prompted* — a skill is prose a model follows, not a gate. The deterministic pieces are exactly four: the spec-edit hook (when a team enables it; advisory, not blocking), `scripts/check-plan.py` (when run; an omission detector for the plan), `scripts/check-spec-surface.py` (when run; a diff-surface inventory that sees the renames, deletions, and Bash-lane edits the hook structurally can't), and the test suites that pin both scripts and the hook. The only genuinely *blocking* gate in the whole workflow is Claude Code plan mode, which the plugin recommends but the host provides.
 
 ### Who owns which artifact
 
@@ -138,7 +138,10 @@ ctdd/
 │   ├── spec-edit-guard.py             ← the spec-edit reminder (PostToolUse + PreToolUse)
 │   └── test_spec_edit_guard.py        ← the hook's own test suite (26 cases)
 ├── scripts/
-│   └── check-plan.py                  ← lints an implementation plan for mandatory sections
+│   ├── check-plan.py                  ← lints an implementation plan for mandatory sections
+│   ├── check-spec-surface.py          ← deterministic diff inventory: tests/contracts/ADRs,
+│   │                                     renames and deletions included (shares hook patterns)
+│   └── test_check_spec_surface.py     ← the classifier's own test suite (11 cases)
 ├── evals/                             ← trigger eval sets, one per skill
 └── skills/
     ├── ctdd-change/

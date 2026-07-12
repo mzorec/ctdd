@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0 — 2026-07-12
+
+Lane-ownership fix and the first deterministic diff-level check, from the second runtime review.
+
+- **`ctdd-tests` routing rule** — the review's sharpest finding, applied with a triage framing instead of its proposed eval flip: the skill still *fires* on the ambiguous ask ("my refactor broke these tests", "fix this flaky test") because the alternative is no discipline in context at all — but it now triages before touching anything. Asserted behavior unchanged → stay (de-flaking, altitude, naming, mock weight, coverage). Expected outcome changes, an intent test is deleted, or the ask is "update tests to match" → stop and hand off to `ctdd-change` for the full amendment gate. Description narrowed to "de-flaking or improving brittle tests *without changing what they assert*"; the refactor eval case deliberately **stays positive**.
+- **New `scripts/check-spec-surface.py`** — deterministic inventory of the spec surface a diff touches, classifying changed/deleted/renamed tests, contracts (Pact called out — cross-team blast radius), and ADRs from `git diff --name-status -M`. Imports the hook's pattern lists and honors the same `CTDD_TEST_PATTERNS`/`CTDD_CONTRACT_PATTERNS` overrides, so there is exactly one definition of "spec surface". Closes the hook's structural blind spots (Bash-lane edits, renames, deletions) at review time; a rename out of test surface is reported as "treat as a deletion until shown otherwise". Exit 1 = surface touched (attention, not error). Own 11-case test suite; total suites now 37 green.
+- Wired in: `ctdd-review` runs the inventory as its mandatory first step; `ctdd-change` runs it before presenting the final diff (undeclared or "trivial"-declared surface ⇒ stop and reclassify) and names it as the deterministic counterweight to triviality calls; step 9 now also states when a recorded hold-out actually executes (after green, result part of the review).
+- Trigger surface tuned from the review's misses: review-feedback and event-schema-rollout phrasings (`ctdd-change`); authorization-matrix and SLO-proposal phrasings (`ctdd-tests`); pre-PR sanity checks and partial diff review — "review just the changed tests and contract" (`ctdd-review`, with the tests-in-isolation exclusion clarified to *outside any diff*). Evals extended to 22/22/19 accordingly.
+
 ## 0.4.1 — 2026-07-12
 
 - **Hook regression fixed:** the ambiguous-extension guard (added in 0.4.0 to stop `spec/payments.yaml` being mislabeled a test edit) was suppressing globally — fixture and golden data files under `tests?`/`__tests__` went silent, exactly the weakness-#3 "fixture setup" surface where a wrong encoding hides. Suppression is now scoped to outside test directories; `tests/fixtures/*.json` and friends fire again (Edit and Write-overwrite both). Both behaviors are now pinned: 4 new cases, suite at 26. Lesson owned: the 0.4.0 behavior change shipped unasserted — in a plugin about executable specs.

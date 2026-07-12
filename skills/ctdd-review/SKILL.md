@@ -10,8 +10,10 @@ description: >-
   needs a behavior-level test, structural decisions need an ADR. Triggers
   include "review this PR", "review this MR", "review this diff", "review my
   changes", "check this before I merge", "CTDD review", "look it over", "check what
-  the agent did". Not for reviewing
-  tests in isolation (use ctdd-tests), not for implementing changes or
+  the agent did", "sanity-check this diff before I open the PR", "review just
+  the changed tests and contract in this PR". Not for reviewing tests in
+  isolation outside any diff (use ctdd-tests — the test or contract portion
+  of a diff belongs here), not for implementing changes or
   responding to review comments (use ctdd-change), not for one-off scripts or
   data migrations with no test or contract surface, and not for visual/UX-only
   changes (testable state logic qualifies wherever it lives).
@@ -25,7 +27,7 @@ The core stance: **read the spec artifacts first and the implementation second.*
 
 ## Gather the change
 
-Get the full diff before judging anything: `git diff` for staged or branch changes, the PR/MR diff via whatever tooling is available, or the pasted patch. Retrieve just enough surrounding context to judge it — the contract files it touches, the existing tests around the changed behavior, and the ADR index if structure moved. If an implementation plan exists (PR description, plan output), read it first: the review's first job is checking the change against its own stated intent and risk call.
+Get the full diff before judging anything: `git diff` for staged or branch changes, the PR/MR diff via whatever tooling is available, or the pasted patch. If `scripts/check-spec-surface.py` is available, run the diff's name-status through it first (`git diff --name-status -M | python3 scripts/check-spec-surface.py -`) and report its output before anything else: renamed or deleted tests still count as spec changes until shown otherwise, and its inventory is the deterministic cross-check on the plan's risk call. Retrieve just enough surrounding context to judge it — the contract files it touches, the existing tests around the changed behavior, and the ADR index if structure moved. If an implementation plan exists (PR description, plan output), read it first: the review's first job is checking the change against its own stated intent and risk call.
 
 ## Review dimensions
 

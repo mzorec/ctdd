@@ -82,5 +82,9 @@
   {
     "query": "fix the Dockerfile in the payments service — the OpenShift build keeps failing",
     "should_trigger": false
+  },
+  {
+    "query": "deprecate the feeIncluded field in the payment-created event and stage a two-release rollout",
+    "should_trigger": true
   }
 ]

@@ -74,5 +74,17 @@
   {
     "query": "write load tests for the capture endpoint with k6",
     "should_trigger": false
+  },
+  {
+    "query": "generate the authorization matrix from the OpenAPI spec and tell me which endpoints are uncovered",
+    "should_trigger": true
+  },
+  {
+    "query": "propose executable SLO checks for this endpoint's latency budget",
+    "should_trigger": true
+  },
+  {
+    "query": "these tests are flaky because of DateTime.Now — fix them without changing what they assert",
+    "should_trigger": true
   }
 ]

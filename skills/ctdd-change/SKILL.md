@@ -12,7 +12,10 @@ description: >-
   "record this decision"). Triggers include "implement this endpoint", "add
   this to the service", "change this API", "fix this bug in the service",
   "modify this handler", "plan this backend change", "migrate this flow", "refactor this
-  service", "raise or change this limit or rule", "CTDD this". Not for
+  service", "raise or change this limit or rule", "implement the review
+  comments on my PR", "address the reviewer's feedback", "deprecate a field
+  in an event schema", "stage a contract or event-schema rollout", "CTDD
+  this". Not for
   visual/UX correctness (testable state logic qualifies wherever it lives),
   not for infrastructure/build/deploy config (Dockerfiles, pipelines, cluster
   manifests), not for test-only tasks (use ctdd-tests), and not for reviewing
@@ -31,7 +34,7 @@ Scope: services behind an API — and the real line is *assertable correctness*,
 
 ## Workflow
 
-Work through these steps in order. Scale ceremony to the risk of the change — a one-line fix skips most of this; a change to a state machine or a service boundary does all of it. On non-trivial changes, **nothing is written to disk — no contract edit, no ADR, no test, no code — until the implementation plan (step 6) is approved**; steps 3–5 produce drafts that ride inside the plan. **Scaling down is visible, never silent:** when you judge a change trivial and skip the gate, first output one line — `Risk: trivial — <reason>. Skipping the plan gate.` — so the human can veto the classification before you touch a file. Two changes are never trivial regardless of size: an edit to an existing test, and any contract-file edit — "just updating a test" is a spec change.
+Work through these steps in order. Scale ceremony to the risk of the change — a one-line fix skips most of this; a change to a state machine or a service boundary does all of it. On non-trivial changes, **nothing is written to disk — no contract edit, no ADR, no test, no code — until the implementation plan (step 6) is approved**; steps 3–5 produce drafts that ride inside the plan. **Scaling down is visible, never silent:** when you judge a change trivial and skip the gate, first output one line — `Risk: trivial — <reason>. Skipping the plan gate.` — so the human can veto the classification before you touch a file. Two changes are never trivial regardless of size: an edit to an existing test, and any contract-file edit — "just updating a test" is a spec change. Where a diff already exists, `scripts/check-spec-surface.py` is the deterministic counterweight to this call: if it reports touched test or contract surface, the change is not trivial.
 
 1. **Confirm intent.** Restate the business requirement (what the customer/caller needs) in one or two sentences. This is the source of what to build. If it's ambiguous, ask before proceeding.
 
@@ -49,7 +52,7 @@ Work through these steps in order. Scale ceremony to the risk of the change — 
 
 8. **Implement until the contract validates and the tests are green.** Do not weaken a test to make it pass; if a test is wrong, fix the test as a spec change and say so.
 
-9. **Present the spec for human review.** When green, present the diff with the tests and the contract framed as the spec, not just the code: changed tests are changed requirements, contract diffs are boundary changes, and both deserve explicit attention in review. The `ctdd-review` skill drives the reviewer's side of this gate.
+9. **Present the spec for human review.** When green, present the diff with the tests and the contract framed as the spec, not just the code: changed tests are changed requirements, contract diffs are boundary changes, and both deserve explicit attention in review. If `scripts/check-spec-surface.py` is available, run the diff through it (`git diff --name-status -M | python3 scripts/check-spec-surface.py -`) and include its output: any test or contract surface it reports that the plan didn't declare — or declared trivial — means stop and reclassify before review. If the plan recorded a hold-out as required, this is when it runs: ask the human to execute the sealed tests now, after green, and treat their result as part of this review. The `ctdd-review` skill drives the reviewer's side of this gate.
 
 10. **Invariant note — only where needed.** If a rule is universal or a boundary is intentionally undefined and can't be made executable, add one colocated sentence (docstring/contract comment), e.g. "Must hold for all N > 0; behavior for N ≤ 0 is intentionally undefined." Do not write prose for anything a test or contract already covers.
 
