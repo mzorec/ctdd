@@ -40,7 +40,7 @@ Work through these in order — spec first, code second. Scale depth to the risk
 5. **Structure.** Does the diff touch a service boundary, data ownership, or cross-service semantics? Then an ADR should be present — or explicitly declined with a reason. Check the ADR records a decision and its tradeoffs, not a description of behavior.
 6. **Risk areas.** Changes in thinly-covered code without characterization tests pinned first; distributed-systems logic (messaging, retries, ordering, partial failure) changed without property or messaging-contract tests. Both escalate severity — a green suite is weak evidence exactly here.
 7. **Invariant notes.** If the change introduces a universal rule or an intentional gap that can't be executable, is the one-line colocated note present?
-8. **Budgets and hold-outs.** If the diff plausibly touches a latency/throughput budget, the authz surface, tenant isolation, or retention/audit behavior — and no artifact states the budget — that is a finding, not a pass. For a high-risk change (money, auth, state machines, boundary semantics): was a hold-out recorded in the plan (required / requested / declined)? Absence of the record is a finding.
+8. **Budgets and hold-outs.** If the diff plausibly touches a latency/throughput budget, the authz surface, tenant isolation, or retention/audit behavior — and no artifact states the budget — that is a finding, not a pass. For a high-risk change (money, auth, state machines, boundary semantics): was a hold-out recorded in the plan (required / requested / declined), and did it run? An absent record — or a result still `pending` at review time — is a finding.
 
 ## Report format
 

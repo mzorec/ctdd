@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.1 — 2026-07-12
+
+Third review round, applied selectively — four accepted items, three recorded rejections.
+
+- `check-plan.py --diff`: a declared trivial skip is now **mechanically contradicted** when the supplied `git diff --name-status -M` touches test or contract surface (classifier shared with `check-spec-surface.py` and the hook — one definition of spec surface, env overrides included). Bypass #3 (triviality gaming) goes from "review might notice" to "the linter says no." The linter finally has its own test suite (10 cases; total 47 green).
+- Hold-out record gains an outcome: `result: pending` at plan time, updated at step 9 to `passed` / `failed` / `declined by human`; `ctdd-review` treats a `pending` result at review time as a finding. Closes "required" being a promise with no completion state.
+- Existing-behavior section now states **known gaps** explicitly ("no Pact found for the checkout caller") — silence becomes a reviewable absence.
+- README gains a **GitLab CI recipe**: surface inventory always printed (attention, not error), plan lint with `--diff` as the failing gate on the MR description, hold-outs executed from a separate repo/branch only after green — converting both scripts from "when run" to "always run."
+- Recorded rejections, with reasons: Bash command-string scanning (re-proposed; still false-fires on every test *run* — documented in the hook section); in-repo `tests/HoldOut/` convention (a well-known path makes hold-outs *more* discoverable while labeling them sealed — the trait is CI's selector only); plan YAML frontmatter (plans live in PR descriptions; revisit when weakness #8 archiving gives them a canonical file path).
+
 ## 0.5.0 — 2026-07-12
 
 Lane-ownership fix and the first deterministic diff-level check, from the second runtime review.

@@ -63,7 +63,7 @@ On the other side of the merge:
 
 Triggering is description-driven: the skills fire on natural phrases ("implement this endpoint", "review these tests", "check this before I merge"). If one doesn't fire when you expect — or fires too eagerly — edit its `description` frontmatter; nothing about the workflow changes. A trigger eval set ships in `evals/` (one file per skill, should/shouldn't-trigger queries), so the `skill-creator` optimizer can tune a description empirically instead of by feel. Nothing runs the eval sets automatically yet — treat them as a release-checklist step.
 
-**Enforcement honesty:** almost everything in this plugin is *prompted* — a skill is prose a model follows, not a gate. The deterministic pieces are exactly four: the spec-edit hook (when a team enables it; advisory, not blocking), `scripts/check-plan.py` (when run; an omission detector for the plan), `scripts/check-spec-surface.py` (when run; a diff-surface inventory that sees the renames, deletions, and Bash-lane edits the hook structurally can't), and the test suites that pin both scripts and the hook. The only genuinely *blocking* gate in the whole workflow is Claude Code plan mode, which the plugin recommends but the host provides.
+**Enforcement honesty:** almost everything in this plugin is *prompted* — a skill is prose a model follows, not a gate. The deterministic pieces are exactly four: the spec-edit hook (when a team enables it; advisory, not blocking), `scripts/check-plan.py` (when run; an omission detector for the plan that, given `--diff`, also mechanically contradicts a trivial claim when spec surface moved), `scripts/check-spec-surface.py` (when run; a diff-surface inventory that sees the renames, deletions, and Bash-lane edits the hook structurally can't), and the test suites that pin both scripts and the hook. The only genuinely *blocking* gate in the whole workflow is Claude Code plan mode, which the plugin recommends but the host provides.
 
 ### Who owns which artifact
 
@@ -112,6 +112,39 @@ Three honest limits and one caveat. The PreToolUse overwrite note relies on `add
 
 For load-bearing changes (money, auth, state machines, boundary semantics) the plan now carries a mandatory **Hold-out** line, and `ctdd-review` treats a missing record on a high-risk diff as a finding. Be clear about the division of labor: the skill can *require the decision and record it* ("required / requested / declined by human"); it **cannot seal anything** — an instruction cannot guarantee the agent never sees a file in its own workspace. Sealing lives in CI: keep the 1–3 human-written acceptance tests in a branch or repo the agent session doesn't read (or inject them in CI), and run them once, after the visible suite is green. A hold-out the agent could read is just another visible test.
 
+Use a trait or category — e.g. `[Trait("ctdd", "hold-out")]` or `[Category("HoldOut")]` — **only as the selector CI uses** to pick the sealed set from its separate location. Do **not** turn it into an in-repo convention like `tests/HoldOut/<ticket>/`: a well-known path in the working repo makes hold-outs *more* discoverable to the agent while labeling them sealed — sealing theater, worse than nothing.
+
+## CI recipe (GitLab)
+
+The two scripts bind only when run; CI is where "when run" becomes "always." A minimal `.gitlab-ci.yml` fragment for merge-request pipelines:
+
+```yaml
+ctdd:spec-surface:
+  stage: test
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - git fetch origin $CI_MERGE_REQUEST_TARGET_BRANCH_NAME
+    - git diff --name-status -M "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME...HEAD" > surface.txt
+    # Inventory is attention, not error — print it loudly, never fail on it:
+    - python3 scripts/check-spec-surface.py surface.txt || echo "SPEC SURFACE TOUCHED — review changed tests as changed requirements"
+    # The gate: MR description must be a conforming plan, and a 'trivial'
+    # claim is mechanically contradicted if the diff moved spec surface:
+    - echo "$CI_MERGE_REQUEST_DESCRIPTION" | python3 scripts/check-plan.py - --diff surface.txt
+
+ctdd:hold-out:
+  stage: hold-out            # a stage AFTER the normal test stage is green
+  rules:
+    - if: $CI_MERGE_REQUEST_LABELS =~ /load-bearing/
+  script:
+    # Sealed tests live where the agent's session cannot read them — a
+    # separate repo/branch, cloned only here. The trait is CI's selector:
+    - git clone --depth 1 "$CTDD_HOLDOUT_REPO_URL" holdout
+    - dotnet test holdout --filter "ctdd=hold-out"   # adjust to your runner/trait syntax
+```
+
+Adapt the filter syntax and stage names to your stack; the shape is what matters — surface inventory always printed, plan lint as the failing gate, hold-outs executed from outside the working tree only after green.
+
 ## Adopting CTDD from zero
 
 The rationale is honest that the marginal cost is low only if the artifacts already exist. If they don't, adopt in this order — each rung pays for itself before the next:
@@ -138,7 +171,8 @@ ctdd/
 │   ├── spec-edit-guard.py             ← the spec-edit reminder (PostToolUse + PreToolUse)
 │   └── test_spec_edit_guard.py        ← the hook's own test suite (26 cases)
 ├── scripts/
-│   ├── check-plan.py                  ← lints an implementation plan for mandatory sections
+│   ├── check-plan.py                  ← lints a plan; --diff cross-checks trivial claims
+│   ├── test_check_plan.py             ← the linter's own test suite (10 cases)
 │   ├── check-spec-surface.py          ← deterministic diff inventory: tests/contracts/ADRs,
 │   │                                     renames and deletions included (shares hook patterns)
 │   └── test_check_spec_surface.py     ← the classifier's own test suite (11 cases)

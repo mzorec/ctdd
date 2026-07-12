@@ -52,7 +52,7 @@ Work through these steps in order. Scale ceremony to the risk of the change — 
 
 8. **Implement until the contract validates and the tests are green.** Do not weaken a test to make it pass; if a test is wrong, fix the test as a spec change and say so.
 
-9. **Present the spec for human review.** When green, present the diff with the tests and the contract framed as the spec, not just the code: changed tests are changed requirements, contract diffs are boundary changes, and both deserve explicit attention in review. If `scripts/check-spec-surface.py` is available, run the diff through it (`git diff --name-status -M | python3 scripts/check-spec-surface.py -`) and include its output: any test or contract surface it reports that the plan didn't declare — or declared trivial — means stop and reclassify before review. If the plan recorded a hold-out as required, this is when it runs: ask the human to execute the sealed tests now, after green, and treat their result as part of this review. The `ctdd-review` skill drives the reviewer's side of this gate.
+9. **Present the spec for human review.** When green, present the diff with the tests and the contract framed as the spec, not just the code: changed tests are changed requirements, contract diffs are boundary changes, and both deserve explicit attention in review. If `scripts/check-spec-surface.py` is available, run the diff through it (`git diff --name-status -M | python3 scripts/check-spec-surface.py -`) and include its output: any test or contract surface it reports that the plan didn't declare — or declared trivial — means stop and reclassify before review. If the plan recorded a hold-out as required, this is when it runs: ask the human to execute the sealed tests now, after green, treat their result as part of this review, and update the plan's hold-out line to `passed`, `failed`, or `declined by human` — a result left `pending` at merge is a review finding. The `ctdd-review` skill drives the reviewer's side of this gate.
 
 10. **Invariant note — only where needed.** If a rule is universal or a boundary is intentionally undefined and can't be made executable, add one colocated sentence (docstring/contract comment), e.g. "Must hold for all N > 0; behavior for N ≤ 0 is intentionally undefined." Do not write prose for anything a test or contract already covers.
 
@@ -77,17 +77,17 @@ When the ask is only to record a decision ("write an ADR for choosing RabbitMQ o
 Produce this as a reviewable summary, then stop for approval on non-trivial changes:
 
 - **Risk level** — trivial / normal / high-risk, with one line on why. This is the justification for the ceremony being scaled up or down; a reviewer who disagrees with the risk call should be able to object to that before anything else.
-- **Existing behavior** found in the contract and relevant tests — cite the file paths and test names actually retrieved (evidence, not paraphrase), so thin retrieval is visible to the reviewer.
+- **Existing behavior** found in the contract and relevant tests — cite the file paths and test names actually retrieved (evidence, not paraphrase), so thin retrieval is visible to the reviewer. State known gaps explicitly — "no Pact found for the checkout caller" converts silence into a reviewable absence.
 - **Assumptions** you are making.
 - **Uncovered or ambiguous cases** — behavior that matters but isn't pinned by a test, and anything the requirement doesn't specify.
 - **Proposed new/changed tests** — named at the behavior level. For each *changed existing* test, show the old and the new assertion, not just the name — the name is exactly where a wrong encoding hides.
 - **Contract changes**, if any (and whether they're backward-compatible; flag breaking changes explicitly).
 - **NFR budgets this change could touch** — latency/throughput, authz surface, tenant isolation, retention/audit. State "none" explicitly; an unstated budget is not a free one.
-- **Hold-out** — required / not required, with why. Required when the change alters money, auth, state-machine, or boundary semantics (rounding, inclusivity, timezones, fee treatment). If required, ask the human to write 1–3 acceptance tests directly from the business spec and to withhold them from you; they run once, after green (sealing them is the team's CI job — see the README). Never proceed as if this step happened when it didn't: record "requested" or "declined by human".
+- **Hold-out** — required / not required, with why. Required when the change alters money, auth, state-machine, or boundary semantics (rounding, inclusivity, timezones, fee treatment). If required, ask the human to write 1–3 acceptance tests directly from the business spec and to withhold them from you; they run once, after green (sealing them is the team's CI job — see the README). Record the decision **and track its outcome**: write `result: pending` at plan time; step 9 updates it to `passed`, `failed`, or `declined by human`. Never proceed as if this step happened when it didn't — and never leave it `pending` past review.
 - **ADR draft**, if step 4 produced one.
 - **Files likely to change.**
 
-Treat a change to an existing test as a change to the spec — call it out for review. If this plugin's `scripts/check-plan.py` is available on disk, run the emitted plan through it and fix any missing sections before presenting.
+Treat a change to an existing test as a change to the spec — call it out for review. If this plugin's `scripts/check-plan.py` is available on disk, run the emitted plan through it — adding `--diff` with the current `git diff --name-status -M` once edits exist, so a trivial claim is cross-checked against the actual surface — and fix any missing sections before presenting.
 
 ### Example (condensed)
 
@@ -100,6 +100,7 @@ money path, so amount edge cases must be pinned in tests
 Existing behavior (payments/contract/openapi.yaml; tests/payments/CaptureTests.*):
 - POST /payments/{id}/capture requires amount == authorized amount
 - capture_fails_when_amount_exceeds_authorized_amount covers over-capture
+Known gaps: no consumer contract (Pact) found for the checkout caller
 
 Assumptions:
 - Partial capture moves the payment to CAPTURED (no new PARTIALLY_CAPTURED state)
@@ -120,7 +121,8 @@ Contract changes:
 NFR budgets touched: none — no new external calls; authz surface unchanged
 
 Hold-out: required — money-path amount semantics; asked the human for
-1–2 sealed acceptance tests from the business spec (run once, after green)
+1–2 sealed acceptance tests from the business spec (run once, after green);
+result: pending
 
 Files likely to change:
 - payments/contract/openapi.yaml
