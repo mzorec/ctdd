@@ -99,7 +99,7 @@ The test for the test: **if a correct refactor that preserves behavior breaks it
 
 The real scope line is **assertable correctness**: use CTDD wherever "correct" can be captured in an executable assertion. Backend APIs and microservices are the home case — request in, response out; given state, an operation produces new state. Don't stretch it over visual/UX correctness, where tests structurally can't assert "looks right" (though a frontend's testable state layer — reducers, client-side state machines — qualifies fine).
 
-And the floor, stated plainly because it's the most decision-useful sentence here: **CTDD assumes an existing testing culture; it does not create one.** It takes a team from roughly the 70th percentile to the 90th, not from the 30th to the 70th. Every safeguard in it is made of behavior-level-testing discipline, so none of them can substitute for it. A team that can't yet write behavior-level tests should build that muscle on ordinary TDD first.
+And the floor, stated plainly because it's the most decision-useful sentence here: **CTDD assumes an existing testing culture; it does not create one.** It takes a team from roughly the 70th percentile to the 90th, not from the 30th to the 70th. Every safeguard in it is made of behavior-level-testing discipline, so none of them can substitute for it. A team that can't yet write behavior-level tests should build that muscle on ordinary TDD first. Cost-wise the method follows its own ceremony rule: a trivial change costs one declared line, a normal change a few minutes of plan review before any code exists, and a load-bearing change adds the human-written hold-out — the weight tracks the cost of being wrong, not the size of the diff.
 
 ## Where it's honestly weak
 

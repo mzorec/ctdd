@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.1 — 2026-07-13
+
+Docs only — the cost/size findings filed where each can't rot.
+
+- `ctdd-in-depth`: new **"What it costs to operate"** passage (Part 1, end of the second-payoff section) carrying the three durable claims: CTDD's overhead rides on retrieval any competent agentic workflow already pays; cost scales with the risk tier by design; and the honest operating risk is frequency, not per-change cost — gate decay under volume, with the reject/edit rate and annoyance journal named as the instruments. The design-decisions appendix gains the **skill-prose-freeze** rule (the budget is attention across rules, not word count; new guidance displaces, never accumulates).
+- Status pin: **measured sizes at this version** (descriptions ≈1.0k tokens always in context; bodies ≈3.8k / 2.2k / 1.6k on trigger; plan ≈325; hook ≈28 per spec-surface edit) — version-bound numbers live only in the pin and are re-measured at every re-pin.
+- `ctdd-in-practice`: one cost-shape sentence in the floor section, deliberately number-free per that doc's drift-slow discipline.
+- No runtime changes; deliberately excluded: external-guidance comparisons, environment-dependent percentages, and any felt-cost verdict — that's the pilot's question.
+
 ## 0.6.0 — 2026-07-12
 
 Weakness-closing release: the pre-pilot pair, plus the remaining proposals filed honestly.
