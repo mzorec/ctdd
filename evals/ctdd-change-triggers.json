@@ -1,0 +1,86 @@
+[
+  {
+    "query": "add a new endpoint POST /invoices/{id}/void to the billing service — it should reject voiding paid invoices",
+    "should_trigger": true
+  },
+  {
+    "query": "we need to change the retry behavior of the payment-status consumer, right now it retries forever on 4xx from the acquirer's API which is wrong",
+    "should_trigger": true
+  },
+  {
+    "query": "fix this bug: capture returns 500 instead of 409 when the payment is already captured, repro is in PaymentsControllerTests",
+    "should_trigger": true
+  },
+  {
+    "query": "implement partial refunds in RefundService, business wants amount <= captured amount, plan it first before touching code",
+    "should_trigger": true
+  },
+  {
+    "query": "CTDD this: add an idempotency key header to POST /transfers",
+    "should_trigger": true
+  },
+  {
+    "query": "modify the document-import handler so it also accepts type B2, the upstream registry started sending those last week",
+    "should_trigger": true
+  },
+  {
+    "query": "write an ADR for why we keep payment state transitions in the domain layer instead of the controllers",
+    "should_trigger": true
+  },
+  {
+    "query": "can you plan the change to move rate limiting from the gateway into our shared rate-limiting middleware package? don't code anything yet",
+    "should_trigger": true
+  },
+  {
+    "query": "review these tests for the capture endpoint, i think some of them are just asserting mocks",
+    "should_trigger": false
+  },
+  {
+    "query": "add a dark mode toggle to the customer portal react app settings page",
+    "should_trigger": false
+  },
+  {
+    "query": "why is my MassTransit consumer not picking up messages from the error queue",
+    "should_trigger": false
+  },
+  {
+    "query": "explain the difference between EF Core owned entities and value converters",
+    "should_trigger": false
+  },
+  {
+    "query": "review my colleague's PR before I merge it into develop",
+    "should_trigger": false
+  },
+  {
+    "query": "write unit tests for the new TransferValidator class",
+    "should_trigger": false
+  },
+  {
+    "query": "bump Npgsql to 8.0.5 in Directory.Packages.props",
+    "should_trigger": false
+  },
+  {
+    "query": "how should we architect the new document retrieval API, kafka or rabbit for the internal hop? just discussing options",
+    "should_trigger": false
+  },
+  {
+    "query": "migrate the capture flow from synchronous acquirer calls to the outbox pattern",
+    "should_trigger": true
+  },
+  {
+    "query": "raise the per-merchant transfer limit from 10k to 25k",
+    "should_trigger": true
+  },
+  {
+    "query": "implement the review comments a reviewer left on my PR",
+    "should_trigger": true
+  },
+  {
+    "query": "dodaj podporo za tip B2 v import handler, zunanji register ga je začel pošiljati",
+    "should_trigger": true
+  },
+  {
+    "query": "fix the Dockerfile in the payments service — the OpenShift build keeps failing",
+    "should_trigger": false
+  }
+]

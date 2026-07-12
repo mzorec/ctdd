@@ -1,0 +1,78 @@
+[
+  {
+    "query": "write tests for the capture endpoint, cover the error cases too",
+    "should_trigger": true
+  },
+  {
+    "query": "are these tests any good? they all mock IPaymentRepository and just assert Verify calls",
+    "should_trigger": true
+  },
+  {
+    "query": "add property tests for the idempotency of the transfer command handler",
+    "should_trigger": true
+  },
+  {
+    "query": "this test keeps flaking in CI, TransferSagaTests.CompletesAfterTimeout, can you take a look",
+    "should_trigger": true
+  },
+  {
+    "query": "name these tests properly, right now they're Test1 Test2 Test3",
+    "should_trigger": true
+  },
+  {
+    "query": "add a regression test for the bug where zero-amount captures were accepted",
+    "should_trigger": true
+  },
+  {
+    "query": "review just the tests in this PR, not the rest",
+    "should_trigger": true
+  },
+  {
+    "query": "we're about to refactor the legacy XML export and there are almost no tests — pin the current behavior first",
+    "should_trigger": true
+  },
+  {
+    "query": "implement the partial capture feature including tests",
+    "should_trigger": false
+  },
+  {
+    "query": "why does xunit run my collection fixtures twice",
+    "should_trigger": false
+  },
+  {
+    "query": "review this PR before I merge",
+    "should_trigger": false
+  },
+  {
+    "query": "write cypress e2e tests for the login page UI",
+    "should_trigger": false
+  },
+  {
+    "query": "our SpecFlow feature files won't bind, fix the step definitions",
+    "should_trigger": false
+  },
+  {
+    "query": "how do I mock HttpClient in .NET",
+    "should_trigger": false
+  },
+  {
+    "query": "set up the test project structure for the new service, xunit + testcontainers",
+    "should_trigger": false
+  },
+  {
+    "query": "these tests broke after my refactor — update them to match the new code",
+    "should_trigger": true
+  },
+  {
+    "query": "assert that a captured payment can never be captured again, whatever state it's in",
+    "should_trigger": true
+  },
+  {
+    "query": "napiši teste za capture endpoint, pokrij tudi robne primere",
+    "should_trigger": true
+  },
+  {
+    "query": "write load tests for the capture endpoint with k6",
+    "should_trigger": false
+  }
+]

@@ -1,0 +1,70 @@
+[
+  {
+    "query": "review this PR before I merge: feature/partial-capture into develop",
+    "should_trigger": true
+  },
+  {
+    "query": "can you check my staged changes, did I break the contract?",
+    "should_trigger": true
+  },
+  {
+    "query": "review the diff between develop and feature/import-type-b2",
+    "should_trigger": true
+  },
+  {
+    "query": "CTDD review this merge request from a teammate",
+    "should_trigger": true
+  },
+  {
+    "query": "check this before I merge, it touches the payment state machine",
+    "should_trigger": true
+  },
+  {
+    "query": "here's the diff for the document-import handler change, anything missing before I request review?",
+    "should_trigger": true
+  },
+  {
+    "query": "does this change need an ADR? here's the diff",
+    "should_trigger": true
+  },
+  {
+    "query": "review these tests, are they too coupled to the implementation?",
+    "should_trigger": false
+  },
+  {
+    "query": "implement the review comments a reviewer left on my PR",
+    "should_trigger": false
+  },
+  {
+    "query": "review this OpenAPI spec draft for the new API before I share it with the partner team",
+    "should_trigger": false
+  },
+  {
+    "query": "review the architecture of the new integration, does the outbox pattern fit here?",
+    "should_trigger": false
+  },
+  {
+    "query": "run the linter and fix the warnings before merge",
+    "should_trigger": false
+  },
+  {
+    "query": "summarize what changed in this PR for the changelog",
+    "should_trigger": false
+  },
+  {
+    "query": "review this frontend PR for the customer portal app",
+    "should_trigger": false
+  },
+  {
+    "query": "the agent finished the partial-capture task — look it over",
+    "should_trigger": true
+  },
+  {
+    "query": "poglej ta diff, preden ga mergam v develop",
+    "should_trigger": true
+  },
+  {
+    "query": "review this data-migration script before I run it on prod",
+    "should_trigger": false
+  }
+]
