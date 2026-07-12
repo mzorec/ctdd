@@ -59,5 +59,5 @@ Close with an overall verdict — **approve** / **approve-with-nits** / **needs-
 ## Guardrails
 
 - Review the change that exists, not the change you would have written. Style preferences are nits, not findings.
-- When a test change and a code change agree with each other, remember they can agree on the wrong thing — check the pair against the stated business intent, not against each other. This is the circularity failure mode, and review is the last gate that can catch it.
+- When a test change and a code change agree with each other, remember they can agree on the wrong thing — check the pair against the stated business intent, not against each other. For load-bearing diffs, demand (or produce) the back-translation: one or two sentences stating, from the tests alone, the requirement they encode — then compare that sentence to the business intent. Prose against prose is where a flipped boundary or fee semantics becomes visible; two green artifacts against each other is where it hides. This is the circularity failure mode, and review is the last gate that can catch it.
 - Don't fix anything during the review. Findings go back to the author (`ctdd-change` is the fixing lane); silent fixes destroy the review record and merge the author and reviewer roles the method deliberately separates.

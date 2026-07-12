@@ -4,7 +4,7 @@ A Claude Code plugin for backend API and microservice work. It encodes **Contrac
 
 **Scope:** backend services behind an API — more precisely, anywhere correctness can be captured in an executable assertion. Not for visual/UX correctness; testable state logic (reducers, client-side state machines) qualifies wherever it lives.
 
-New to the method? [`docs/ctdd-primer.md`](docs/ctdd-primer.md) is the ten-minute introduction — the concept and what a change feels like in practice. The full argument — where it breaks, how it compares to spec-driven development, and where it sits in the 2025–2026 SDD landscape — lives in [`docs/rationale.md`](docs/rationale.md). This README is the operating manual; the primer is the on-ramp; the rationale is the why.
+New to the method? [`docs/ctdd-in-practice.md`](docs/ctdd-in-practice.md) is the ten-minute introduction — the concept and what a change feels like in practice. The full argument — where it breaks, how it compares to spec-driven development, and where it sits in the 2025–2026 SDD landscape — lives in [`docs/ctdd-in-depth.md`](docs/ctdd-in-depth.md). This README is the operating manual; *CTDD in practice* is the on-ramp; *CTDD in depth* is the rationale — the why.
 
 ## Requirements
 
@@ -63,7 +63,7 @@ On the other side of the merge:
 
 Triggering is description-driven: the skills fire on natural phrases ("implement this endpoint", "review these tests", "check this before I merge"). If one doesn't fire when you expect — or fires too eagerly — edit its `description` frontmatter; nothing about the workflow changes. A trigger eval set ships in `evals/` (one file per skill, should/shouldn't-trigger queries), so the `skill-creator` optimizer can tune a description empirically instead of by feel. Nothing runs the eval sets automatically yet — treat them as a release-checklist step.
 
-**Enforcement honesty:** almost everything in this plugin is *prompted* — a skill is prose a model follows, not a gate. The deterministic pieces are exactly four: the spec-edit hook (when a team enables it; advisory, not blocking), `scripts/check-plan.py` (when run; an omission detector for the plan that, given `--diff`, also mechanically contradicts a trivial claim when spec surface moved), `scripts/check-spec-surface.py` (when run; a diff-surface inventory that sees the renames, deletions, and Bash-lane edits the hook structurally can't), and the test suites that pin both scripts and the hook. The only genuinely *blocking* gate in the whole workflow is Claude Code plan mode, which the plugin recommends but the host provides.
+**Enforcement honesty:** almost everything in this plugin is *prompted* — a skill is prose a model follows, not a gate. The deterministic pieces are exactly five: the spec-edit hook (when a team enables it; advisory, not blocking), `scripts/check-plan.py` (when run; an omission detector for the plan that, given `--diff`, also mechanically contradicts a trivial claim when spec surface moved), `scripts/check-spec-surface.py` (when run; a diff-surface inventory that sees the renames, deletions, and Bash-lane edits the hook structurally can't), `scripts/gen-authz-matrix.py` (derives the authorization matrix from the OpenAPI contract; `--check` fails CI when an endpoint ships without its rows), and the test suites that pin the scripts and the hook. The only genuinely *blocking* gate in the whole workflow is Claude Code plan mode, which the plugin recommends but the host provides.
 
 ### Who owns which artifact
 
@@ -128,6 +128,9 @@ ctdd:spec-surface:
     - git diff --name-status -M "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME...HEAD" > surface.txt
     # Inventory is attention, not error — print it loudly, never fail on it:
     - python3 scripts/check-spec-surface.py surface.txt || echo "SPEC SURFACE TOUCHED — review changed tests as changed requirements"
+    # If you adopted the generated authz matrix: fail when the contract
+    # gained an endpoint without matrix rows (regenerate + review as a spec change)
+    - python3 scripts/gen-authz-matrix.py openapi/payments.yaml --check tests/authz-matrix.json
     # The gate: MR description must be a conforming plan, and a 'trivial'
     # claim is mechanically contradicted if the diff moved spec surface:
     - echo "$CI_MERGE_REQUEST_DESCRIPTION" | python3 scripts/check-plan.py - --diff surface.txt
@@ -166,8 +169,8 @@ ctdd/
 ├── README.md                          ← you are here
 ├── CHANGELOG.md
 ├── docs/
-│   ├── ctdd-primer.md                 ← ten-minute introduction for first-timers
-│   └── rationale.md                   ← the full argument, weaknesses, prior art
+│   ├── ctdd-in-practice.md            ← ten-minute introduction for first-timers
+│   └── ctdd-in-depth.md               ← the rationale: full argument, weaknesses, prior art
 ├── hooks/
 │   ├── hooks.json.example             ← copy to hooks.json to enable (off by default)
 │   ├── spec-edit-guard.py             ← the spec-edit reminder (PostToolUse + PreToolUse)
@@ -175,6 +178,8 @@ ctdd/
 ├── scripts/
 │   ├── check-plan.py                  ← lints a plan; --diff cross-checks trivial claims
 │   ├── test_check_plan.py             ← the linter's own test suite (10 cases)
+│   ├── gen-authz-matrix.py            ← identity × operation authz matrix from OpenAPI (--check = CI drift gate)
+│   ├── test_gen_authz_matrix.py       ← the generator's own test suite (12 cases)
 │   ├── check-spec-surface.py          ← deterministic diff inventory: tests/contracts/ADRs,
 │   │                                     renames and deletions included (shares hook patterns)
 │   └── test_check_spec_surface.py     ← the classifier's own test suite (11 cases)

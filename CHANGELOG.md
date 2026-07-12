@@ -1,8 +1,17 @@
 # Changelog
 
+## 0.6.0 — 2026-07-12
+
+Weakness-closing release: the pre-pilot pair, plus the remaining proposals filed honestly.
+
+- **New `scripts/gen-authz-matrix.py`** — derives the authorization matrix from the OpenAPI contract: every identity (anonymous / authenticated / one per scope and `x-roles` role) × every operation, expected `allow` / `deny-401` / `deny-403`, with the *why* per cell. Honors operation-over-global security, `security: []` as explicitly public, OR across requirement objects, AND within one, and scope subsets (partial-scope callers get their 403 rows). Deterministic output so the JSON diffs cleanly — a new endpoint appears in review as new rows — and `--check` turns "a new endpoint without a matrix row is uncovered authz" into a CI failure. `--csharp-scaffold` prints the one-time xUnit adapter (the JSON is the generated artifact; the adapter is copied once, so nothing exists in two places to drift). Honest ceiling stated in the tool and the rationale: it covers the authorization surface the contract *declares* — object-level rules stay with hand-written behavior tests. 12-case test suite; total 59 green.
+- **Back-translation** for load-bearing diffs (`ctdd-change` step 9, `ctdd-review` circularity guardrail): the agent states, from the tests alone, the requirement they encode, and the human compares prose to prose — the wrong-encoding half of weakness #3 gains a second guard beside hold-outs. Survives the same-prior objection that killed second-opinion review: it reads *artifact → prose*, not *intent → artifact*.
+- Rationale (Part 2) updated: back-translation marked as shipped; the generator news lives in the promoted authorization-matrix section under "Covering the gap" (the weakness-#7 bullet stays a pointer — one home per fact); four further mechanisms filed as **proposed — not yet built** (claim-provenance summaries for #1, machine-readable `CTDD-UNDEFINED` markers for #2, a Roslyn expected-value independence analyzer for #3, a coverage-report *reader* for #4 — explicitly distinguished from the coverage-quantifier killed earlier); Microsoft Coyote named as the concrete #6 escalation rung (production-proven in Azure; MSR "as-is" support model noted). Traceability rows #3/#7 and the status pin re-pinned.
+- README: generator in the deterministic-pieces list (now five), repo layout, and a `--check` drift line in the CI recipe.
+
 ## 0.5.2 — 2026-07-12
 
-- Docs only: new `docs/ctdd-primer.md` — a ten-minute first-timers' introduction (the concept, a worked change, the one rule, the honest floor and limits, four FAQ). Deliberately concept-level so it drifts slowly; runtime specifics stay in the README, the argument stays in the rationale. Cross-linked from both. No runtime changes.
+- Docs only: new `docs/ctdd-in-practice.md` — a ten-minute first-timers' introduction (the concept, a worked change, the one rule, the honest floor and limits, four FAQ). Deliberately concept-level so it drifts slowly; runtime specifics stay in the README, the argument stays in the rationale — which is renamed `docs/ctdd-in-depth.md` in the same release, making the doc pair *in practice / in depth* (the prose keeps "rationale" as the genre word). Chosen over "primer" partly because *primer* means "example" in Slovenian — misleading for half the audience. Cross-linked from both. No runtime changes.
 
 ## 0.5.1 — 2026-07-12
 
