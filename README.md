@@ -4,7 +4,7 @@ A Claude Code plugin for backend API and microservice work. It encodes **Contrac
 
 **Scope:** backend services behind an API — more precisely, anywhere correctness can be captured in an executable assertion. Not for visual/UX correctness; testable state logic (reducers, client-side state machines) qualifies wherever it lives.
 
-The full argument for the method — where it breaks, how it compares to spec-driven development, and where it sits in the 2025–2026 SDD landscape — lives in [`docs/rationale.md`](docs/rationale.md). This README is the operating manual; that document is the why.
+New to the method? [`docs/ctdd-primer.md`](docs/ctdd-primer.md) is the ten-minute introduction — the concept and what a change feels like in practice. The full argument — where it breaks, how it compares to spec-driven development, and where it sits in the 2025–2026 SDD landscape — lives in [`docs/rationale.md`](docs/rationale.md). This README is the operating manual; the primer is the on-ramp; the rationale is the why.
 
 ## Requirements
 
@@ -165,7 +165,9 @@ ctdd/
 ├── .claude-plugin/plugin.json
 ├── README.md                          ← you are here
 ├── CHANGELOG.md
-├── docs/rationale.md                  ← the method, its weaknesses, prior art
+├── docs/
+│   ├── ctdd-primer.md                 ← ten-minute introduction for first-timers
+│   └── rationale.md                   ← the full argument, weaknesses, prior art
 ├── hooks/
 │   ├── hooks.json.example             ← copy to hooks.json to enable (off by default)
 │   ├── spec-edit-guard.py             ← the spec-edit reminder (PostToolUse + PreToolUse)

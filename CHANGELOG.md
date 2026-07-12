@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2 — 2026-07-12
+
+- Docs only: new `docs/ctdd-primer.md` — a ten-minute first-timers' introduction (the concept, a worked change, the one rule, the honest floor and limits, four FAQ). Deliberately concept-level so it drifts slowly; runtime specifics stay in the README, the argument stays in the rationale. Cross-linked from both. No runtime changes.
+
 ## 0.5.1 — 2026-07-12
 
 Third review round, applied selectively — four accepted items, three recorded rejections.
