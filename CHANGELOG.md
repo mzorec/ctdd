@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.3 — 2026-07-13
+
+Docs only — the compounding claim, stated as mechanism and fenced against its own abuse.
+
+- `ctdd-in-practice`: new **"What compounds"** section (before the one-rule section, which is its counterweight): bug fixes leave permanent regression tests, well-run changes add retrievable spec, contracts stay honest *where validation is wired*, and what survives a disposable plan lands in tests, contracts, and ADRs. The bet, stated narrowly: the **executable spec becomes richer** as a byproduct of the work instead of rotting as one — with the bidirectional counterweight attached (brittle tests compound into an increasingly precise description of yesterday's code, blocking the refactor they should protect; accumulation multiplies whatever discipline you have, it does not supply it) and an explicit disclaimer that CTDD does not make code cleaner by itself — that stays design skill, refactoring judgment, and review.
+- `ctdd-in-depth`: the same claim filed in Part 2 **inside the failure-signals section, not the benefits** — a prediction, not an observation; checkable against the signals already listed (suite growth per incident, retrieval difficulty on mature services, covered-behavior regression rate — the last already tracked by churn-on-refactor, so an instrumented pilot tests the claim for free); and explicitly barred from ever answering a bad result, since "you didn't follow it enough" is the No True Scotsman move that excused every failed methodology in software.
+- Maintainer's qualifiers adopted throughout ("improves" → "becomes richer"; "every change" → "every well-run change"; contract honesty conditioned on wired validation; ADRs restored alongside tests and contracts).
+- No runtime changes; skill prose remains frozen.
+
 ## 0.7.2 — 2026-07-13
 
 Docs only — the agent's-side framing added where first-timers actually need it (maintainer-directed placement).

@@ -160,6 +160,18 @@ The reflex to unlearn is:
 
 That is a requirements change dressed as housekeeping.
 
+## What compounds
+
+A prose spec decays as a byproduct of doing the work: every change can make it slightly less true, and nothing forces anyone to notice.
+
+CTDD's artifacts are meant to move in the other direction. Every bug fix leaves a permanent regression test behind, so the suite accumulates edge cases the team has actually hit. Every well-run change adds retrievable spec, so the next change starts from a better-described system than the last one did. The contract stays honest where validation is wired, because a violating payload fails. The plan is disposable, but what survives it is supposed to land in durable artifacts: tests, contracts, and ADRs where structure changed.
+
+That is the long-run bet: **the executable spec becomes richer as a byproduct of doing the work, instead of rotting as a byproduct of doing the work.**
+
+The same accumulation is exactly why the next section matters. A suite of behavior-level tests compounds into an increasingly precise specification of observable behavior. A suite of brittle, implementation-coupled tests compounds into an increasingly precise description of the code as it happens to be written — which then blocks the refactor it should have protected. Accumulation is a multiplier on whichever discipline you actually have; it does not supply the discipline.
+
+One caution about how to read this: this is a claim about mechanism, not a promise about outcomes. CTDD does not make code cleaner by itself. That remains design skill, refactoring judgment, and code review. What CTDD claims is narrower and checkable: when the method is followed on assertable behavior, the durable specification becomes richer over time, while a prose side-spec tends to decay.
+
 ## The one rule that makes it work
 
 Write tests at the behavior level — what a caller observes — and name them as statements of intent, because the name is the spec line.
