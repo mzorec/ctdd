@@ -28,6 +28,32 @@ In practice you stop, keep, and start:
 - **Keep** the customer's business spec (intent), and your engineering artifacts — they were always worth having.
 - **Start** treating a test diff as a requirements diff, and reviewing it that way.
 
+## Why this helps the agent
+
+An AI agent is weakest when the prompt gives it only a goal:
+
+> Implement partial capture.
+
+From that, it has to infer everything else from code structure, naming, conventions, and maybe stale docs — and inference is where agents quietly go wrong.
+
+CTDD gives the agent better inputs:
+
+- the **API contract** tells it what the boundary must look like;
+- the **relevant tests** tell it what behavior already exists and must not break;
+- the **business request and plan** tell it what should be added or changed;
+- **ADRs and invariant notes** tell it which design choices are intentional;
+- **Pact and property tests** tell it what consumers and universal rules rely on.
+
+So the agent is no longer reading code and guessing intent. And the workflow makes it show its work — before writing code it must say:
+
+- what existing behavior it found;
+- what it thinks the change means;
+- which tests or contracts will change;
+- which assumptions may be wrong;
+- where coverage or consumer contracts are missing.
+
+That summary is offered as "here's my reading — correct me," and the plan gate is where you do. This is the practical value of CTDD: before the agent writes any code, it exposes its understanding of the requirements — while a misunderstanding is still cheap to fix.
+
 ## What "the spec" is made of
 
 | Artifact | Answers | Why it can't rot |
@@ -46,7 +72,7 @@ A few terms, in plain English:
 - **Property test**: a test that checks a rule across many generated inputs, not just one example.
 - **Regression contract**: the current behavior that must not break unless a human approves changing it.
 
-The key move: humans don't read the whole test suite. The agent retrieves the relevant slice, holds it in context, and summarizes: "here's my reading, correct me." Tests plus contract are the regression contract ("don't break what exists"); business spec plus plan supply creation ("what to build"); ADRs supply "why it's shaped this way."
+The key move: humans don't read the whole test suite — the agent retrieves the relevant slice and mediates. Tests plus contract are the regression contract ("don't break what exists"); business spec plus plan supply creation ("what to build"); ADRs supply "why it's shaped this way."
 
 ## How a change actually runs
 

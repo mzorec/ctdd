@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.2 — 2026-07-13
+
+Docs only — the agent's-side framing added where first-timers actually need it (maintainer-directed placement).
+
+- `ctdd-in-practice`: new **"Why this helps the agent"** section between the idea and the spec table — goal-only prompts force inference (the agent's weakest mode); the artifact set is better inputs; the workflow makes the agent show its work before code exists. Honors the displace-as-much-as-you-add rule: "here's my reading — correct me" relocated into the new section as its closer, and the key-move paragraph slimmed to its unique artifact-role mapping.
+- `ctdd-in-depth`: one paragraph after the retrieval-evidence discussion — CTDD read from the agent's side is a requirements-context protocol, not extra process. Deliberately one paragraph; the doc already argues this formally.
+- README deliberately untouched, per maintainer direction.
+- No runtime changes; skill prose remains frozen.
+
 ## 0.7.1 — 2026-07-13
 
 Docs only — the maintainer's editorial pass on `ctdd-in-practice.md` adopted as canonical, with two fixes.
