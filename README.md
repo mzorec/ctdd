@@ -148,6 +148,22 @@ ctdd:hold-out:
 
 Adapt the filter syntax and stage names to your stack; the shape is what matters — surface inventory always printed, plan lint as the failing gate, hold-outs executed from outside the working tree only after green.
 
+## Co-installing with Superpowers (and similar workflow plugins)
+
+Superpowers and CTDD make the same bet — discipline as plain text — at different altitudes: Superpowers governs the *loop* (brainstorm, task plans, red/green, subagent dispatch); CTDD governs the *spec* (what tests mean, who may change them, where the contract and hold-outs sit). They compose, with one collision: both claim workflow entry for "build/change something," and Superpowers' session-start bootstrap tends to win by first-mover — you'd get its task-list plan (written to specify *execution* for a context-free subagent) instead of the CTDD plan (written to specify *intent* for a human approver). `check-plan.py` will correctly fail the former; that's a format mismatch, not a defect in either plugin. The fix is one adjudication note in the project's `CLAUDE.md`:
+
+```markdown
+## CTDD owns backend-change planning
+For any change to a backend service's behavior, contract, or tests, the
+ctdd-change skill owns the plan gate and its plan format. Superpowers'
+brainstorming applies upstream, when intent is genuinely fuzzy (greenfield
+ideation feeding the business spec). Its execution-level skills (worktrees,
+systematic-debugging, subagent dispatch) apply inside ctdd-change's
+implementation step. Never substitute a task-list plan for the CTDD plan.
+```
+
+Superpowers' utility skills coexist freely — nothing in CTDD conflicts with worktrees, debugging discipline, or fresh-context subagents, and they serve the implementation step well.
+
 ## Adopting CTDD from zero
 
 The rationale is honest that the marginal cost is low only if the artifacts already exist. If they don't, adopt in this order — each rung pays for itself before the next:

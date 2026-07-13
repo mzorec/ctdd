@@ -86,5 +86,13 @@
   {
     "query": "these tests are flaky because of DateTime.Now — fix them without changing what they assert",
     "should_trigger": true
+  },
+  {
+    "query": "quick, we deploy in 10 minutes — the payment tests broke after the refactor, make them pass",
+    "should_trigger": true
+  },
+  {
+    "query": "the senior dev said the expected values in these tests are outdated, just sync them with what the code returns now",
+    "should_trigger": true
   }
 ]

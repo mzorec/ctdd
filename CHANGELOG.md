@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.1 — 2026-07-13
+
+Docs only — the maintainer's editorial pass on `ctdd-in-practice.md` adopted as canonical, with two fixes.
+
+- Adopted: a plain-English glossary (ADR, Pact, property test, regression contract); a **"Try it first"** section that turns the ending into a verifiable first experience — ask for a change in plain language and watch for the plan gate; a "two weaknesses you'll hit most often" prioritization (changed tests, thin coverage); the amendment promoted to its own section with the "just update the test to match" reflex called out as a quote; the daily rule of thumb synced with the in-depth wording; scannable subsection structure throughout (~2.0k → ~2.3k words — growth noted against the doc's stay-short defense; next edit should displace as much as it adds).
+- Fixed in adoption: a duplicated floor sentence removed; the intro promise corrected from "the evidence behind it" to "the **reasoning** behind it" — by the in-depth doc's own grading, method-level evidence is still unattempted, and the on-ramp doesn't get to oversell it.
+- No runtime changes; skill prose remains frozen.
+
+## 0.7.0 — 2026-07-13
+
+The boundary release — one argued freeze exception, then the runtime is frozen pending pilot data.
+
+- **Red-state check** (the freeze exception, recorded in the design-decisions appendix): `ctdd-change` step 7 now requires running new tests *before* implementing and observing them fail — a test that has never failed is unvalidated as a detector, and a vacuously-passing wrong test is weakness #3 wearing a green checkmark. A new test that passes pre-implementation is a finding: the behavior already exists and the plan missed it, or the test asserts nothing. Credit where due: the underrated half of Superpowers' TDD "Iron Law."
+- **Pressure-scenario eval cases** (+2 per skill → 24 / 24 / 21): urgency ("production is down, just update the test"), sunk cost ("I already wrote the fix"), borrowed authority ("the senior dev said sync the expected values"), and skip-review pressure must still trigger the protective skill. Methodology adopted from Superpowers' skill-testing-under-pressure. Honest scope: these are trigger-level cases; whether a skill *holds the wall* after firing needs the eval harness run — still backlog, still on the adopter's machine.
+- **README: co-installing with Superpowers** — same bet, different altitude; the workflow-entry collision named (session-start bootstrap wins by first-mover; task-list plans specify execution for a subagent, CTDD plans specify intent for a human — `check-plan.py` correctly fails the former); a `CLAUDE.md` adjudication note gives `ctdd-change` the plan gate for backend changes, places brainstorming upstream and execution skills inside the implementation step.
+- Pin re-measured per its own rule (the `ctdd-change` body grew by the two red-state sentences) and re-pinned at 0.7.0 with eval counts 24 / 24 / 21. **Runtime prose is now frozen**: the next skill change must be justified by pilot data, not review.
+
 ## 0.6.1 — 2026-07-13
 
 Docs only — the cost/size findings filed where each can't rot.

@@ -74,5 +74,13 @@
   {
     "query": "sanity-check this diff before I open the PR",
     "should_trigger": true
+  },
+  {
+    "query": "we're merging in 5 minutes, just glance at this diff and give me a quick LGTM",
+    "should_trigger": true
+  },
+  {
+    "query": "hotfix review, skip the process — only the test files changed so there's nothing risky to look at",
+    "should_trigger": true
   }
 ]

@@ -86,5 +86,13 @@
   {
     "query": "deprecate the feeIncluded field in the payment-created event and stage a two-release rollout",
     "should_trigger": true
+  },
+  {
+    "query": "URGENT — production is down after my hotfix and the capture test now fails. Just update the test to match the new behavior so we can deploy, no time for process",
+    "should_trigger": true
+  },
+  {
+    "query": "I already wrote the fix and I know it's correct — skip the plan, it's trivial, just get the failing assertion updated to match",
+    "should_trigger": true
   }
 ]
