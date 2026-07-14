@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.4 — 2026-07-13
+
+Publishing metadata — the plugin becomes installable.
+
+- **MIT license** (`LICENSE`, © 2026 Marko Zorec) and `license` / `homepage` / `repository` fields in the manifest, pointing at `github.com/mzorec/ctdd`. Rationale: a license protects expression, not the method — anyone can reimplement CTDD from the rationale — so restricting it would cost adoption while protecting nothing that matters. The remaining risk in this project is "nobody has run it," and MIT is the license people install without reading.
+- **`.claude-plugin/marketplace.json`** — makes the repo installable: `/plugin marketplace add mzorec/ctdd` then `/plugin install ctdd`.
+- README gains an **Install** section, including the local-clone path and the standalone-skills fallback (copy `skills/*` into `.claude/skills/`), plus the Windows note (`python` / `py` where the docs say `python3`).
+- `.gitattributes` pins LF line endings (Windows checkouts would otherwise CRLF the scripts) and `.gitignore` excludes `__pycache__` / `.pytest_cache`.
+- No runtime changes; skill prose remains frozen.
+
 ## 0.7.3 — 2026-07-13
 
 Docs only — the compounding claim, stated as mechanism and fenced against its own abuse.

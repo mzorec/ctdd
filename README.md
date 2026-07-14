@@ -164,6 +164,22 @@ implementation step. Never substitute a task-list plan for the CTDD plan.
 
 Superpowers' utility skills coexist freely — nothing in CTDD conflicts with worktrees, debugging discipline, or fresh-context subagents, and they serve the implementation step well.
 
+## Install
+
+```
+/plugin marketplace add mzorec/ctdd
+/plugin install ctdd
+```
+
+From a local clone (e.g. while developing the plugin), point the marketplace at the checkout directory instead:
+
+```
+/plugin marketplace add /path/to/ctdd
+/plugin install ctdd
+```
+
+The skills also work standalone without the plugin: copy `skills/*` into `.claude/skills/` in a project, or `~/.claude/skills/` for every project. The scripts are plain Python 3 with no dependencies beyond PyYAML (`gen-authz-matrix.py` only) — on Windows, invoke them with `python` or `py` where the docs say `python3`.
+
 ## Adopting CTDD from zero
 
 The rationale is honest that the marginal cost is low only if the artifacts already exist. If they don't, adopt in this order — each rung pays for itself before the next:

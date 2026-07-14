@@ -1,9 +1,10 @@
 {
   "name": "ctdd",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "description": "Contract- and Test-Driven Development for backend APIs and microservices: drive changes contract-first, with tests as the executable spec the agent reads and builds against.",
   "author": {
-    "name": "Marko Zorec"
+    "name": "Marko Zorec",
+    "url": "https://github.com/mzorec"
   },
   "keywords": [
     "ctdd",
@@ -15,5 +16,8 @@
     "property-based-testing",
     "microservices",
     "adr"
-  ]
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/mzorec/ctdd",
+  "repository": "https://github.com/mzorec/ctdd"
 }
