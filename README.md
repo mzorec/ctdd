@@ -43,6 +43,19 @@ Ask for a backend change in plain language:
 
 `ctdd-change` triggers and, **before writing any code**, returns an implementation plan: a risk call, the existing behavior it found (cited to files and test names), its assumptions, the uncovered/ambiguous cases it needs you to resolve, the proposed behavior-level tests (changed existing tests shown old-vs-new assertion), the contract delta (with backward-compatibility flagged), the NFR budgets it could touch, a hold-out decision for load-bearing semantics, and the files it expects to touch. You resolve the ambiguities, approve, and only then does it apply the contract change, write the tests, and implement until both are green — closing by presenting the tests and contract diff as the spec for your review. Works especially well in plan mode (`Shift+Tab` or `/plan`), where the pre-coding gate is enforced by the tool itself.
 
+### Where the plan goes: `docs/plans/`
+
+Whenever `ctdd-change` produces a plan (i.e. any non-trivial change — a trivial skip produces only its one-line declaration and no plan), it writes the plan to `docs/plans/<ticket-or-slug>.md` and gives you a pointer plus a short decision summary in chat. A chat window is a poor viewer for a plan; an editor, with folding and syntax highlighting, is where you actually read and annotate one.
+
+**Whether to commit `docs/plans/` is your call, and the two choices give you different things:**
+
+- **Committed** — the plan becomes part of the change's history: PR-linked context for reviewers, and a record of *why* a change was made (the decisions, the alternatives, the ambiguities resolved) that outlives the diff. In a regulated shop this is the raw material an audit trail would draw on.
+- **Git-ignored** (add `docs/plans/` to `.gitignore`) — the plan is scratch: useful for *this* review, then discarded. Nothing accumulates.
+
+Either way, one property holds by design: **a plan is not maintained after its change ships.** It is a decision record for one change, not a living document — nothing updates it when the code later evolves, and it is never a second source of truth competing with the tests and contract. (That is the whole point of CTDD: the executable artifacts are the spec; the plan is disposable input to them.)
+
+What a kept plan is genuinely good for *after* merge — reviewer context and decision archaeology ("why did we relax that rule?") — is real but modest, and honestly still being learned: whether teams re-read old plans, and whether a canonical archive of them earns its keep, is one of the open questions the method's own pilot is meant to answer, not a benefit to bank on up front. Treat post-merge value as a bonus of committing, not the reason to.
+
 Bug fixes run the same loop compressed: a failing behavior-level regression test reproduces the bug first, then the fix, and the test stays forever.
 
 On the other side of the merge:
@@ -64,6 +77,8 @@ On the other side of the merge:
 Triggering is description-driven: the skills fire on natural phrases ("implement this endpoint", "review these tests", "check this before I merge"). If one doesn't fire when you expect — or fires too eagerly — edit its `description` frontmatter; nothing about the workflow changes. A trigger eval set ships in `evals/` (one file per skill, should/shouldn't-trigger queries), so the `skill-creator` optimizer can tune a description empirically instead of by feel. Nothing runs the eval sets automatically yet — treat them as a release-checklist step.
 
 **Enforcement honesty:** almost everything in this plugin is *prompted* — a skill is prose a model follows, not a gate. The deterministic pieces are exactly five: the spec-edit hook (when a team enables it; advisory, not blocking), `scripts/check-plan.py` (when run; an omission detector for the plan that, given `--diff`, also mechanically contradicts a trivial claim when spec surface moved), `scripts/check-spec-surface.py` (when run; a diff-surface inventory that sees the renames, deletions, and Bash-lane edits the hook structurally can't), `scripts/gen-authz-matrix.py` (derives the authorization matrix from the OpenAPI contract; `--check` fails CI when an endpoint ships without its rows), and the test suites that pin the scripts and the hook. The only genuinely *blocking* gate in the whole workflow is Claude Code plan mode, which the plugin recommends but the host provides.
+
+> **Running the scripts — portability.** The CI recipe below uses `python3` (correct on Linux runners). On Windows the launcher is usually `python` or `py`; the scripts themselves are plain Python 3 (PyYAML only, for `gen-authz-matrix.py`). If a `ctdd-*` script silently does nothing on a dev machine, check that `python3` resolves — if only `python`/`py` exists, either alias it or adjust the command. The skills degrade safely when Python is absent (they fall back to following the plan format by hand), but the *deterministic* checks only actually run when a Python 3 launcher is on PATH.
 
 ### Who owns which artifact
 
@@ -164,7 +179,9 @@ implementation step. Never substitute a task-list plan for the CTDD plan.
 
 Superpowers' utility skills coexist freely — nothing in CTDD conflicts with worktrees, debugging discipline, or fresh-context subagents, and they serve the implementation step well.
 
-## Install
+## Install from this repo
+
+If you're installing the published plugin directly:
 
 ```
 /plugin marketplace add mzorec/ctdd
@@ -203,6 +220,7 @@ ctdd/
 ├── docs/
 │   ├── ctdd-in-practice.md            ← ten-minute introduction for first-timers
 │   └── ctdd-in-depth.md               ← the rationale: full argument, weaknesses, prior art
+│   └── backlog.md                     ← decision record: deferred ideas + their triggers
 ├── hooks/
 │   ├── hooks.json.example             ← copy to hooks.json to enable (off by default)
 │   ├── spec-edit-guard.py             ← the spec-edit reminder (PostToolUse + PreToolUse)

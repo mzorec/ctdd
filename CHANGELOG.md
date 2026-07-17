@@ -1,5 +1,51 @@
 # Changelog
 
+## Unreleased
+
+_Documentation and non-runtime changes land here and fold into the next runtime release. Version numbers move only on runtime changes (skills, scripts, hooks); every doc edit is already dated by the rationale's status pin._
+
+- Backlog (Tier 1): filed **`ctdd-retro`**, a structured end-of-change capture tool — the *witness-not-critic* version of "a diagnostic skill that finds CTDD improvements." Records factual trace + human journal answers into `docs/pilot-findings.md`; explicitly forbidden from proposing skill edits (an AI-judges-its-own-skills diagnostic is the circularity weakness pointed at the frozen prose). Gated on ~3–4 changes so its structure is derived from the journal's recurring questions, not guessed.
+
+- Added `docs/pilot-findings.md` — the running pilot journal, seeded with findings #1–#4 from the first real change (`GetDocumentAttachmentList`): plan density (fixed 0.8.0/0.8.1), Windows Python no-op (fixed 0.8.2), a *rejected* retrieval-clause change (evidence showed CTDD retrieved DB-build detail more thoroughly than an unconstrained prompt, not less), and an ambiguity-drift observation (the agent leaned to the lower-effort schema reading; the gate caught it). Plus the first ceremony-cost data point and a with/without-skill comparative note.
+
+## 0.8.2 — 2026-07-13
+
+Pilot finding #2 — the deterministic layer silently no-ops on Windows.
+
+- **Windows Python portability.** On a real pilot run, `check-plan.py` reported `Python was not found` and the skill correctly fell back to manual — but that means the plugin's entire *deterministic* layer (the scripts, the one part that's more than prompting) doesn't run on a machine with only `python`/`py`, not `python3`. Fixes: a portability note in the README next to the enforcement section (if a `ctdd-*` script silently does nothing, check that `python3` resolves; scripts degrade safe but only *run* when a Py3 launcher is on PATH); the two skill invocations now show the `python`/`py` Windows alternative inline; and a new `hooks/hooks.windows.json.example` with the `py -3` launcher. The scripts are unchanged and cross-platform — only the launcher token differs. (A deeper fix — a launcher shim, or the skills detecting the interpreter — is filed for the pilot to justify if the note proves insufficient.)
+
+- README: added a **`docs/plans/`** subsection under Quick start — what lands there, the commit-vs-git-ignore choice with each option's real tradeoff, the by-design fact that plans are unmaintained after ship, and a deliberately restrained note that post-merge value (reviewer context, decision archaeology) is a bonus of committing and an open pilot question, not a promise. Also fixed a duplicate `## Install` heading (the publishing edit had created a second one; retitled to *Install from this repo*).
+
+## 0.8.1 — 2026-07-13
+
+- **`ctdd-change` now always writes the plan to `docs/plans/<ticket>.md`** (not only when it's long). Rationale (maintainer's): the plan is the decision record for a change and deserves to exist as a file regardless of size; a chat window is a poor viewer either way, and always-file gives one predictable location. The trivial-change exception is explicit — a trivial skip produces no plan, so no file. The skill now also surfaces the source-control choice to the user rather than deciding it: `docs/plans/` committed = a PR-linked audit trail; git-ignored = scratch; the plan is unmaintained after ship either way. Supersedes v0.8.0's longer-than-a-screen threshold.
+
+### Folded in from Unreleased (docs, no version of their own)
+- Added `CLAUDE.md` for meta-work on the plugin repo itself (layout, the non-negotiable rules — tests-with-behavior, one spec-surface definition, frozen skill prose, grep-before-edit — versioning/release steps, and the pilot-first standing priority). Guidance for agents editing the plugin; not a runtime artifact.
+- Rewrote `docs/backlog.md` for human readability: every entry now opens with **The problem** and **Why you'd want it** in plain language before the decision mechanics (trigger, cost, why-not-now). Same items and triggers; a reader can now see *why each idea would be good to have*, not only *when it may be built*.
+
+## 0.8.0 — 2026-07-13
+
+First runtime change driven by real use rather than review — the pilot's first finding.
+
+- **`ctdd-change` plan output is now two-layer and file-backed.** Pilot finding #1: on a real load-bearing change (a document-attachment list endpoint authoring SQL views and drawing a schema-ownership line), the plan gate produced exactly the right content but was too dense to review in a terminal. Fixes: (1) step 6 writes any longer-than-a-screen plan to `docs/plans/<ticket>.md` for review in an editor, presenting a pointer + summary in chat instead of pasting the whole plan; (2) the plan format now leads with a **decision summary** in two buckets — *BLOCKING (I will not guess)* and *Proceeding unless you object* — so a reviewer who agrees with the recommendations can approve from the summary alone, with full detail as backup below. The dense plan wasn't the problem; the terminal was the wrong viewer. This also lays the canonical plan path that weakness #8 archiving and the deferred plan-frontmatter idea were both waiting on.
+- Versioning policy change: documentation-only edits no longer bump the version — they collect under **Unreleased** and fold into the next runtime release. The status pin already dates every doc change.
+
+## 0.7.6 — 2026-07-13
+
+Docs only — backlog gains the `/code-review` composition question.
+
+- `docs/backlog.md` Tier 4: filed the relationship between Claude Code's `/code-review` (multi-agent correctness reviewer) and `ctdd-review` (spec reviewer). They check different things — "is the code correct?" vs "do the changed tests/contract encode the right requirement?" — so the plan is to run both and narrow `ctdd-review` to its unique lane if the pilot shows redundant overlap, or keep it broad if it catches a changed-requirement `/code-review` waves through. Trigger: one diff seen by both reviewers. Notes the GitHub-only / Team-plan / ~$15–25-per-PR limits that make the managed product unavailable on self-hosted GitLab, and the independent-pass argument (LLM-as-Judge ~45% error detection; "fresh eyes is just another agent with the same blind spots").
+- No runtime changes; skill prose remains frozen.
+
+## 0.7.5 — 2026-07-13
+
+Docs only — the deferred-ideas backlog, structured to resist premature building.
+
+- New `docs/backlog.md` — a **decision record, not a to-do list**: every deferred idea filed with the specific real-use observation (its *trigger*) that would justify building it, plus honest costs and risks. Tiers: pilot-gated evidence work (Tier 1), the four proposed mechanisms already tagged in the rationale with their triggers (Tier 2), coherent-but-unproven integrations including the SDD-requirements-upstream idea with its hard disposability boundary (Tier 3), tool-absorption items gated on the eval harness (Tier 4), and the recorded rejections table with the condition that would reopen each. Closes with the entry test: an idea that can't name its own disconfirming evidence doesn't belong in the backlog.
+- Rationale governs the backlog's Tier 2/3 by reference (the proposed markers and rejection reasons already live in `ctdd-in-depth.md` and the changelog history); the backlog collects them with triggers so nothing gets lost *and* nothing gets built from an armchair.
+- Linked from the README doc map. No runtime changes; skill prose remains frozen.
+
 ## 0.7.4 — 2026-07-13
 
 Publishing metadata — the plugin becomes installable.

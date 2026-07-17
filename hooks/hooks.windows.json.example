@@ -1,0 +1,37 @@
+# Windows variant of hooks.json.example
+#
+# hooks.json cannot contain comments, so this is a reference copy. On Windows the
+# `python3` launcher often doesn't exist; use `py -3` (the Python launcher, present
+# with any python.org install) or `python`. Copy the JSON below into your hooks.json,
+# adjusting the launcher to whatever resolves on PATH.
+#
+# The scripts are identical across platforms — only the launcher token changes.
+
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3 \"${CLAUDE_PLUGIN_ROOT}/hooks/spec-edit-guard.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3 \"${CLAUDE_PLUGIN_ROOT}/hooks/spec-edit-guard.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
