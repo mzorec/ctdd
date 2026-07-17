@@ -45,6 +45,8 @@ Ask for a backend change in plain language:
 
 ### Where the plan goes: `docs/plans/`
 
+> **Plan mode and the plan file.** On a high-risk change you'll often be in Claude Code's plan mode, which makes the gate mechanical (nothing touches a file until you approve). The plan itself lives in `docs/plans/<name>.md`; plan mode's exit prompt is a *pointer* to that file plus the decision summary, not a second plan. So the two actions mean different things: **approving** the plan-mode gate means "implement from the plan file" — it's the go-signal; **declining** means "the plan's content is wrong, revise it." Declining repeatedly to signal "not yet" keeps the session modal and the agent idle — if the plan is right but you're not ready, that's still an approve-then-review flow, not a decline. (Filenames are `<TICKET>-<slug>` when you have a ticket, else `<date>-<slug>`, kebab-case — so the folder sorts into a readable timeline.)
+
 Whenever `ctdd-change` produces a plan (i.e. any non-trivial change — a trivial skip produces only its one-line declaration and no plan), it writes the plan to `docs/plans/<ticket-or-slug>.md` and gives you a pointer plus a short decision summary in chat. A chat window is a poor viewer for a plan; an editor, with folding and syntax highlighting, is where you actually read and annotate one.
 
 **Whether to commit `docs/plans/` is your call, and the two choices give you different things:**
