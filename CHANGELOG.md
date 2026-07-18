@@ -4,6 +4,15 @@
 
 _Documentation and non-runtime changes land here and fold into the next runtime release. Version numbers move only on runtime changes (skills, scripts, hooks); every doc edit is already dated by the rationale's status pin._
 
+## 0.9.7 — 2026-07-18
+
+Pin evidence becomes an artifact (pilot finding #21 — the filed `--expect-pass` trigger fired on the first behavior-preserving refactor after it was written).
+
+- **`check-redstate.py --expect-pass`** verifies the mirror of red state: named **pin/characterization** tests observed *passing* in a captured run against the current implementation. Diagnostics are pin-specific — a pin that *fails* before the change means the pin is wrong, not the code ("or you will 'preserve' behavior that was never there"), and an unrun pin proves nothing about preservation. Aggregate summary lines are ignored, as in the red-state path.
+- **Step 7 now requires `docs/plans/<name>.pinstate.log`** beside `.redstate.log`. Observed: a real refactor ran the pin-then-convert discipline *correctly* — pins green against the old implementation, converted, same assertions still green — but wrote no evidence file, so the preservation proof lived only in terminal scrollback, even though the plan had demanded capture twice. The discipline held; the evidence evaporated. Between the two logs a change now carries its own proof.
+- **New-type red state in compiled languages.** A test naming a type that does not exist yet does not fail — it does not compile, and an uncompiled test is evidence of nothing. Step 7 now says to write the type as a stub so the test compiles and fails for the right reason, and to say so explicitly if the stub is skipped rather than reporting unobserved red state. v0.9.0 had assumed a dynamic-language failure mode.
+- Backlog: the `--expect-pass` entry is removed — built, on its stated trigger. Suite 83 → 87.
+
 ## 0.9.6 — 2026-07-18
 
 The authority chain is now consistent end to end: the skill writes the canonical plan, the MR points at it, `ctdd-review` reads it, and CI validates *that file* — not a pasted copy.

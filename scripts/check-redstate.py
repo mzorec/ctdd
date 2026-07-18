@@ -37,7 +37,13 @@ will read as not-found — in that case pass the evidence explicitly or say at
 review that capture wasn't possible, rather than letting a silent miss look
 like a pass.
 
-Exit 0 = every named test was observed failing.
+--expect-pass inverts the check for **pin / characterization** tests, whose
+evidence runs the other way: they assert behavior that already exists, so the
+proof is a captured run in which they are GREEN against the old implementation
+(then still green after the change). Capture that to
+docs/plans/<name>.pinstate.log, the counterpart of the .redstate.log.
+
+Exit 0 = every named test was observed failing (or, with --expect-pass, passing).
 Exit 1 = at least one named test was not observed failing (passing, or absent).
 Exit 2 = usage or input error.
 """
@@ -78,6 +84,33 @@ def looks_like_failure(line):
         first_pass = min((low.find(m) for m in PASS_MARKERS if m in low), default=len(low))
         return first_fail < first_pass
     return True
+
+
+def looks_like_pass(line):
+    """True if this line reports the named test passing."""
+    low = line.lower()
+    if SUMMARY_RX.search(low):
+        return False
+    has_pass = any(m in low for m in PASS_MARKERS)
+    if not has_pass:
+        return False
+    has_fail = any(m in low for m in FAIL_MARKERS)
+    if has_fail:
+        first_fail = min((low.find(m) for m in FAIL_MARKERS if m in low), default=len(low))
+        first_pass = min((low.find(m) for m in PASS_MARKERS if m in low), default=len(low))
+        return first_pass < first_fail
+    return True
+
+
+def observed_passing(log, name):
+    """(seen, passed) — the mirror of observed_failing, for pin evidence."""
+    seen = False
+    for line in log.splitlines():
+        if name in line:
+            seen = True
+            if looks_like_pass(line):
+                return True, True
+    return seen, False
 
 
 def observed_failing(log, name):
@@ -141,6 +174,9 @@ def main():
         print(__doc__.strip())
         return 0
 
+    expect_pass = "--expect-pass" in args
+    args = [a for a in args if a != "--expect-pass"]
+
     log_src = args[0]
     names, rest = [], args[1:]
     while rest:
@@ -167,6 +203,29 @@ def main():
     except OSError as exc:
         print(f"check-redstate: cannot read {log_src}: {exc}")
         return 2
+
+    if expect_pass:
+        # Pin / characterization evidence: the named tests assert behavior that
+        # ALREADY exists, so the proof is green-against-the-old-implementation.
+        ok, red, missing = [], [], []
+        for name in names:
+            seen, passed = observed_passing(log, name)
+            (ok if passed else (red if seen else missing)).append(name)
+        if not red and not missing:
+            print(f"check-redstate: all {len(ok)} pin test(s) observed PASSING against the "
+                  f"current implementation — preservation baseline captured. Re-run the same "
+                  f"tests after the change; they must still pass.")
+            return 0
+        print("check-redstate: PIN BASELINE NOT VERIFIED.")
+        if red:
+            print(f"  failed against the current implementation ({len(red)}): {', '.join(red)}")
+            print("    A pin that fails before the change does not describe what the code "
+                  "actually does — the pin is wrong, not the code. Fix the pin first, or you "
+                  "will 'preserve' behavior that was never there.")
+        if missing:
+            print(f"  not found in the log ({len(missing)}): {', '.join(missing)}")
+            print("    An unrun pin proves nothing about preservation.")
+        return 1
 
     failing, passing, absent = [], [], []
     for name in names:

@@ -188,6 +188,42 @@ class CheckRedstateTests(unittest.TestCase):
         finally:
             os.unlink(plan.name); os.unlink(log)
 
+    def test_expect_pass_verifies_a_pin_baseline(self):
+        log = write("  Passed Entity_to_dto_projection_is_unchanged [2 ms]\n"
+                    "Passed!  - Failed:     0, Passed:     2, Total: 2\n")
+        try:
+            r = run(log, "--expect-pass", "--test", "Entity_to_dto_projection_is_unchanged")
+            self.assertEqual(r.returncode, 0, r.stdout)
+            self.assertIn("preservation baseline captured", r.stdout)
+        finally:
+            os.unlink(log)
+
+    def test_expect_pass_flags_a_pin_that_fails_against_current_code(self):
+        log = write("  Failed Entity_to_dto_projection_is_unchanged [2 ms]\n")
+        try:
+            r = run(log, "--expect-pass", "--test", "Entity_to_dto_projection_is_unchanged")
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("the pin is wrong, not the code", r.stdout)
+        finally:
+            os.unlink(log)
+
+    def test_expect_pass_flags_an_unrun_pin(self):
+        log = write("  Passed something_else [1 ms]\n")
+        try:
+            r = run(log, "--expect-pass", "--test", "never_ran_pin")
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("not found in the log", r.stdout)
+        finally:
+            os.unlink(log)
+
+    def test_expect_pass_ignores_aggregate_summary_lines(self):
+        log = write("Passed!  - Failed:     0, Passed:     2, Total: 2\n")
+        try:
+            r = run(log, "--expect-pass", "--test", "Passed")
+            self.assertEqual(r.returncode, 1)
+        finally:
+            os.unlink(log)
+
     def test_help_exits_zero(self):
         r = run("--help")
         self.assertEqual(r.returncode, 0)
