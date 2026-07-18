@@ -159,6 +159,35 @@ class CheckRedstateTests(unittest.TestCase):
         finally:
             os.unlink(plan.name); os.unlink(log)
 
+    def test_tests_from_ignores_preservation_pin_section(self):
+        plan = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8")
+        plan.write("### New-behavior tests — must be observed failing\n"
+                   "- capture_fails_when_amount_is_zero\n\n"
+                   "### Preservation pins — must pass before and after\n"
+                   "- maps_missing_reference_to_null\n")
+        plan.close()
+        log = write(JEST_LOG)   # contains the new-behavior test failing only
+        try:
+            r = run(log, "--tests-from", plan.name)
+            self.assertEqual(r.returncode, 0, r.stdout)
+            self.assertNotIn("maps_missing_reference_to_null", r.stdout)
+        finally:
+            os.unlink(plan.name); os.unlink(log)
+
+    def test_tests_from_ignores_currently_prefixed_pins_anywhere(self):
+        plan = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8")
+        plan.write("Proposed tests:\n"
+                   "- capture_fails_when_amount_is_zero\n"
+                   "- currently_returns_200_for_unknown_id\n")
+        plan.close()
+        log = write(JEST_LOG)
+        try:
+            r = run(log, "--tests-from", plan.name)
+            self.assertEqual(r.returncode, 0, r.stdout)
+            self.assertNotIn("currently_", r.stdout)
+        finally:
+            os.unlink(plan.name); os.unlink(log)
+
     def test_help_exits_zero(self):
         r = run("--help")
         self.assertEqual(r.returncode, 0)

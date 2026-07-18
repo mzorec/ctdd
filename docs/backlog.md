@@ -116,6 +116,28 @@ Each is already written into `ctdd-in-depth.md` tagged *(Proposed — not yet bu
 **Trigger:** eval CI runs (Tier 1) and a pressure case *fails* — a skill that should hold the wall doesn't.
 **Why not now:** cases without a running harness are untested assertions; the technique needs the harness first.
 
+### `check-redstate.py --expect-pass` — the symmetric artifact for pin evidence
+**The problem.** Red state has a deterministic artifact (a captured failing run, verified by `check-redstate.py`). Its counterpart — a **pin/characterization** test proving behavior was preserved — has none: the evidence is "these tests passed against the old implementation and still pass against the new one," which today is a claim in the review narrative, exactly the shape of assertion that finding #18 showed drifts into "the existing tests are the guard."
+**Why you'd want it.** An `--expect-pass` mode would verify the mirror-image condition (named tests observed *passing* in a captured pre-change run), giving preservation claims the same auditable footing as new-behavior claims — and closing the gap where a refactor's safety rests on prose.
+**What:** a mode on the existing script verifying named tests passed in a captured run, plus a paired `.pinstate.log` convention beside the plan.
+**Trigger:** the pin discipline actually drifting — a behavior-preserving refactor where the plan claims pins were run and they weren't, or where the pin tests were written *after* the conversion (which makes them encode the new behavior, not the old). Until that happens, this is symmetry for its own sake: v0.9.2's guardrail is one change old and has not yet been observed failing.
+**Why not now:** building the symmetric artifact before the asymmetry causes a problem is the anticipation the backlog exists to prevent. Also note the honest asymmetry: red state needed enforcement because it drifted four times; pin discipline has drifted zero times.
+**Cost:** small — one flag, one convention, a few test cases.
+
+### Require an exact contract delta in the plan, not a prose description
+**The problem.** The plan gate is called contract-first, but the plan format asks only for "Contract changes, if any" — and the worked example supplies prose ("relax amount rule to `0 < amount <= authorized`"), not a diff. So the human approves *an idea about the boundary*, and the actual OpenAPI/protobuf edit happens after approval. "Amount becomes optional" and `nullable: true` are not the same change; approving the first does not approve the second. This is the contract twin of the wrong-encoding problem the method already understands for tests — approving a test *name* while the wrong assertion hides in the body.
+**Why you'd want it.** It closes the gate's remaining blind spot on the boundary half. Requiring either a fenced delta (`- required: [amount]` / `+ required: []`) or an explicit "None — externally observable boundary unchanged" makes the approved artifact the same artifact that ships. For code-first/runtime-generated contracts (this fleet's case: OpenAPI generated at startup), the equivalent is the exact annotation/signature delta that generates it.
+**Trigger:** an approved prose contract description diverging from the delta actually applied — the pilot's plans so far *did* carry exact DTO records and endpoint declarations, so the failure this prevents has not yet been observed. Also worth watching: a reviewer objecting that they could not tell, from the plan, what the boundary would become.
+**Why not now:** proposed by review, not by use — and the plan format is already the heaviest block in the skill. Adding a mandatory section to close an unobserved gap is the accretion the freeze exists to prevent. If the trigger fires, the fix is one bullet in the format plus a `check-plan.py` presence check.
+**Cost:** one plan-format bullet, one script pattern, two test cases.
+
+### Hold-out waiver schema (approver + reason)
+**The problem.** `declined by human` is a terminal outcome with no recorded owner. v0.9.5 fixed the dangerous half — `failed` now blocks approval and `declined` is named an explicit waiver reported as a deviation — but a waiver still has no *approver* or *reason* field, so "required, unless someone declined it" can quietly become "optional with bookkeeping."
+**Why you'd want it.** A waiver that names who accepted the risk and why is auditable; an anonymous one is a hole with a label on it. In a regulated shop this is the difference between a recorded risk acceptance and an unexplained gap.
+**Trigger:** the first real `declined by human` on a load-bearing change. Zero have occurred — every pilot hold-out has been `required` or `not required`, and the one outstanding is `pending`.
+**Why not now:** designing a waiver form before anyone has waived anything is guessing at the fields. The consequence-clause shipped in v0.9.5 is the part that was actually dangerous.
+**Cost:** two optional fields in the hold-out line, one review check.
+
 ### Description tightening
 **The problem.** The three skill *descriptions* sit in the agent's context every single session (~1k tokens total, always paid). They're near the point where adding words stops sharpening the trigger and starts blurring it — but "near the point" is a guess, because the eval harness that would *measure* trigger accuracy hasn't run. Tightening them blind is as likely to make triggering worse as better.
 **Why you'd want it.** Sharper descriptions mean the skills fire when they should and stay quiet when they shouldn't — less wasted context, fewer false triggers. But only if the tightening is guided by measurement.

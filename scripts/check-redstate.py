@@ -91,19 +91,46 @@ def observed_failing(log, name):
     return seen, False
 
 
+# Headings that introduce tests whose evidence runs the OTHER way: a pin /
+# characterization test asserts behavior that already exists, so it must be
+# observed *passing*, not failing. Feeding one to this checker reports a false
+# finding — so extraction skips these sections entirely.
+PIN_HEADING_RX = re.compile(
+    r"(preservation\s+pins?|pin\s+tests?|characterization\s+tests?"
+    r"|must\s+pass\s+before\s+and\s+after)", re.I)
+# Headings that return extraction to new-behavior tests.
+NEW_HEADING_RX = re.compile(
+    r"(new[-\s]behaviou?r\s+tests?|proposed\s+(new\s+)?tests?"
+    r"|must\s+be\s+(observed\s+)?(red|failing))", re.I)
+HEADING_RX = re.compile(r"^\s*(#{1,6}\s|\*\*|[A-Z][^\n]{0,60}:\s*$)")
+
+
 def names_from_plan(path):
-    """Pull proposed test names out of a plan's bullet lists.
+    """Pull *new-behavior* test names out of a plan's bullet lists.
 
     Heuristic: bullet lines whose content is a single identifier-ish token
     containing an underscore — the naming convention this method asks for
     (`capture_fails_when_amount_exceeds_authorized`). Names with other shapes
     must be passed explicitly with --test.
+
+    Two exclusions keep pin/characterization tests out, because their evidence
+    is green-then-still-green and red-state does not apply to them:
+      1. bullets under a preservation-pin heading are skipped wholesale;
+      2. any name prefixed `currently_` is skipped wherever it appears — that
+         is the marker the method mandates for pinned observations.
     """
     text = open(path, encoding="utf-8").read()
-    found = []
+    found, in_pin = [], False
     for line in text.splitlines():
+        if HEADING_RX.match(line) or PIN_HEADING_RX.search(line):
+            if PIN_HEADING_RX.search(line):
+                in_pin = True
+            elif NEW_HEADING_RX.search(line) or HEADING_RX.match(line):
+                in_pin = False
+        if in_pin:
+            continue
         m = re.match(r"\s*[-*]\s+`?([A-Za-z][\w.]*_[\w.]*)`?\s*(?:—|-|\(|$)", line)
-        if m:
+        if m and not m.group(1).lower().startswith("currently_"):
             found.append(m.group(1))
     return list(dict.fromkeys(found))
 

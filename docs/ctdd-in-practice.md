@@ -86,7 +86,7 @@ It retrieves the contract and the tests around capture — and cites what it rea
 
 ### 2. It stops with a plan before touching any file
 
-This is the first safety pause: you review intent while it is still cheap to correct. You get something like:
+This is the first safety pause: you review intent while it is still cheap to correct. The plan is written to a file (`docs/plans/`) so you read it in your editor, not a chat scroll; what lands in chat is a pointer plus a short decision summary. You get something like:
 
 ```text
 Risk level: normal — single-service, backward-compatible; money path

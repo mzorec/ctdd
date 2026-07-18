@@ -14,7 +14,11 @@ from pathlib import Path
 
 SCRIPT = str(Path(__file__).resolve().parent / "check-plan.py")
 
-FULL_PLAN = """Risk level: normal — money path
+FULL_PLAN = """BLOCKING — I will not guess:
+- auth hold on the released remainder? (recommend: expires with the auth)
+Proceeding unless you object:
+- zero capture rejected
+Risk level: normal — money path
 Existing behavior (openapi.yaml; CaptureTests.cs):
 - x
 Assumptions:
@@ -105,6 +109,78 @@ class CheckPlanTests(unittest.TestCase):
             r = run("Risk: trivial — moving a file. Skipping the plan gate.\n",
                     ["--diff", d])
             self.assertEqual(r.returncode, 1)
+        finally:
+            os.unlink(d)
+
+    def test_missing_decision_summary_buckets_fail(self):
+        plan = FULL_PLAN.replace("BLOCKING — I will not guess:", "Open questions:")
+        plan = plan.replace("Proceeding unless you object:", "Decided:")
+        r = run(plan)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("BLOCKING", r.stdout)
+        self.assertIn("proceeding", r.stdout.lower())
+
+    def test_compressed_bug_fix_adding_a_test_is_reported_as_its_own_lane(self):
+        # The ordinary CTDD bug fix: one-line code fix + a NEW regression test.
+        # It is not the trivial lane, but the message must not claim an
+        # "edit to an existing test" — nothing existing was edited.
+        d = diff_file("A\ttests/Payments/NullGuardTests.cs\nM\tsrc/Payments/Handler.cs\n")
+        try:
+            r = run("Risk: trivial — one-line null guard\n", ["--diff", d])
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("ADDS", r.stdout)
+            self.assertIn("compressed", r.stdout)
+            self.assertNotIn("edit to an existing test", r.stdout)
+        finally:
+            os.unlink(d)
+
+    def test_added_test_plus_contract_change_is_not_the_compressed_lane(self):
+        d = diff_file("A\ttests/PayTests.cs\nM\tpayments/contract/openapi.yaml\n")
+        try:
+            r = run("Risk: trivial — tiny\n", ["--diff", d])
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("edit to an existing test or a contract file", r.stdout)
+        finally:
+            os.unlink(d)
+
+    def test_from_description_validates_the_pointed_at_plan(self):
+        d = tempfile.mkdtemp()
+        plans = Path(d) / "docs" / "plans"; plans.mkdir(parents=True)
+        (plans / "PAY-1-x.md").write_text(FULL_PLAN, encoding="utf-8")
+        cwd = os.getcwd(); os.chdir(d)
+        try:
+            r = run("Implements partial capture.\n\nCTDD-Plan: docs/plans/PAY-1-x.md\n",
+                    ["--from-description"])
+            self.assertEqual(r.returncode, 0, r.stdout)
+            self.assertIn("canonical plan", r.stdout)
+        finally:
+            os.chdir(cwd)
+
+    def test_from_description_missing_file_names_the_gitignore_cause(self):
+        r = run("CTDD-Plan: docs/plans/nope.md\n", ["--from-description"])
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("git-ignored", r.stdout)
+
+    def test_from_description_rejects_traversal(self):
+        r = run("CTDD-Plan: ../../etc/passwd\n", ["--from-description"])
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("traverse", r.stdout)
+
+    def test_from_description_rejects_path_outside_docs_plans(self):
+        r = run("CTDD-Plan: notes/myplan.md\n", ["--from-description"])
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("canonical location", r.stdout)
+
+    def test_from_description_falls_back_with_a_nudge_when_no_pointer(self):
+        r = run(FULL_PLAN, ["--from-description"])
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("no `CTDD-Plan:` pointer", r.stdout)
+
+    def test_from_description_trivial_claim_still_validated_directly(self):
+        d = diff_file("M\tsrc/Handler.cs\n")
+        try:
+            r = run("Risk: trivial — rename a local\n", ["--from-description", "--diff", d])
+            self.assertEqual(r.returncode, 0, r.stdout)
         finally:
             os.unlink(d)
 

@@ -4,12 +4,12 @@ This repo *is* the CTDD Claude Code plugin. This file is for an agent doing meta
 
 ## What this is
 
-A skills-based plugin that brings Contract- and Test-Driven Development to backend work: three skills (`ctdd-change`, `ctdd-tests`, `ctdd-review`), an advisory hook, and five deterministic Python scripts. The skills route and instruct; the scripts are the only mechanical enforcement; CI (a README recipe) is where "when run" becomes "always run." A skill can never *reject* — it can only route. Keep that boundary in mind when someone asks the plugin to "enforce" something.
+A skills-based plugin that brings Contract- and Test-Driven Development to backend work: three skills (`ctdd-change`, `ctdd-tests`, `ctdd-review`), an advisory hook, and four deterministic Python scripts. The skills route and instruct; the scripts are the only mechanical enforcement; CI (a README recipe) is where "when run" becomes "always run." A skill can never *reject* — it can only route. Keep that boundary in mind when someone asks the plugin to "enforce" something.
 
 ## Layout
 
 - `skills/{ctdd-change,ctdd-tests,ctdd-review}/SKILL.md` — the three skills. `ctdd-change` owns the change workflow and the plan gate; `ctdd-tests` owns test craft; `ctdd-review` owns spec-level review.
-- `scripts/` — `check-spec-surface.py` (diff → tests/contracts/ADRs inventory), `check-plan.py` (plan linter + `--diff` trivial-vs-surface cross-check), `gen-authz-matrix.py` (OpenAPI → authz matrix). Each has a `test_*.py` beside it.
+- `scripts/` — `check-spec-surface.py` (diff → tests/contracts/ADRs inventory), `check-plan.py` (plan linter + `--diff` trivial-vs-surface cross-check), `gen-authz-matrix.py` (OpenAPI → authz matrix), `check-redstate.py` (verifies named new tests were observed failing before implementation). Each has a `test_*.py` beside it.
 - `hooks/spec-edit-guard.py` (+ `test_`, `hooks.json.example`) — advisory PreToolUse reminder on spec-surface edits.
 - `evals/*.json` — trigger cases per skill (incl. pressure scenarios).
 - `docs/` — `ctdd-in-practice.md` (first-timers), `ctdd-in-depth.md` (rationale + status pin), `backlog.md` (deferred ideas + triggers).
@@ -17,7 +17,7 @@ A skills-based plugin that brings Contract- and Test-Driven Development to backe
 
 ## Non-negotiable rules for changing this repo
 
-**1. Behavior changes ship with tests in the same commit.** This is a hard-learned rule: a `check-plan.py` regex fix once broke a fixture silently because the change had no test. Any edit to a script's behavior updates or adds cases in its `test_*.py`. Run `python3 -m pytest scripts/ hooks/ -q` — it must stay green (currently **59**: 10 check-plan + 11 check-spec-surface + 12 gen-authz + 26 hook).
+**1. Behavior changes ship with tests in the same commit.** This is a hard-learned rule: a `check-plan.py` regex fix once broke a fixture silently because the change had no test. Any edit to a script's behavior updates or adds cases in its `test_*.py`. Run `python3 -m pytest scripts/ hooks/ -q` — it must stay green (currently **72**: 10 check-plan + 13 check-redstate + 11 check-spec-surface + 12 gen-authz + 26 hook).
 
 **2. One definition of "spec surface."** `check-spec-surface.py` holds the test/contract/ADR patterns. `check-plan.py` and the hook import or mirror that one definition (env overrides included) — never fork a second copy. If you touch the patterns, touch them there.
 

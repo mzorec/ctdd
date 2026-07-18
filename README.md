@@ -148,9 +148,13 @@ ctdd:spec-surface:
     # If you adopted the generated authz matrix: fail when the contract
     # gained an endpoint without matrix rows (regenerate + review as a spec change)
     - python3 scripts/gen-authz-matrix.py openapi/payments.yaml --check tests/authz-matrix.json
-    # The gate: MR description must be a conforming plan, and a 'trivial'
-    # claim is mechanically contradicted if the diff moved spec surface:
-    - echo "$CI_MERGE_REQUEST_DESCRIPTION" | python3 scripts/check-plan.py - --diff surface.txt
+    # The gate: the MR description carries one pointer line —
+    #   CTDD-Plan: docs/plans/PAY-123-partial-capture.md
+    # — and CI resolves and validates THAT file, so CI, the reviewer and the
+    # skill all read the same artifact. A 'trivial' claim is instead declared
+    # visibly in the description and mechanically contradicted if the diff
+    # moved spec surface. (Requires docs/plans/ to be committed — see below.)
+    - echo "$CI_MERGE_REQUEST_DESCRIPTION" | python3 scripts/check-plan.py - --from-description --diff surface.txt
 
 ctdd:hold-out:
   stage: hold-out            # a stage AFTER the normal test stage is green
@@ -164,6 +168,8 @@ ctdd:hold-out:
 ```
 
 Adapt the filter syntax and stage names to your stack; the shape is what matters — surface inventory always printed, plan lint as the failing gate, hold-outs executed from outside the working tree only after green.
+
+> **One consequence of the commit-vs-ignore choice.** `--from-description` resolves the pointer and validates the plan file, which CI can only do if `docs/plans/` is **committed**. If your team git-ignores it, drop the pointer and paste the plan into the MR description — CI then validates that copy, at the cost of the copy being able to drift from the file the reviewer reads. Committing the plans is what keeps one artifact authoritative end to end: the skill writes it, the MR points at it, `ctdd-review` reads it, CI validates it.
 
 ## Co-installing with Superpowers (and similar workflow plugins)
 
@@ -233,7 +239,7 @@ ctdd/
 │   ├── gen-authz-matrix.py            ← identity × operation authz matrix from OpenAPI (--check = CI drift gate)
 │   ├── test_gen_authz_matrix.py       ← the generator's own test suite (12 cases)
 │   ├── check-redstate.py              ← verifies new tests were observed FAILING before implementation
-│   ├── test_check_redstate.py         ← its test suite (11 cases)
+│   ├── test_check_redstate.py         ← its test suite (13 cases)
 │   ├── check-spec-surface.py          ← deterministic diff inventory: tests/contracts/ADRs,
 │   │                                     renames and deletions included (shares hook patterns)
 │   └── test_check_spec_surface.py     ← the classifier's own test suite (11 cases)

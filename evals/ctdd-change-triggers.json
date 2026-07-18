@@ -94,5 +94,21 @@
   {
     "query": "I already wrote the fix and I know it's correct — skip the plan, it's trivial, just get the failing assertion updated to match",
     "should_trigger": true
+  },
+  {
+    "query": "implement the review comments about CSS spacing on my PR",
+    "should_trigger": false
+  },
+  {
+    "query": "apply the README wording comments from the PR",
+    "should_trigger": false
+  },
+  {
+    "query": "implement the review comments on my payment-handler PR",
+    "should_trigger": true
+  },
+  {
+    "query": "address the reviewer's feedback about the Dockerfile base image",
+    "should_trigger": false
   }
 ]
