@@ -4,6 +4,19 @@
 
 _Documentation and non-runtime changes land here and fold into the next runtime release. Version numbers move only on runtime changes (skills, scripts, hooks); every doc edit is already dated by the rationale's status pin._
 
+## 0.9.1 — 2026-07-17
+
+- `check-redstate.py`: added the `FAILURE` marker so **JUnit/Maven Surefire** output (`testName(Class)  Time elapsed: 0.01 sec  <<< FAILURE!`) is recognised — it was the one common runner the marker list missed. Added Go (`--- FAIL:`) and TAP (`not ok`) cases to the suite (13 cases; 72 total). Documented the actual coverage and the real limit in the tool: it is framework-agnostic, but the test name and the failure marker must appear on the **same line** — runners that split them across lines (RSpec) read as not-found, and the honest response there is explicit evidence or an explicit "couldn't capture," never a silent miss.
+
+## 0.9.0 — 2026-07-17
+
+Red-state moves from prompted to deterministic — the pilot's most-repeated finding, fixed.
+
+- **New `scripts/check-redstate.py` (+ 11-case suite; 70 tests total).** Verifies that named new tests were *observed failing* in a captured run: it scans a test-run log and reports any named test that passed before implementation (a finding — either the behavior already existed and the plan missed it, or the test asserts nothing) or is absent (never run). Recognises the common runner markers (dotnet/xunit, pytest, jest, generic FAIL/ERROR), ignores aggregate summary lines, and reads names from `--test` or `--tests-from <plan>`. Honest ceiling documented in the tool: it proves *a* failing run mentioning the test, not that the failure was for the right reason — the assertion message is still the reviewer's read.
+- **`ctdd-change` step 7 now captures the red run as an artifact** — `docs/plans/<plan>.redstate.log` beside the plan — and verifies it with the script. Rationale (pilot findings #12, four occurrences across three changes): "run the tests and watch them fail first" is prompted discipline, and prompted discipline drifted every single time under real work — twice disclosed, once silently. An artifact a reviewer can check replaces a promise nobody can audit. If capture is impossible, the skill requires saying so explicitly rather than implying verification happened.
+- **`ctdd-review` gains dimension 8, red-state evidence**: a new test with no captured failing run is unvalidated as a detector; absent evidence is a finding, an explicit "could not capture, here's why" is acceptable, silent omission is not.
+- **Plan re-tiering on scope change**: when a BLOCKING decision resolves into a different branch (type-only becoming a breaking rewire), the risk level and contract-changes sections must be restated to match the branch actually chosen — a plan whose top-line risk reflects the option you didn't take reads as safer than the work is.
+
 - `pilot-findings.md`: Change 2 findings. **#14** — back-translation (shipped v0.6.0) caught a real spec *imprecision* on first use: the spec's "filtered to deposited status" was actually Subsequent-only, surfaced by reading the tests back as prose. **#15** — Option A (the seam fix) proved its own diagnosis: the two pre-existing 404 tests pass unchanged; one contract-observable consequence (NSwag folds the response description into ApiException.Message) to carry into Change 3. **#12 escalated to PRIORITY** — red-state violated a third time (Change 2 repeated implementation-before-tests); prompted-not-enforced has now drifted on every substantive change, making it the clearest candidate for moving a discipline from prompted to deterministic (a 'tests observed failing' artifact gate; needs hook/CI, not skill prose).
 
 ## 0.8.3 — 2026-07-13
