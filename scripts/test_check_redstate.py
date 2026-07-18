@@ -224,6 +224,75 @@ class CheckRedstateTests(unittest.TestCase):
         finally:
             os.unlink(log)
 
+    def test_prose_mentioning_pins_does_not_swallow_later_names(self):
+        # Regression: PIN_HEADING_RX used to be searched anywhere in a line, so a
+        # prose line flipped the parser into skip mode and silently dropped every
+        # following bullet — while still reporting success for the smaller set.
+        plan = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8")
+        plan.write("### Proposed tests\n\n"
+                   "- capture_fails_when_amount_is_zero\n"
+                   "- We considered characterization tests here but it is already pinned.\n"
+                   "- capture_rejects_negative_amount\n")
+        plan.close()
+        log = write("  Failed capture_fails_when_amount_is_zero [3 ms]\n")
+        try:
+            r = run(log, "--tests-from", plan.name)
+            self.assertEqual(r.returncode, 1, r.stdout)
+            self.assertIn("capture_rejects_negative_amount", r.stdout)
+        finally:
+            os.unlink(plan.name); os.unlink(log)
+
+    def test_bullet_label_still_starts_a_pin_section(self):
+        # The skill's plan format puts the marker in a bullet, not a heading.
+        plan = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8")
+        plan.write("- `New-behavior tests — must be observed failing`\n"
+                   "- capture_fails_when_amount_is_zero\n"
+                   "- `Preservation pins — must pass before and after`\n"
+                   "- maps_missing_reference_to_null\n")
+        plan.close()
+        log = write(JEST_LOG)
+        try:
+            r = run(log, "--tests-from", plan.name)
+            self.assertEqual(r.returncode, 0, r.stdout)
+            self.assertNotIn("maps_missing_reference_to_null", r.stdout)
+        finally:
+            os.unlink(plan.name); os.unlink(log)
+
+    def test_expect_pass_tests_from_reads_the_pin_section(self):
+        plan = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8")
+        plan.write("- `New-behavior tests — must be observed failing`\n"
+                   "- brand_new_behaviour\n"
+                   "- `Preservation pins — must pass before and after`\n"
+                   "- projection_is_unchanged\n")
+        plan.close()
+        log = write("  Passed projection_is_unchanged [1 ms]\n")
+        try:
+            r = run(log, "--expect-pass", "--tests-from", plan.name)
+            self.assertEqual(r.returncode, 0, r.stdout)
+            self.assertIn("projection_is_unchanged", r.stdout)
+            self.assertNotIn("brand_new_behaviour", r.stdout)
+        finally:
+            os.unlink(plan.name); os.unlink(log)
+
+    def test_success_message_names_what_it_checked(self):
+        log = write(DOTNET_LOG)
+        try:
+            r = run(log, "--test", "capture_succeeds_when_amount_is_below_authorized")
+            self.assertEqual(r.returncode, 0)
+            self.assertIn("capture_succeeds_when_amount_is_below_authorized", r.stdout)
+        finally:
+            os.unlink(log)
+
+    def test_mention_without_a_verdict_is_not_reported_as_a_failing_pin(self):
+        log = write("Running projection_is_unchanged now...\n")
+        try:
+            r = run(log, "--expect-pass", "--test", "projection_is_unchanged")
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("without a pass/fail marker", r.stdout)
+            self.assertNotIn("the pin is wrong", r.stdout)
+        finally:
+            os.unlink(log)
+
     def test_help_exits_zero(self):
         r = run("--help")
         self.assertEqual(r.returncode, 0)

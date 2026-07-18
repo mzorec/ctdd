@@ -51,6 +51,18 @@ Exit 2 = usage or input error.
 import re
 import sys
 
+# Logs are UTF-8 (jest/vitest/mocha emit ✕, TAP emits ✗) but Windows consoles
+# default to cp1252: reading a piped log in the locale encoding turns the
+# failure marker into mojibake, so a genuinely failing test reads as "passed
+# before implementation" — and printing this module's own docstring crashes.
+# Both symptoms, one cause.
+for _stream in (sys.stdin, sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
+
 # Markers that indicate the line reports a failure, not a pass.
 FAIL_MARKERS = (
     "failed", "failure", "fail:", "[fail]", "fail ", "✕", "✗", "×",
@@ -135,10 +147,25 @@ PIN_HEADING_RX = re.compile(
 NEW_HEADING_RX = re.compile(
     r"(new[-\s]behaviou?r\s+tests?|proposed\s+(new\s+)?tests?"
     r"|must\s+be\s+(observed\s+)?(red|failing))", re.I)
-HEADING_RX = re.compile(r"^\s*(#{1,6}\s|\*\*|[A-Z][^\n]{0,60}:\s*$)")
+# Strips the markdown that can precede a section label: heading hashes, bullet
+# markers, bold, inline code.
+LABEL_LEAD_RX = re.compile(r"^\s*(?:#{1,6}\s+|[-*]\s+)?[`*_]*")
 
 
-def names_from_plan(path):
+def _section_label(line):
+    """The line's content with leading markdown stripped, or None if it is prose.
+
+    A label is what the line *starts with*, never merely what it contains.
+    Scanning for the phrase anywhere was a fail-silent defect: a prose line
+    mentioning characterization tests flipped the parser into skip mode and
+    every following bullet was dropped from the extraction, while the verdict
+    still reported success for the smaller set it had managed to read.
+    """
+    stripped = LABEL_LEAD_RX.sub("", line).strip()
+    return stripped or None
+
+
+def names_from_plan(path, want_pins=False):
     """Pull *new-behavior* test names out of a plan's bullet lists.
 
     Heuristic: bullet lines whose content is a single identifier-ish token
@@ -155,12 +182,13 @@ def names_from_plan(path):
     text = open(path, encoding="utf-8").read()
     found, in_pin = [], False
     for line in text.splitlines():
-        if HEADING_RX.match(line) or PIN_HEADING_RX.search(line):
-            if PIN_HEADING_RX.search(line):
+        label = _section_label(line)
+        if label:
+            if PIN_HEADING_RX.match(label):
                 in_pin = True
-            elif NEW_HEADING_RX.search(line) or HEADING_RX.match(line):
+            elif NEW_HEADING_RX.match(label) or re.match(r"#{1,6}\s", line.lstrip()):
                 in_pin = False
-        if in_pin:
+        if in_pin is not want_pins:
             continue
         m = re.match(r"\s*[-*]\s+`?([A-Za-z][\w.]*_[\w.]*)`?\s*(?:—|-|\(|$)", line)
         if m and not m.group(1).lower().startswith("currently_"):
@@ -185,7 +213,7 @@ def main():
             names.append(rest.pop(0))
         elif flag == "--tests-from" and rest:
             try:
-                names.extend(names_from_plan(rest.pop(0)))
+                names.extend(names_from_plan(rest.pop(0), want_pins=expect_pass))
             except OSError as exc:
                 print(f"check-redstate: cannot read plan: {exc}")
                 return 2
@@ -207,11 +235,19 @@ def main():
     if expect_pass:
         # Pin / characterization evidence: the named tests assert behavior that
         # ALREADY exists, so the proof is green-against-the-old-implementation.
-        ok, red, missing = [], [], []
+        ok, red, unclear, missing = [], [], [], []
         for name in names:
             seen, passed = observed_passing(log, name)
-            (ok if passed else (red if seen else missing)).append(name)
-        if not red and not missing:
+            if passed:
+                ok.append(name)
+            elif not seen:
+                missing.append(name)
+            elif observed_failing(log, name)[1]:
+                red.append(name)
+            else:
+                unclear.append(name)
+        if not red and not missing and not unclear:
+            print(f"check-redstate: {', '.join(ok)}")
             print(f"check-redstate: all {len(ok)} pin test(s) observed PASSING against the "
                   f"current implementation — preservation baseline captured. Re-run the same "
                   f"tests after the change; they must still pass.")
@@ -222,6 +258,11 @@ def main():
             print("    A pin that fails before the change does not describe what the code "
                   "actually does — the pin is wrong, not the code. Fix the pin first, or you "
                   "will 'preserve' behavior that was never there.")
+        if unclear:
+            print(f"  mentioned without a pass/fail marker ({len(unclear)}): {', '.join(unclear)}")
+            print("    The name appears in the log but no line reports a verdict for it — "
+                  "this is an unreadable run, not a failing pin. Check the runner's output "
+                  "format rather than the test.")
         if missing:
             print(f"  not found in the log ({len(missing)}): {', '.join(missing)}")
             print("    An unrun pin proves nothing about preservation.")
@@ -233,6 +274,7 @@ def main():
         (failing if failed else (passing if seen else absent)).append(name)
 
     if not passing and not absent:
+        print(f"check-redstate: {', '.join(failing)}")
         print(f"check-redstate: all {len(failing)} new test(s) observed failing — "
               f"red state verified. (That they failed for the *right* reason is "
               f"still the reviewer's read.)")
