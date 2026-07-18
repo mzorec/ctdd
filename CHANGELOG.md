@@ -4,6 +4,10 @@
 
 _Documentation and non-runtime changes land here and fold into the next runtime release. Version numbers move only on runtime changes (skills, scripts, hooks); every doc edit is already dated by the rationale's status pin._
 
+## 0.9.2 — 2026-07-18
+
+- **Thin-coverage guardrail now covers preservation claims** (pilot finding #18, predicted then confirmed). It previously fired only when a change proposed *altering* behavior in a thinly-covered area — so a behavior-*preserving* refactor slipped past, which is the more dangerous case because it comes with false confidence. Confirmed on a real plan: a mapping refactor asserted "the existing tests are the preservation guard" while naming no test that asserts the mapping, and deleted the hand-written implementation in the same change. The guardrail now: covers preservation claims explicitly; requires naming *which* tests assert the behavior being preserved ("if you cannot name them, the guard does not exist"); and gives the cheap procedure — write the new tests against the **old** implementation first, watch them pass, then convert, and the same tests must still pass. Same tests, other order, no extra cost. A widening of the existing bullet, not a new instruction.
+
 ## 0.9.1 — 2026-07-17
 
 - `check-redstate.py`: added the `FAILURE` marker so **JUnit/Maven Surefire** output (`testName(Class)  Time elapsed: 0.01 sec  <<< FAILURE!`) is recognised — it was the one common runner the marker list missed. Added Go (`--- FAIL:`) and TAP (`not ok`) cases to the suite (13 cases; 72 total). Documented the actual coverage and the real limit in the tool: it is framework-agnostic, but the test name and the failure marker must appear on the **same line** — runners that split them across lines (RSpec) read as not-found, and the honest response there is explicit evidence or an explicit "couldn't capture," never a silent miss.
