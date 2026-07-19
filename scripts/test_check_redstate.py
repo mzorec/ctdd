@@ -74,9 +74,9 @@ class CheckRedstateTests(unittest.TestCase):
             os.unlink(log)
 
     def test_junit_surefire_failure_marker_is_recognised(self):
-        log = write("taxPayerIsPaged(TaxPayerTest)  Time elapsed: 0.01 sec  <<< FAILURE!\n")
+        log = write("orderIsPaged(OrderTest)  Time elapsed: 0.01 sec  <<< FAILURE!\n")
         try:
-            r = run(log, "--test", "taxPayerIsPaged")
+            r = run(log, "--test", "orderIsPaged")
             self.assertEqual(r.returncode, 0, r.stdout)
         finally:
             os.unlink(log)

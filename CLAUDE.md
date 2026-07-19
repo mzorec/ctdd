@@ -27,7 +27,9 @@ A skills-based plugin that brings Contract- and Test-Driven Development to backe
 
 **5. Grep exact anchors before editing docs.** `docs/ctdd-in-depth.md` is edited between sessions and its wording drifts. Before any `str_replace`, grep the current exact string — do not edit from memory. Verify all anchors across all target files *before* writing any; apply atomically or abort.
 
-**6. Honesty tags are load-bearing.** Unbuilt mechanisms are tagged `(Proposed — not yet built.)`. Rejected ideas are recorded *with their reason* (changelog + `backlog.md` table) so a future round argues with the reasoning instead of re-litigating. Never quietly upgrade a proposal to shipped, or a rejection to open.
+**6. This repo is public — never name a client project in it.** The changelog, `docs/pilot-findings.md`, and every doc are MIT-licensed and headed for GitHub. Findings come from real client work, so anonymise as you write: no employer or client names, no service/solution/database/schema names, no domain nouns that identify a sector, no real class, test, or identifier names, no absolute paths, no commit hashes, and no third-party vendor names that would fingerprint the stack. Describe the *shape* — "a list endpoint", "a hand-written projection replaced by a generated one", "a status-filter rule" — which is what makes a finding portable to another reader anyway. If a lesson cannot survive anonymisation, it is a project note, not a finding, and it does not belong here.
+
+**7. Honesty tags are load-bearing.** Unbuilt mechanisms are tagged `(Proposed — not yet built.)`. Rejected ideas are recorded *with their reason* (changelog + `backlog.md` table) so a future round argues with the reasoning instead of re-litigating. Never quietly upgrade a proposal to shipped, or a rejection to open.
 
 ## Versioning & release
 
