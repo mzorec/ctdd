@@ -1,139 +1,161 @@
 # CTDD — Contract- and Test-Driven Development
 
-A Claude Code plugin for backend API and microservice work. It encodes **Contract- and Test-Driven Development**: the API contract and behavior-level tests come first and *are* the executable spec the agent reads and builds against — the technical prose spec is derived from them, not written up front. Tests own preservation ("don't break what exists"); the business requirement plus a short plan own creation ("what to build").
+A Claude Code plugin for backend work. It keeps an AI coding agent honest about *what a service is supposed to do* by treating your API contract and your behaviour tests as the specification — the thing the agent reads before it writes code, and the thing you review after.
 
-**Scope:** backend services behind an API — more precisely, anywhere correctness can be captured in an executable assertion. Not for visual/UX correctness; testable state logic (reducers, client-side state machines) qualifies wherever it lives.
+The idea in one line: stop maintaining a separate technical spec that quietly goes out of date, and let the contract and the tests be the spec, because they can't lie — they run.
 
-New to the method? [`docs/ctdd-in-practice.md`](docs/ctdd-in-practice.md) is the ten-minute introduction — the concept and what a change feels like in practice. The full argument — where it breaks, how it compares to spec-driven development, and where it sits in the 2025–2026 SDD landscape — lives in [`docs/ctdd-in-depth.md`](docs/ctdd-in-depth.md). This README is the operating manual; *CTDD in practice* is the on-ramp; *CTDD in depth* is the rationale — the why.
+If you want the reasoning behind that before you trust it, read [`docs/ctdd-in-depth.md`](docs/ctdd-in-depth.md). If you just want to feel what a change looks like, read [`docs/ctdd-in-practice.md`](docs/ctdd-in-practice.md). This file is the operating manual: what the plugin does, how to install it, and how to wire it into CI.
 
-## Requirements
+## What using it actually looks like
 
-- Claude Code with plugin support.
-- The three skills need nothing beyond Claude Code. The optional spec-edit hook (off by default — see below) needs `python3` on `PATH`; on native Windows outside WSL, change `python3` to `python` in your copied `hooks/hooks.json`.
-
-## Install
-
-The plugin installs from any marketplace that lists it — a marketplace is just a git repo carrying a `.claude-plugin/marketplace.json`. If this plugin lives in your repo, add a minimal one at the repo root:
-
-```json
-{
-  "name": "my-plugins",
-  "owner": { "name": "Your Team" },
-  "plugins": [
-    { "name": "ctdd", "source": "./ctdd", "description": "Contract- and Test-Driven Development" }
-  ]
-}
-```
-
-Then in Claude Code:
-
-```
-/plugin marketplace add <owner>/<repo>      (or a git URL, or a local path)
-/plugin install ctdd@my-plugins
-/reload-plugins
-```
-
-The three skills load automatically. The spec-edit hook is shipped **off by default** — see "The hook" below to opt in.
-
-## Quick start
-
-Ask for a backend change in plain language:
+You ask for a change in plain language:
 
 > "Add partial capture to the payments service — allow capturing less than the authorized amount."
 
-`ctdd-change` triggers and, **before writing any code**, returns an implementation plan: a risk call, the existing behavior it found (cited to files and test names), its assumptions, the uncovered/ambiguous cases it needs you to resolve, the proposed behavior-level tests (changed existing tests shown old-vs-new assertion), the contract delta (with backward-compatibility flagged), the NFR budgets it could touch, a hold-out decision for load-bearing semantics, and the files it expects to touch. You resolve the ambiguities, approve, and only then does it apply the contract change, write the tests, and implement until both are green — closing by presenting the tests and contract diff as the spec for your review. Works especially well in plan mode (`Shift+Tab` or `/plan`), where the pre-coding gate is enforced by the tool itself.
+Instead of writing code straight away, the agent stops and hands you a plan. The plan leads with the one thing that isn't routine about this change — what surprised it, or what it refuses to guess at — and then lists what it found: the existing behaviour (cited to real files and test names), the tests it intends to write, the contract change with backward-compatibility flagged, and any questions only you can answer. You read it, resolve the questions, and approve.
 
-### Where the plan goes: `docs/plans/`
+Only then does it write the tests, apply the contract change, and implement until both are green. It finishes by showing you the tests and the contract diff and asking you to review *those* as the spec for the change — because under CTDD, that is the spec.
 
-> **Plan mode and the plan file.** On a high-risk change you'll often be in Claude Code's plan mode, which makes the gate mechanical (nothing touches a file until you approve). The plan itself lives in `docs/plans/<name>.md`; plan mode's exit prompt is a *pointer* to that file plus the decision summary, not a second plan. So the two actions mean different things: **approving** the plan-mode gate means "implement from the plan file" — it's the go-signal; **declining** means "the plan's content is wrong, revise it." Declining repeatedly to signal "not yet" keeps the session modal and the agent idle — if the plan is right but you're not ready, that's still an approve-then-review flow, not a decline. (Filenames are `<TICKET>-<slug>` when you have a ticket, else `<date>-<slug>`, kebab-case — so the folder sorts into a readable timeline.)
+That pause before coding is the whole point. A misunderstanding is cheap to fix while it's still a sentence in a plan, and expensive to fix once it's in the code.
 
-Whenever `ctdd-change` produces a plan (i.e. any non-trivial change — a trivial skip produces only its one-line declaration and no plan), it writes the plan to `docs/plans/<ticket-or-slug>.md` and gives you a pointer plus a short decision summary in chat. A chat window is a poor viewer for a plan; an editor, with folding and syntax highlighting, is where you actually read and annotate one.
-
-**Whether to commit `docs/plans/` is your call, and the two choices give you different things:**
-
-- **Committed** — the plan becomes part of the change's history: PR-linked context for reviewers, and a record of *why* a change was made (the decisions, the alternatives, the ambiguities resolved) that outlives the diff. In a regulated shop this is the raw material an audit trail would draw on.
-- **Git-ignored** (add `docs/plans/` to `.gitignore`) — the plan is scratch: useful for *this* review, then discarded. Nothing accumulates.
-
-Either way, one property holds by design: **a plan is not maintained after its change ships.** It is a decision record for one change, not a living document — nothing updates it when the code later evolves, and it is never a second source of truth competing with the tests and contract. (That is the whole point of CTDD: the executable artifacts are the spec; the plan is disposable input to them.)
-
-What a kept plan is genuinely good for *after* merge — reviewer context and decision archaeology ("why did we relax that rule?") — is real but modest, and honestly still being learned: whether teams re-read old plans, and whether a canonical archive of them earns its keep, is one of the open questions the method's own pilot is meant to answer, not a benefit to bank on up front. Treat post-merge value as a bonus of committing, not the reason to.
-
-Bug fixes run the same loop compressed: a failing behavior-level regression test reproduces the bug first, then the fix, and the test stays forever.
-
-On the other side of the merge:
+Reviewing someone else's change works the same way from the other side:
 
 > "Review this PR before I merge it."
 
-`ctdd-review` runs the checklist against the diff — spec first, code second — and returns findings tagged spec-change / needs-tests / needs-adr / boundary-risk / test-quality / risk-misclassified / nit, with an overall verdict.
+The reviewer skill reads the diff spec-first: a changed test is a changed requirement, a contract diff is a boundary change, new behaviour needs a test, and so on. It returns findings with an overall verdict.
+
+## Install
+
+The plugin installs from any marketplace that lists it — a marketplace is just a git repo with a `.claude-plugin/marketplace.json` at its root.
+
+From the published repo:
+
+```
+/plugin marketplace add mzorec/ctdd
+/plugin install ctdd
+/reload-plugins
+```
+
+From a local clone, point the marketplace at the checkout directory instead:
+
+```
+/plugin marketplace add /path/to/ctdd
+/plugin install ctdd
+```
+
+The three skills load automatically and need nothing beyond Claude Code. The optional hook and the CI scripts need Python 3 (see [Requirements](#requirements)).
+
+You can also skip the plugin entirely and copy `skills/*` into a project's `.claude/skills/`, or into `~/.claude/skills/` to have them everywhere.
+
+### Requirements
+
+- Claude Code with plugin support.
+- The three skills need nothing else.
+- The optional spec-edit hook and the CI scripts need a Python 3 launcher on your `PATH`. On Linux that's `python3`; on Windows it's usually `python` or `py`, and you'll need to adjust the commands accordingly. The only third-party dependency is PyYAML, and only for the authz-matrix script.
+
+A word of warning on that last point: if a CTDD script ever seems to do nothing, check that `python3` actually resolves to a working interpreter. On Windows, `python3` sometimes resolves to a Store shortcut that prints a message and exits without running anything — which looks like success and isn't. The skills fall back to following the plan by hand when Python is missing, but the *deterministic* checks only run when a real Python 3 is on the path.
 
 ## The three skills
 
-**`ctdd-change`** — drives a backend change the CTDD way. Reads the existing contract and the relevant slice of tests, drafts the contract change, produces a reviewable pre-coding implementation plan (risk call, NFR budgets, hold-out decision for load-bearing semantics, changed tests shown old-vs-new assertion), gates coding on approval — a trivial skip is itself declared in one visible line you can veto — and closes with a human review of the tests and contract as the spec. Amendments to behavior an existing test asserts are routed as reviewed spec changes, never silent test updates. Prompts for an append-only ADR when a structural decision is involved, and also handles standalone ADR requests ("write an ADR for choosing RabbitMQ"). Ceremony scales to the risk of the change.
+The plugin is three skills that trigger on natural phrasing. You don't invoke them by name; you describe what you want and the right one fires.
 
-**`ctdd-tests`** — writes and reviews tests as the spec. Enforces behavior-level (not implementation-coupled) naming, flags brittle tests that break on refactor, checks contract coverage and test↔contract alignment, distinguishes characterization observations (`currently_*`) from asserted intent, routes any change to an asserted expectation out to `ctdd-change` (test craft never changes requirements), adds property-based tests for invariants (idempotency, ordering, validation, state-machine rules) including the contract-derived authorization matrix, and suggests mutation testing on the critical core.
+**`ctdd-change`** drives a backend change. You say "implement this endpoint" or "add this field," and it reads the existing contract and the relevant tests, then produces the pre-coding plan described above and waits for your approval before writing anything. It scales its ceremony to the risk: a genuinely trivial change gets a one-line declaration you can veto, while a change touching money or auth gets a hold-out decision and an architecture-decision record. Crucially, if a change would alter what an existing test asserts, that's routed to you as a reviewed spec change — never a silent test edit.
 
-**`ctdd-review`** — the reviewer's side. Runs the deterministic spec-surface inventory first when `scripts/check-spec-surface.py` is available, then the PR checklist against a finished diff: changed or deleted tests are changed requirements, contract diffs are boundary changes, new behavior needs a behavior-level test, structural decisions need an ADR, thin-coverage or distributed-systems changes escalate severity, and an implicated-but-unstated NFR budget — or a missing hold-out record on a high-risk diff — is a finding, not a pass.
+**`ctdd-tests`** writes and reviews tests as the spec. It enforces behaviour-level naming (so tests read as requirements, not as descriptions of the current implementation), flags brittle tests that will break on a harmless refactor, and adds property-based tests for the invariants that matter — idempotency, ordering, validation, state-machine rules. It never changes a requirement on its own; anything that would touch an asserted expectation goes back through `ctdd-change`.
 
-`ctdd-change` defers to `ctdd-tests` for the test-writing discipline; `ctdd-review` calls it for the test portion of a diff; `ctdd-tests` also stands alone whenever you just need to write or review tests.
+**`ctdd-review`** is the reviewer's side. Given a finished diff, it runs a checklist spec-first: changed or deleted tests are changed requirements, contract diffs are boundary changes, thin coverage on a risky change escalates the severity, and a missing hold-out record on a high-risk diff is a finding rather than a pass.
 
-Triggering is description-driven: the skills fire on natural phrases ("implement this endpoint", "review these tests", "check this before I merge"). If one doesn't fire when you expect — or fires too eagerly — edit its `description` frontmatter; nothing about the workflow changes. A trigger eval set ships in `evals/` (one file per skill, should/shouldn't-trigger queries), so the `skill-creator` optimizer can tune a description empirically instead of by feel. Nothing runs the eval sets automatically yet — treat them as a release-checklist step.
+They hand off to each other — `ctdd-change` calls `ctdd-tests` for the test-writing, `ctdd-review` calls it for the test portion of a diff — and `ctdd-tests` also stands alone when you just need to write or review tests.
 
-**Enforcement honesty:** almost everything in this plugin is *prompted* — a skill is prose a model follows, not a gate. The deterministic pieces are exactly six: the spec-edit hook (when a team enables it; advisory, not blocking), `scripts/check-plan.py` (when run; an omission detector for the plan that, given `--diff`, also mechanically contradicts a trivial claim when spec surface moved), `scripts/check-spec-surface.py` (when run; a diff-surface inventory that sees the renames, deletions, and Bash-lane edits the hook structurally can't), `scripts/gen-authz-matrix.py` (derives the authorization matrix from the OpenAPI contract; `--check` fails CI when an endpoint ships without its rows), `scripts/check-redstate.py` (verifies from a captured run that new tests were seen failing, or with `--expect-pass` that pins were seen passing), and the test suites that pin the scripts and the hook. The only genuinely *blocking* gate in the whole workflow is Claude Code plan mode, which the plugin recommends but the host provides. One honest asymmetry inside that list: `check-plan.py` and `check-spec-surface.py` appear in the CI recipe below, but `check-redstate.py` does not — a red-state log is a per-change artifact under `docs/plans/`, and CI cannot generically know which one belongs to the diff in front of it. So red state is deterministic *when run* and reviewed at the gate, not enforced by the pipeline the way the surface checks are; `.pinstate.log` inherits the same limit. Closing it properly needs the plan pointer to name its evidence files, which is not built.
-
-> **Running the scripts — portability.** The CI recipe below uses `python3` (correct on Linux runners). On Windows the launcher is usually `python` or `py`; the scripts themselves are plain Python 3 (PyYAML only, for `gen-authz-matrix.py`). If a `ctdd-*` script silently does nothing on a dev machine, check that `python3` resolves — if only `python`/`py` exists, either alias it or adjust the command. The skills degrade safely when Python is absent (they fall back to following the plan format by hand), but the *deterministic* checks only actually run when a Python 3 launcher is on PATH.
+If a skill doesn't fire when you expect, or fires too eagerly, edit the `description` at the top of its `SKILL.md`; nothing about the workflow depends on the wording. The `evals/` folder has trigger test cases per skill so you can tune a description against examples rather than by feel.
 
 ### Who owns which artifact
 
 | Artifact / activity | `ctdd-change` | `ctdd-tests` | `ctdd-review` |
 |---|---|---|---|
-| Design plan (brief why) | ✓ | | |
-| ADR (structural decisions, standalone requests) | ✓ | | checks presence |
-| API contract (OpenAPI / protobuf / AsyncAPI) | ✓ | | checks compatibility |
-| Consumer contract (Pact) | ✓ | | checks presence |
-| Implementation plan (pre-coding gate, risk call) | ✓ | | checks diff against it |
-| Hold-out decision & record (load-bearing changes) | ✓ requires + records | | missing record is a finding |
-| Behavior-level tests | calls → | ✓ owns the *how* | |
-| Characterization tests (`currently_*`) | calls → | ✓ | escalates when missing |
-| Property tests / mutation testing | calls → | ✓ | |
-| NFR budgets & authz matrix (weakness #7) | plan states budgets | proposes the checks | absence is a finding |
-| Reviewing/critiquing existing tests | | ✓ | calls → |
-| Pre-merge review of a whole change | | | ✓ |
+| Design plan (brief why) | writes | | |
+| ADR (structural decisions, standalone requests) | writes | | checks it exists |
+| API contract (OpenAPI / protobuf / AsyncAPI) | writes | | checks compatibility |
+| Consumer contract (Pact) | writes | | checks it exists |
+| Implementation plan (pre-coding gate) | writes | | checks diff against it |
+| Hold-out decision & record | requires + records | | missing record is a finding |
+| Behaviour-level tests | delegates | owns the craft | |
+| Characterization tests (`currently_*`) | delegates | owns | flags when missing |
+| Property tests / mutation testing | delegates | owns | |
+| NFR budgets & authz matrix | plan states them | proposes the checks | absence is a finding |
+| Reviewing existing tests | | owns | delegates |
+| Pre-merge review of a whole change | | | owns |
+
+## Where plans go
+
+When `ctdd-change` produces a plan, it writes it to `docs/plans/<name>.md` and gives you a pointer plus a short summary in chat. It writes to a file on purpose: a chat window is a bad place to read and annotate a plan, and an editor with folding and syntax highlighting is a good one. Filenames are `<TICKET>-<slug>` when you have a ticket and `<date>-<slug>` otherwise, kebab-case, so the folder reads as a timeline.
+
+**Whether you commit `docs/plans/` is your call**, and the two choices give you different things. Committed, each plan becomes part of the change's history — PR-linked context for reviewers, and a record of *why* a change was made that outlives the diff. In a regulated shop that's the raw material an audit trail draws on. Git-ignored, the plan is scratch: useful for this one review, then gone.
+
+Either way, one thing holds by design: **a plan is never maintained after its change ships.** It's a decision record for a single change, not a living document, and nothing updates it when the code later moves on. That's deliberate — the executable artifacts are the spec, and the plan is disposable input to them. It must never become a second source of truth competing with the tests and the contract.
+
+### A note on plan mode
+
+On a high-risk change you'll often be in Claude Code's plan mode, which makes the gate mechanical: nothing touches a file until you approve. The plan still lives in `docs/plans/<name>.md`; plan mode's own prompt is a pointer to that file plus the summary, not a second copy.
+
+The two responses mean different things, and it's worth being clear about them. **Approving** means "the plan is right, implement it" — it's the go signal. **Declining** means "the plan's content is wrong, revise it." If the plan is right but you're simply not ready to start, that's still an approve-then-review flow; declining repeatedly to mean "not yet" just leaves the session stuck and the agent idle.
+
+One catch worth knowing: the plan file has to be written *before* the agent enters plan mode, because plan mode restricts writes to its own scratch file. The skill handles this, but if you ever see a plan land somewhere outside your repo, that's the cause.
+
+## Honest about what's enforced
+
+This matters, so it gets said plainly: almost everything in this plugin is *prompted*, not enforced. A skill is prose a model chooses to follow. It is not a gate, and a model under pressure can drift from it.
+
+Six pieces are actually deterministic:
+
+- **the spec-edit hook** — when a team enables it, and even then it's advisory, not blocking;
+- **`check-plan.py`** — checks a plan for missing sections, and given a diff, mechanically contradicts a "trivial" claim when the diff actually touched tests or contracts;
+- **`check-spec-surface.py`** — lists exactly which tests, contracts, and ADRs a diff touches, including the renames and deletions the hook can't see;
+- **`gen-authz-matrix.py`** — derives an authorization matrix from the OpenAPI contract, and with `--check`, fails CI when a new endpoint ships without its rows;
+- **`check-redstate.py`** — verifies from a captured test run that new tests were seen failing before implementation (or with `--expect-pass`, that preservation tests were seen passing);
+- **the test suites** that pin all of the above.
+
+The only genuinely *blocking* gate in the whole workflow is Claude Code's plan mode, and that's provided by the host, not this plugin.
+
+There's one honest gap in that list. `check-plan.py` and `check-spec-surface.py` run in CI (see the recipe below), but `check-redstate.py` doesn't — a red-state log belongs to one specific change, and CI can't generically know which log goes with the diff in front of it. So red state is deterministic *when you run it* and reviewed at the gate, but it isn't enforced by the pipeline the way the surface checks are. Closing that properly would need the plan to name its own evidence files, which isn't built yet.
 
 ## The hook (optional, off by default)
 
-The plugin ships a `PostToolUse` hook (`hooks/spec-edit-guard.py`) that is **not active on install**. The skills are the product; the hook is an opt-in backstop for teams that want mechanical enforcement, and it stays dormant until a team turns it on. This keeps a company-wide install from ever interrupting a colleague who didn't ask for it.
+The plugin ships a hook (`hooks/spec-edit-guard.py`) that is **not active when you install**. The skills are the product; the hook is an opt-in backstop for teams that want a mechanical reminder that doesn't depend on a skill staying in the model's attention over a long session. It stays dormant until you turn it on, so a company-wide install never interrupts a colleague who didn't ask for it.
 
-What it does when enabled: when an **existing test file is modified** (Edit/MultiEdit) — or is about to be overwritten wholesale via Write, caught by a PreToolUse companion with an existence check — it injects a note that a changed test is a changed spec — say which requirement changed and why; a test weakened to make failing code pass is a spec regression. When **any contract file is touched** (OpenAPI, protobuf, AsyncAPI, Pact), it injects a boundary-change note — state backward compatibility; breaking changes need the consumer contract updated. It's the one enforcement that doesn't depend on a skill staying in Claude's attention over a long session. Creating a *new* test file stays silent by design; only modifying an existing one fires.
+When enabled, it does two things. When an existing test file is modified, it injects a reminder that a changed test is a changed spec — say which requirement changed and why, because a test weakened to make failing code pass is a spec regression. When a contract file is touched, it injects a boundary-change reminder to state backward compatibility. Creating a *new* test file stays silent; only modifying an existing one fires.
 
-**To enable it for your team:** copy the shipped example into the standard location and reload.
+To enable it for your team:
 
 ```
 cp hooks/hooks.json.example hooks/hooks.json
 /reload-plugins
 ```
 
-Because the hook fires on every Edit/Write, consider narrowing it before enabling — e.g. contract files only, which are higher-stakes and edited far less often than tests — by deleting the test branch's patterns via the env override below, or trimming the matcher in your copied `hooks.json`.
-
-Tune detection with semicolon-separated regexes, matched case-insensitively against the forward-slash path (set these in your shell or your team's `settings.json` env block):
+Because it fires on every matching edit, consider narrowing it first — contract files only is a good default, since they're higher-stakes and edited far less often than tests. You tune detection with semicolon-separated regexes, matched case-insensitively against the path:
 
 ```
 CTDD_TEST_PATTERNS="(^|/)quality/;\.robot$"
 CTDD_CONTRACT_PATTERNS="(^|/)api-specs/"
 ```
 
-Three honest limits and one caveat. The PreToolUse overwrite note relies on `additionalContext` support in current Claude Code builds; community docs report it preserved (even when the tool call fails) from around v2.1.110 — on older builds it may be silently dropped, while the Edit/MultiEdit branch is unaffected either way. Edits made through **Bash** (`sed -i`, heredocs, `patch`, `git apply`) never reach tool-matched hooks — the hook prices the Edit/Write lane only; a regex scan of Bash command strings was considered and rejected because it would false-fire on every test *run*. An override **replaces** the defaults, so re-include them if you want both; SOAP shops: `CTDD_CONTRACT_PATTERNS="\.wsdl$;\.xsd$"`. And a plugin **update may replace the plugin directory** — re-check that your copied `hooks/hooks.json` survived after every upgrade (unverified whether updates clobber it; assume they might).
+An override *replaces* the defaults, so include the originals if you want both. SOAP shops will want `CTDD_CONTRACT_PATTERNS="\.wsdl$;\.xsd$"`.
 
-**To turn it back off:** delete `hooks/hooks.json` (the `.example` stays), then `/reload-plugins`.
+Two limits worth knowing. Edits made through Bash (`sed -i`, heredocs, `patch`, `git apply`) never reach the hook — it covers the Edit/Write lane only, deliberately, because scanning Bash command strings would false-fire on every test *run*. And a plugin update may replace the plugin directory, so re-check that your copied `hooks.json` survived after an upgrade.
 
-## Hold-out acceptance tests — sealing is CI's job
+To turn it back off, delete `hooks/hooks.json` (the `.example` stays) and `/reload-plugins`.
 
-For load-bearing changes (money, auth, state machines, boundary semantics) the plan now carries a mandatory **Hold-out** line, and `ctdd-review` treats a missing record on a high-risk diff as a finding. Be clear about the division of labor: the skill can *require the decision and record it* ("required / requested / declined by human"); it **cannot seal anything** — an instruction cannot guarantee the agent never sees a file in its own workspace. Sealing lives in CI: keep the 1–3 human-written acceptance tests in a branch or repo the agent session doesn't read (or inject them in CI), and run them once, after the visible suite is green. A hold-out the agent could read is just another visible test.
+## Hold-out acceptance tests
 
-Use a trait or category — e.g. `[Trait("ctdd", "hold-out")]` or `[Category("HoldOut")]` — **only as the selector CI uses** to pick the sealed set from its separate location. Do **not** turn it into an in-repo convention like `tests/HoldOut/<ticket>/`: a well-known path in the working repo makes hold-outs *more* discoverable to the agent while labeling them sealed — sealing theater, worse than nothing.
+For load-bearing changes — money, auth, state machines, boundary semantics — the plan carries a mandatory **hold-out** decision, and `ctdd-review` treats a missing record on a high-risk diff as a finding.
+
+Be clear about the division of labour here, because it's easy to get wrong. The skill can *require the decision and record it*. It **cannot seal anything** — an instruction can't guarantee the agent never sees a file sitting in its own workspace. Sealing is CI's job: keep the one to three human-written acceptance tests in a branch or repo the agent's session never reads, and run them once, after the visible suite is green. A hold-out the agent could read is just another visible test, and proves nothing about independence.
+
+Use a trait or category — `[Trait("ctdd", "hold-out")]`, `[Category("HoldOut")]` — but *only* as the selector CI uses to pick the sealed set from its separate location. Don't turn it into an in-repo path like `tests/HoldOut/<ticket>/`: a well-known folder in the working repo makes hold-outs *more* discoverable to the agent while labelling them sealed, which is worse than not pretending.
 
 ## CI recipe (GitLab)
 
-The two scripts bind only when run; CI is where "when run" becomes "always." A minimal `.gitlab-ci.yml` fragment for merge-request pipelines:
+The scripts only bind when something runs them; CI is where "when run" becomes "always." A minimal merge-request pipeline:
 
 ```yaml
 ctdd:spec-surface:
@@ -146,14 +168,13 @@ ctdd:spec-surface:
     # Inventory is attention, not error — print it loudly, never fail on it:
     - python3 scripts/check-spec-surface.py surface.txt || echo "SPEC SURFACE TOUCHED — review changed tests as changed requirements"
     # If you adopted the generated authz matrix: fail when the contract
-    # gained an endpoint without matrix rows (regenerate + review as a spec change)
+    # gained an endpoint with no matrix rows (regenerate + review as a spec change):
     - python3 scripts/gen-authz-matrix.py openapi/payments.yaml --check tests/authz-matrix.json
     # The gate: the MR description carries one pointer line —
     #   CTDD-Plan: docs/plans/PAY-123-partial-capture.md
-    # — and CI resolves and validates THAT file, so CI, the reviewer and the
-    # skill all read the same artifact. A 'trivial' claim is instead declared
-    # visibly in the description and mechanically contradicted if the diff
-    # moved spec surface. (Requires docs/plans/ to be committed — see below.)
+    # — and CI resolves and validates THAT file, so CI, the reviewer, and the
+    # skill all read the same plan. A 'trivial' claim is declared visibly in the
+    # description and mechanically contradicted if the diff moved spec surface.
     - echo "$CI_MERGE_REQUEST_DESCRIPTION" | python3 scripts/check-plan.py - --from-description --diff surface.txt
 
 ctdd:hold-out:
@@ -162,22 +183,24 @@ ctdd:hold-out:
     - if: $CI_MERGE_REQUEST_LABELS =~ /load-bearing/
   script:
     # Sealed tests live where the agent's session cannot read them — a
-    # separate repo/branch, cloned only here. The trait is CI's selector:
+    # separate repo or branch, cloned only here. The trait is CI's selector:
     - git clone --depth 1 "$CTDD_HOLDOUT_REPO_URL" holdout
-    - dotnet test holdout --filter "ctdd=hold-out"   # adjust to your runner/trait syntax
+    - dotnet test holdout --filter "ctdd=hold-out"   # adjust to your runner
 ```
 
-Adapt the filter syntax and stage names to your stack; the shape is what matters — surface inventory always printed, plan lint as the failing gate, hold-outs executed from outside the working tree only after green.
+Adapt the filter syntax and stage names to your stack. The shape is what matters: the surface inventory is always printed, the plan lint is the failing gate, and hold-outs run from outside the working tree only after the visible suite is green.
 
-> **One consequence of the commit-vs-ignore choice.** `--from-description` resolves the pointer and validates the plan file, which CI can only do if `docs/plans/` is **committed**. If your team git-ignores it, drop the pointer and paste the plan into the MR description — CI then validates that copy, at the cost of the copy being able to drift from the file the reviewer reads. Committing the plans is what keeps one artifact authoritative end to end: the skill writes it, the MR points at it, `ctdd-review` reads it, CI validates it.
+The `--from-description` mode resolves the `CTDD-Plan:` pointer and validates the plan file, which CI can only do if `docs/plans/` is committed. If your team git-ignores plans instead, drop the pointer and paste the plan into the MR description — CI then validates that copy, at the cost of the copy being able to drift from what the reviewer reads. Committing the plans is what keeps one artifact authoritative from the skill that writes it, through the MR that points at it, to the review and CI that read it.
 
-## Co-installing with Superpowers (and similar workflow plugins)
+## Co-installing with Superpowers
 
-Superpowers and CTDD make the same bet — discipline as plain text — at different altitudes: Superpowers governs the *loop* (brainstorm, task plans, red/green, subagent dispatch); CTDD governs the *spec* (what tests mean, who may change them, where the contract and hold-outs sit). They compose, with one collision: both claim workflow entry for "build/change something," and Superpowers' session-start bootstrap tends to win by first-mover — you'd get its task-list plan (written to specify *execution* for a context-free subagent) instead of the CTDD plan (written to specify *intent* for a human approver). `check-plan.py` will correctly fail the former; that's a format mismatch, not a defect in either plugin. The fix is one adjudication note in the project's `CLAUDE.md`:
+Superpowers and CTDD make the same bet — discipline as plain text — at different altitudes. Superpowers governs the *loop* (brainstorming, task plans, red/green, subagent dispatch); CTDD governs the *spec* (what tests mean, who may change them, where the contract and hold-outs sit). They compose well, with one collision: both want to own the plan for "build something," and Superpowers' session-start bootstrap tends to win by going first — so you'd get its execution-focused task-list plan instead of the CTDD intent-for-a-human plan, and `check-plan.py` will correctly reject the former as the wrong format.
+
+The fix is one adjudication note in the project's `CLAUDE.md`:
 
 ```markdown
 ## CTDD owns backend-change planning
-For any change to a backend service's behavior, contract, or tests, the
+For any change to a backend service's behaviour, contract, or tests, the
 ctdd-change skill owns the plan gate and its plan format. Superpowers'
 brainstorming applies upstream, when intent is genuinely fuzzy (greenfield
 ideation feeding the business spec). Its execution-level skills (worktrees,
@@ -185,38 +208,20 @@ systematic-debugging, subagent dispatch) apply inside ctdd-change's
 implementation step. Never substitute a task-list plan for the CTDD plan.
 ```
 
-Superpowers' utility skills coexist freely — nothing in CTDD conflicts with worktrees, debugging discipline, or fresh-context subagents, and they serve the implementation step well.
-
-## Install from this repo
-
-If you're installing the published plugin directly:
-
-```
-/plugin marketplace add mzorec/ctdd
-/plugin install ctdd
-```
-
-From a local clone (e.g. while developing the plugin), point the marketplace at the checkout directory instead:
-
-```
-/plugin marketplace add /path/to/ctdd
-/plugin install ctdd
-```
-
-The skills also work standalone without the plugin: copy `skills/*` into `.claude/skills/` in a project, or `~/.claude/skills/` for every project. The scripts are plain Python 3 with no dependencies beyond PyYAML (`gen-authz-matrix.py` only) — on Windows, invoke them with `python` or `py` where the docs say `python3`.
+Everything else in Superpowers coexists freely — worktrees, debugging discipline, and fresh-context subagents all serve the implementation step well.
 
 ## Adopting CTDD from zero
 
-The rationale is honest that the marginal cost is low only if the artifacts already exist. If they don't, adopt in this order — each rung pays for itself before the next:
+The method is cheap only if the artifacts already exist. If they don't, adopt in this order — each rung pays for itself before the next:
 
-1. **Behavior-level test naming** — costs nothing but discipline; makes the suite readable as a spec at all.
-2. **Contract validation in CI** — request/response validation against the OpenAPI/protobuf definition; the contract stops being prose in YAML.
-3. **Enable the spec-edit hook, contract-only at minimum** — the method's one mechanical reminder; copy `hooks.json.example` into place, and if test-edit reminders feel noisy, override `CTDD_TEST_PATTERNS` down and keep the contract branch.
-4. **Consumer-driven contracts (Pact)** — the moment a second service depends on the first; cross-service drift protection nothing else provides.
-5. **Property-based tests** — where real invariants live: money, quotas, idempotency, ordering, state machines.
-6. **Mutation testing** — critical core only; proves the tests protect the rules they cover.
+1. **Behaviour-level test naming.** Costs nothing but discipline, and it's what makes the suite readable as a spec at all.
+2. **Contract validation in CI.** Validate requests and responses against the OpenAPI or protobuf definition, so the contract stops being prose in a YAML file.
+3. **The spec-edit hook, contract-only at minimum.** The one mechanical reminder; enable it and, if test-edit reminders feel noisy, turn `CTDD_TEST_PATTERNS` down and keep the contract branch.
+4. **Consumer-driven contracts (Pact).** The moment a second service depends on the first — cross-service drift protection nothing else gives you.
+5. **Property-based tests.** Where the real invariants live: money, quotas, idempotency, ordering, state machines.
+6. **Mutation testing.** Critical core only, to prove the tests actually protect the rules they cover.
 
-Stop climbing when the remaining rungs cost more than the failures they'd prevent — a CRUD service with one consumer may never need rung 6.
+Stop climbing when the next rung costs more than the failures it would prevent. A CRUD service with one consumer may never need rung 6.
 
 ## Repository layout
 
@@ -226,24 +231,20 @@ ctdd/
 ├── README.md                          ← you are here
 ├── CHANGELOG.md
 ├── docs/
-│   ├── ctdd-in-practice.md            ← ten-minute introduction for first-timers
-│   └── ctdd-in-depth.md               ← the rationale: full argument, weaknesses, prior art
-│   └── backlog.md                     ← decision record: deferred ideas + their triggers
+│   ├── ctdd-in-practice.md            ← the ten-minute introduction
+│   ├── ctdd-in-depth.md               ← the full argument: reasoning, weaknesses, prior art
+│   └── backlog.md                     ← deferred ideas and the triggers that would justify building them
 ├── hooks/
 │   ├── hooks.json.example             ← copy to hooks.json to enable (off by default)
-│   ├── spec-edit-guard.py             ← the spec-edit reminder (PostToolUse + PreToolUse)
-│   └── test_spec_edit_guard.py        ← the hook's own test suite (26 cases)
+│   ├── spec-edit-guard.py             ← the spec-edit reminder
+│   └── test_spec_edit_guard.py        ← its test suite
 ├── scripts/
 │   ├── check-plan.py                  ← lints a plan; --diff cross-checks trivial claims
-│   ├── test_check_plan.py             ← the linter's own test suite (10 cases)
-│   ├── gen-authz-matrix.py            ← identity × operation authz matrix from OpenAPI (--check = CI drift gate)
-│   ├── test_gen_authz_matrix.py       ← the generator's own test suite (12 cases)
-│   ├── check-redstate.py              ← verifies new tests were observed FAILING before implementation
-│   ├── test_check_redstate.py         ← its test suite (13 cases)
-│   ├── check-spec-surface.py          ← deterministic diff inventory: tests/contracts/ADRs,
-│   │                                     renames and deletions included (shares hook patterns)
-│   └── test_check_spec_surface.py     ← the classifier's own test suite (11 cases)
-├── evals/                             ← trigger eval sets, one per skill
+│   ├── check-spec-surface.py          ← lists which tests/contracts/ADRs a diff touches
+│   ├── gen-authz-matrix.py            ← authz matrix from OpenAPI (--check is a CI drift gate)
+│   ├── check-redstate.py              ← verifies new tests were seen failing before implementation
+│   └── test_*.py                      ← each script's own test suite
+├── evals/                             ← trigger test cases, one file per skill
 └── skills/
     ├── ctdd-change/
     │   ├── SKILL.md                   ← the change workflow
@@ -252,6 +253,6 @@ ctdd/
     └── ctdd-review/SKILL.md           ← the pre-merge review
 ```
 
-## Not included (by design)
+## What's deliberately not here
 
-The customer's business spec (external — the source of intent this plugin consumes, not produces) and any long-lived technical prose spec (CTDD replaces it with contracts, tests, ADRs, and short disposable plans). The design plan is *not* missing — it's a step inside `ctdd-change`, deliberately too lightweight to be its own skill.
+Two things are missing on purpose. The customer's **business spec** is external — it's the source of intent this plugin consumes, not something it produces. And there's no long-lived **technical prose spec**, because replacing it with contracts, tests, ADRs, and short disposable plans is the entire idea. (The design plan isn't missing — it's a step inside `ctdd-change`, just too lightweight to be its own skill.)
