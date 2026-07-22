@@ -1,4 +1,4 @@
-# CTDD — a first-timer's guide
+# CTDD: a first-timer's guide
 
 Contract- and Test-Driven Development for backend services, in about ten minutes.
 
@@ -20,7 +20,7 @@ So the maintained technical spec is a document that starts incomplete and then r
 
 For a service behind an API, two artifacts already describe what it does, and they can't quietly lie, because they execute. The API contract (OpenAPI, protobuf, AsyncAPI) fixes the shape at the boundary. Behaviour-level tests fix the behaviour. CTDD treats those two as the spec. The agent reads them and builds against them, and when a human needs a prose summary, the agent generates one on demand. The spec becomes an output, not an input. The customer's business spec stays as the source of intent, and a short, disposable plan carries the "why" of each change before it's built.
 
-One naming note, because it heads off a real confusion. Read it as **contract-and-test-driven** — driven by both artifacts together. It is not "contract-test-driven": contract testing (Pact and similar) verifies the shape of the boundary and is one ingredient here, but the behaviour tests carry the meaning, which no schema can generate.
+One naming note, because it heads off a real confusion. Read it as **contract-and-test-driven**, driven by both artifacts together. It is not "contract-test-driven": contract testing (Pact and similar) verifies the shape of the boundary and is one ingredient here, but the behaviour tests carry the meaning, which no schema can generate.
 
 In practice, you stop one thing, keep two, and start one:
 
@@ -66,7 +66,7 @@ The move that makes this practical: humans don't read the whole test suite. The 
 
 Say you ask:
 
-> Add partial capture to the payments service — allow capturing less than the authorized amount.
+> Add partial capture to the payments service, allow capturing less than the authorized amount.
 
 **First, the agent reads before it designs.** It retrieves the contract and the tests around capture, and it cites what it read, so if it only looked at half of what mattered, you can see that. Nothing gets drafted against a boundary nobody has looked at.
 
@@ -177,7 +177,7 @@ Be wary of mock-heavy tests for the same reason. A test that mostly verifies whi
 
 The real scope line is **assertable correctness**: use CTDD wherever "correct" can be captured in an executable assertion.
 
-Backend APIs and microservices are the home case — request in, response out; given some state, an operation produces new state. Don't stretch CTDD over visual or UX correctness, where a test structurally can't assert "this looks right." A frontend's testable state layer (reducers, routing logic, client-side state machines) can qualify, but the visual layer usually can't.
+Backend APIs and microservices are the home case, request in, response out; given some state, an operation produces new state. Don't stretch CTDD over visual or UX correctness, where a test structurally can't assert "this looks right." A frontend's testable state layer (reducers, routing logic, client-side state machines) can qualify, but the visual layer usually can't.
 
 And the floor, stated plainly because it's the single most decision-useful sentence here: **CTDD assumes an existing testing culture; it does not create one.**
 
@@ -211,7 +211,7 @@ The two weaknesses you'll hit most in day-to-day work are **changed tests**, bec
 
 **Isn't this just TDD with extra steps?**
 
-It's TDD taken seriously, plus three things classic TDD usually lacked: the API contract as a machine-readable boundary spec, an agent as the designated reader of the relevant suite, and ADRs so structure doesn't get accidentally "improved" away. The fairest description is the floor promoted to a method, assembled from parts with twenty years of evidence behind them — which is more than most 2026 spec-driven tooling can claim.
+It's TDD taken seriously, plus three things classic TDD usually lacked: the API contract as a machine-readable boundary spec, an agent as the designated reader of the relevant suite, and ADRs so structure doesn't get accidentally "improved" away. The fairest description is the floor promoted to a method, assembled from parts with twenty years of evidence behind them, which is more than most 2026 spec-driven tooling can claim.
 
 **If tests are the spec, where does a new feature's spec come from?**
 
@@ -241,4 +241,4 @@ Default to CTDD for services behind an API, on a team that already has behaviour
 
 ## Read deeper later
 
-When you want the full argument — the eight weaknesses, the comparison against Spec Kit, Kiro, and Tessl, and what evidence would show the method is failing — read `ctdd-in-depth.md`. It's long because it defends the method under hostile review. This guide is short so you can try it on one real change.
+When you want the full argument (the eight weaknesses, the comparison against Spec Kit, Kiro, and Tessl, and what evidence would show the method is failing) read `ctdd-in-depth.md`. It's long because it defends the method under hostile review. This guide is short so you can try it on one real change.

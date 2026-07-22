@@ -10,6 +10,21 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.11.3 — 2026-07-21
+
+### Changed
+- **Spelled out that "copy the plan verbatim" and "keep the summary short" are not in conflict.** The previous release could be misread as "paste the whole plan into the terminal," which would undo the change that made summaries readable in the first place. The plan file already opens with the thirty-second decision summary, so copying *that section* verbatim plus the file path gives the human the same brief read they would have got, in the same words the file holds. Brevity was never the problem; re-wording was.
+
+## 0.11.2 — 2026-07-21
+
+### Fixed
+- **The plan shown in the terminal must be copied from the plan file, not summarized.** The rule already said the presentation is "that file's own content," but nothing forced a verbatim copy, so the agent wrote a fresh condensation instead: ~160 lines with evidence, assumptions, tests, and sequencing on disk, versus a short rewrite on screen that shared none of that structure. Two documents, immediately disagreeing, and no way for the reviewer to tell which one they approved. Now: read the file and paste it in. If it is too long, paste the decision summary section verbatim plus the file path and say the rest is in the file — a truthful excerpt, never a re-write.
+
+## 0.11.1 — 2026-07-21
+
+### Fixed
+- **New facts learned during the plan gate now go into the plan file, not just the presentation.** The plan file is written before plan mode, but plan mode blocks repo writes, so anything the agent learns *while the gate is open* had nowhere to go and accumulated in the harness's throwaway file instead. The result: the document you review is stale on the newest thing the agent knows, and the presentation quietly becomes a second, competing plan. The agent must now say what it learned, say the plan needs it, and ask to leave plan mode long enough to write it, then re-present. It may never close the gate with the file and the presentation disagreeing.
+
 ## 0.11.0 — 2026-07-19
 
 ### Added
