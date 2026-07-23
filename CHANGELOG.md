@@ -10,6 +10,26 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.13.0 — 2026-07-21
+
+Fourteen defects from an outside review, reproduced before adopting.
+
+### Fixed
+- **`--tests-from` silently skipped test names without an underscore.** A plain PascalCase name (the dotnet default) was dropped by the extraction regex, and the checker then reported success for the subset it could read. Three planned tests, one in the log, exit 0 and "red state verified." Any identifier now matches.
+- **Extraction pulled names from the wrong sections.** It read identifier-shaped bullets from every non-pin section, including the "existing behavior" citations the plan format requires, so a fully compliant plan produced false blockers. It now collects only inside the section it is asked for.
+- **Pin verification could never run.** In `--expect-pass` mode the script filtered out `currently_*` names, which is exactly the prefix pins are supposed to carry, so it found nothing and exited on a usage error. That filter now applies outside pin mode only.
+- **A log in an unexpected encoding crashed instead of returning a verdict.** UTF-16 (PowerShell) or a stray cp1252 byte produced a stack trace, in a workflow whose rule is "the evidence is the verdict line." Both file reads now sniff the BOM and replace bad bytes, so a bad log fails closed with a verdict.
+- **The plan linter rejected the skill's own heading.** A behaviour-preserving refactor listing only preservation pins failed the proposed-tests check.
+- **The trivial lane could not pass its own CI recipe** — the risk line was specified as terminal output while CI reads the description. It now goes in the description, and "trivial" is gone from the plan's risk-level options, since a trivial change produces no plan.
+- **The local surface check was blind to new files.** `git diff` shows nothing for an untracked file, so a bug fix whose only spec artifact is a new regression test read as touching no surface. Fixed with a read-only listing of untracked files beside the diff, rather than staging intent-to-add entries — a verification step must not alter the index.
+- **A drafted ADR was never written to disk.** Step 4 drafted it into the plan and no later step wrote the file, so a structural change could ship without one.
+- **The plan pointer could resolve to nothing** where `docs/plans/` is git-ignored, which the README explicitly allows — a guaranteed red gate. The disposition is now stated conditionally.
+- Cross-skill contradictions: pins were told both to avoid and to use the red-state checker (it is the same script, `--expect-pass` mode); hold-out vocabulary differed between the author and reviewer skills; the design brief had two conflicting homes and no slot in the plan format; and the condensed example omitted the lead summary and categorical line the format mandates.
+- The "failed hold-out blocks approval" wording implied mechanical enforcement that nothing performs; it now says plainly that it is a review gate.
+
+### Added
+- Six regression tests, including the PascalCase case. Suite 92 → 98.
+
 ## 0.12.2 — 2026-07-21
 
 ### Added

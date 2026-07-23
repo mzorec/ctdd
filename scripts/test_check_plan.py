@@ -112,6 +112,17 @@ class CheckPlanTests(unittest.TestCase):
         finally:
             os.unlink(d)
 
+    def test_pins_only_plan_satisfies_the_test_section(self):
+        # A behavior-preserving refactor's plan lists preservation pins instead
+        # of "Proposed tests" — the heading vocabulary the skill itself mandates.
+        # It must satisfy the required test-section check, not be rejected.
+        plan = FULL_PLAN.replace("Proposed tests:\n- t\n",
+                                 "Preservation pins — must pass before and after:\n"
+                                 "- currently_maps_entity_to_dto\n")
+        r = run(plan)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("all mandatory sections present", r.stdout)
+
     def test_missing_decision_summary_buckets_fail(self):
         plan = FULL_PLAN.replace("BLOCKING — I will not guess:", "Open questions:")
         plan = plan.replace("Proceeding unless you object:", "Decided:")

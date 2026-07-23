@@ -52,7 +52,8 @@ REQUIRED = [
     ("existing behavior",     r"existing\s+behavior"),
     ("assumptions",           r"assumptions?"),
     ("uncovered/ambiguous",   r"(uncovered|ambiguous)"),
-    ("proposed tests",        r"(proposed|new).{0,20}tests?"),
+    ("proposed tests",        r"(proposed|new).{0,20}tests?|preservation\s+pins?"
+                              r"|pin\s+tests?|characterization\s+tests?"),
     ("contract changes",      r"contract\s+changes?"),
     ("NFR budgets",           r"(nfr|budget)"),
     ("hold-out decision",     r"hold.?out"),

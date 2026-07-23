@@ -41,9 +41,19 @@ def write(text):
     return f.name
 
 
+def write_bytes(data):
+    f = tempfile.NamedTemporaryFile("wb", suffix=".log", delete=False)
+    f.write(data); f.close()
+    return f.name
+
+
 def run(*args, stdin=None):
+    # Pin the child's stdio to UTF-8: the logs carry ✕/✓/✗ markers, and a
+    # Windows shell's cp1252 default would fail to encode them into stdin (and
+    # decode them from stdout), which is a harness artifact, not a script fact.
     return subprocess.run([sys.executable, SCRIPT, *args],
-                          input=stdin, capture_output=True, text=True, timeout=20)
+                          input=stdin, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", timeout=20)
 
 
 class CheckRedstateTests(unittest.TestCase):
@@ -290,6 +300,77 @@ class CheckRedstateTests(unittest.TestCase):
             self.assertEqual(r.returncode, 1)
             self.assertIn("without a pass/fail marker", r.stdout)
             self.assertNotIn("the pin is wrong", r.stdout)
+        finally:
+            os.unlink(log)
+
+    def test_existing_behavior_citations_are_not_extracted(self):
+        # The plan format cites existing test names under "Existing behavior".
+        # Pulling those into the red-state set produced a false "passed before
+        # implementation" / "not found" verdict on a fully compliant plan.
+        plan = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8")
+        plan.write("Existing behavior (openapi.yaml):\n"
+                   "- capture_requires_exact_amount — asserts amount == authorized\n\n"
+                   "Proposed tests:\n"
+                   "- capture_fails_when_amount_is_zero\n")
+        plan.close()
+        log = write("  Failed capture_fails_when_amount_is_zero [3 ms]\n")
+        try:
+            r = run(log, "--tests-from", plan.name)
+            self.assertEqual(r.returncode, 0, r.stdout)
+            self.assertNotIn("capture_requires_exact_amount", r.stdout)
+        finally:
+            os.unlink(plan.name); os.unlink(log)
+
+    def test_pascalcase_new_test_is_not_silently_dropped(self):
+        # A PascalCase name (dotnet/xunit style) must be extracted, not skipped
+        # for lacking an underscore — a skipped name let a subset verdict read
+        # as a whole-plan "red state verified".
+        plan = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8")
+        plan.write("Proposed tests:\n"
+                   "- ReportsTotalCountAcrossAllPages\n"
+                   "- capture_fails_when_amount_is_zero\n")
+        plan.close()
+        log = write("  Failed capture_fails_when_amount_is_zero [3 ms]\n")
+        try:
+            r = run(log, "--tests-from", plan.name)
+            self.assertEqual(r.returncode, 1, r.stdout)   # PascalCase name absent from log
+            self.assertIn("ReportsTotalCountAcrossAllPages", r.stdout)
+        finally:
+            os.unlink(plan.name); os.unlink(log)
+
+    def test_expect_pass_tests_from_reads_currently_prefixed_pins(self):
+        # currently_* is the mandated pin naming; under --expect-pass it must be
+        # extracted, not filtered out (which left nothing to verify — exit 2).
+        plan = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8")
+        plan.write("- `Preservation pins — must pass before and after`\n"
+                   "- currently_returns_200_for_unknown_id\n")
+        plan.close()
+        log = write("  Passed currently_returns_200_for_unknown_id [1 ms]\n")
+        try:
+            r = run(log, "--expect-pass", "--tests-from", plan.name)
+            self.assertEqual(r.returncode, 0, r.stdout)
+            self.assertIn("currently_returns_200_for_unknown_id", r.stdout)
+        finally:
+            os.unlink(plan.name); os.unlink(log)
+
+    def test_utf16_log_file_is_read_not_crashed(self):
+        # PowerShell 5.1 `>` writes UTF-16; the mandated capture-to-file path
+        # must decode it to a verdict, not die with a UnicodeDecodeError.
+        log = write_bytes("  Failed capture_fails_when_amount_is_zero [3 ms]\n".encode("utf-16"))
+        try:
+            r = run(log, "--test", "capture_fails_when_amount_is_zero")
+            self.assertEqual(r.returncode, 0, r.stdout)
+            self.assertIn("red state verified", r.stdout)
+        finally:
+            os.unlink(log)
+
+    def test_cp1252_byte_in_log_does_not_crash(self):
+        # A stray cp1252 byte (0x96) in an otherwise-UTF-8 log must fail closed
+        # with a verdict via errors="replace", not a traceback.
+        log = write_bytes(b"  Failed capture_fails_when_amount_is_zero \x96 [3 ms]\n")
+        try:
+            r = run(log, "--test", "capture_fails_when_amount_is_zero")
+            self.assertEqual(r.returncode, 0, r.stdout)
         finally:
             os.unlink(log)
 

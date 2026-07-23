@@ -183,6 +183,24 @@ Each is already written into `ctdd-in-depth.md` tagged *(Proposed — not yet bu
 **Trigger:** evidence that size is actually degrading rule-following — most directly, the pressure eval cases showing worse compliance at current size than at a reduced one. Absent that, this is restructuring on a hunch, and the skill measures the same as the largest skill in the most-referenced peer plugin, so "it feels big" is not evidence.
 **Cost:** ~2h, plus a re-run of the trigger evals to confirm the on-demand blocks still get pulled when they should.
 
+### Stop parsing test names out of prose: have the plan emit a machine-readable list
+**The problem.** `--tests-from` extraction has now had **three separate fail-silent defects**, all in the same function, all found by outside readers rather than by use: a prose line mentioning characterization tests swallowed every name after it; names without an underscore (plain PascalCase, the dotnet default) were skipped entirely; and identifier-shaped bullets were pulled from *every* non-pin section, so the plan format's own mandated "existing behavior" citations were treated as new tests. Each fix was correct. The pattern is the finding: a regex reading identifiers out of hand-written markdown has an unbounded surface, because the prose it reads is free-form by design, and every failure mode is silent by default — the checker verifies the subset it managed to parse and reports success for it.
+**Why you'd want it fixed properly.** This is the gate that answers the pilot's own most-repeated weakness (prompted discipline drifts). A gate whose parser can silently under-read is a gate you have to hand-verify, which is what it exists to replace.
+**What:** have the plan carry the test names in a form that cannot be mis-parsed — a fenced block with one name per line under a fixed marker, or a small JSON/YAML frontmatter block the skill writes and the script reads. Prose stays for humans; the machine reads the machine block. The script then fails loudly when the block is missing rather than guessing from bullets.
+**Trigger:** available now — three defects is a pattern, not a coincidence. The reason to file rather than build tonight is that it changes the plan *format*, which touches `ctdd-change`, `check-plan.py`, `check-redstate.py`, and every example, and a format change made at the end of a long session is how you get a fourth defect.
+**Watch for:** the honest counter-argument is that a machine block is a second place test names live, so plan prose and the block can disagree. Mitigation is that the block is the only thing the script reads, and review reads both.
+**Cost:** ~3h across the skill, both scripts, and the examples.
+
+### Redesign the hold-out so it actually gets written (0% execution rate over the whole pilot)
+**The problem.** Finding #30: the hold-out was declared required on four to five load-bearing changes and executed zero times, by the method's author, after repeated prompts. It is the primary mitigation for the central weakness, so a 0% rate makes that weakness effectively unmitigated in practice.
+**The likely mechanism.** It is requested at plan time and collected after green. Plan time is peak engagement; post-green is the trough. The design asks when attention is highest and collects when it is lowest.
+**Options, none chosen:**
+- **Shrink the ask.** "One assertion and one expected number, from the business spec" instead of "one to three acceptance tests." Most of the guard's value is in one independent expected value on the load-bearing path.
+- **Move it forward.** Collect the sealed assertion *during* the plan review, while the human is already reading and deciding, and hold it until after green. The independence property survives; only the timing changes.
+- **Stop claiming it.** Downgrade weakness #3's coverage honestly and rely on the plan gate, the tests-as-spec review, back-translation, and the v0.12.2 middle guard, saying plainly that the strong form is aspirational.
+**Trigger:** available now — this is a reproduced failure with n=5 and the strongest possible subject. The reason not to build tonight is that all three options are real, they trade differently, and choosing between them is a product decision that deserves a rested read plus one actual attempt at writing a hold-out to see what it really costs.
+**Cost:** ~1h for the shrink or the move; the honest downgrade is a doc edit and a paragraph in the rationale.
+
 ## Recorded rejections — do not re-propose without engaging the reason
 
 These were proposed (several more than once, by different reviewers) and rejected with cause. They're here so a future round argues with the reasoning instead of re-litigating the conclusion.

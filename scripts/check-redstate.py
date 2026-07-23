@@ -63,6 +63,28 @@ for _stream in (sys.stdin, sys.stdout, sys.stderr):
         except (ValueError, OSError):
             pass
 
+
+def _decode(raw):
+    """Decode captured log/plan bytes, tolerating the encodings shells emit.
+
+    PowerShell 5.1 `>` writes UTF-16; a locale console can leave stray cp1252
+    bytes in an otherwise-UTF-8 stream. Sniff a BOM, else UTF-8 with
+    replacement. The skill mandates capturing the run to a *file*, so this path
+    must fail closed with a verdict, never crash on a raw UnicodeDecodeError: a
+    mojibake line that reads as "not found" is a verdict; a traceback is not.
+    """
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return raw.decode("utf-16", errors="replace")
+    if raw.startswith(b"\xef\xbb\xbf"):
+        return raw.decode("utf-8-sig", errors="replace")
+    return raw.decode("utf-8", errors="replace")
+
+
+def _read_text(src):
+    """Read a log or plan file as text, tolerant of shell-produced encodings."""
+    with open(src, "rb") as fh:
+        return _decode(fh.read())
+
 # Markers that indicate the line reports a failure, not a pass.
 FAIL_MARKERS = (
     "failed", "failure", "fail:", "[fail]", "fail ", "✕", "✗", "×",
@@ -138,18 +160,28 @@ def observed_failing(log, name):
 
 # Headings that introduce tests whose evidence runs the OTHER way: a pin /
 # characterization test asserts behavior that already exists, so it must be
-# observed *passing*, not failing. Feeding one to this checker reports a false
-# finding — so extraction skips these sections entirely.
+# observed *passing*, not failing. Default extraction skips these sections (a
+# pin in the red-state set is a false finding); --expect-pass reads only them.
 PIN_HEADING_RX = re.compile(
     r"(preservation\s+pins?|pin\s+tests?|characterization\s+tests?"
     r"|must\s+pass\s+before\s+and\s+after)", re.I)
-# Headings that return extraction to new-behavior tests.
+# Headings that return extraction to new-behavior tests. The `proposed…tests`
+# arm is deliberately loose so it also matches the plan format's own
+# "Proposed new/changed tests" parent heading, not just "Proposed tests".
 NEW_HEADING_RX = re.compile(
-    r"(new[-\s]behaviou?r\s+tests?|proposed\s+(new\s+)?tests?"
+    r"(new[-\s]behaviou?r\s+tests?|proposed\b[\w/&,\s-]*\btests?"
     r"|must\s+be\s+(observed\s+)?(red|failing))", re.I)
 # Strips the markdown that can precede a section label: heading hashes, bullet
 # markers, bold, inline code.
 LABEL_LEAD_RX = re.compile(r"^\s*(?:#{1,6}\s+|[-*]\s+)?[`*_]*")
+# A bullet (candidate test-name line) vs a section label.
+BULLET_RX = re.compile(r"^\s*[-*]\s")
+# One test name per bullet: a single identifier token, PascalCase or snake_case.
+# The old form required an underscore, which silently dropped PascalCase names
+# (e.g. dotnet ReportsTotalCount) — extraction then verified a subset while the
+# verdict still read as a whole-plan pass. Scoping to the test section (below)
+# is what makes the looser token safe.
+NAME_RX = re.compile(r"\s*[-*]\s+`?([A-Za-z][\w.]*)`?\s*(?:—|-|\(|$)")
 
 
 def _section_label(line):
@@ -165,33 +197,53 @@ def _section_label(line):
     return stripped or None
 
 
-def names_from_plan(path, want_pins=False):
-    """Pull *new-behavior* test names out of a plan's bullet lists.
+def _is_heading(line, label):
+    r"""True if the line introduces a section, not a test name.
 
-    Heuristic: bullet lines whose content is a single identifier-ish token
-    containing an underscore — the naming convention this method asks for
-    (`capture_fails_when_amount_exceeds_authorized`). Names with other shapes
-    must be passed explicitly with --test.
-
-    Two exclusions keep pin/characterization tests out, because their evidence
-    is green-then-still-green and red-state does not apply to them:
-      1. bullets under a preservation-pin heading are skipped wholesale;
-      2. any name prefixed `currently_` is skipped wherever it appears — that
-         is the marker the method mandates for pinned observations.
+    A section header is a known new/pin heading (which may be written as a
+    bullet, e.g. `- \`New-behavior tests …\``), a markdown `#` heading, or any
+    non-bullet, non-blank line (the plan's plain labels: "Existing behavior:",
+    "Contract changes:"). Everything else is a candidate name bullet.
     """
-    text = open(path, encoding="utf-8").read()
-    found, in_pin = [], False
+    if PIN_HEADING_RX.match(label) or NEW_HEADING_RX.match(label):
+        return True
+    if line.lstrip().startswith("#"):
+        return True
+    return not BULLET_RX.match(line)
+
+
+def names_from_plan(path, want_pins=False):
+    """Pull test names out of *only* the relevant test section of a plan.
+
+    Names are collected only while inside the wanted section — the new-behavior
+    test section by default, the preservation-pin section under --expect-pass.
+    Bullets in any other section (notably the "Existing behavior" citations the
+    plan format mandates) are ignored: extracting those produced false "passed
+    before implementation" / "not found" verdicts on fully compliant plans.
+
+    Pin/characterization tests are kept out of the default (red-state) set two
+    ways, because their evidence is green-then-still-green: bullets under a
+    preservation-pin heading, and any `currently_`-prefixed name. Under
+    --expect-pass those same `currently_` names are exactly what we want, so the
+    prefix filter applies only outside pin mode.
+    """
+    text = _read_text(path)
+    want = "pin" if want_pins else "new"
+    found, section = [], "other"
     for line in text.splitlines():
         label = _section_label(line)
-        if label:
+        if label is not None and _is_heading(line, label):
             if PIN_HEADING_RX.match(label):
-                in_pin = True
-            elif NEW_HEADING_RX.match(label) or re.match(r"#{1,6}\s", line.lstrip()):
-                in_pin = False
-        if in_pin is not want_pins:
+                section = "pin"
+            elif NEW_HEADING_RX.match(label):
+                section = "new"
+            else:
+                section = "other"
             continue
-        m = re.match(r"\s*[-*]\s+`?([A-Za-z][\w.]*_[\w.]*)`?\s*(?:—|-|\(|$)", line)
-        if m and not m.group(1).lower().startswith("currently_"):
+        if section != want:
+            continue
+        m = NAME_RX.match(line)
+        if m and (want_pins or not m.group(1).lower().startswith("currently_")):
             found.append(m.group(1))
     return list(dict.fromkeys(found))
 
@@ -227,7 +279,7 @@ def main():
         return 2
 
     try:
-        log = sys.stdin.read() if log_src == "-" else open(log_src, encoding="utf-8").read()
+        log = sys.stdin.read() if log_src == "-" else _read_text(log_src)
     except OSError as exc:
         print(f"check-redstate: cannot read {log_src}: {exc}")
         return 2
