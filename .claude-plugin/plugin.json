@@ -1,6 +1,6 @@
 {
   "name": "ctdd",
-  "version": "0.15.0",
+  "version": "0.15.1",
   "description": "Contract- and Test-Driven Development for backend APIs and microservices: drive changes contract-first, with tests as the executable spec the agent reads and builds against.",
   "author": {
     "name": "Marko Zorec",

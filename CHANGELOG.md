@@ -14,6 +14,20 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.15.1 — 2026-07-21
+
+### Fixed
+- **Instructions to read the references were themselves being truncated.** The previous release justified dropping the plan skeleton and ADR rules after compaction because a reference backs them — but the lines telling the agent to *load* those references sat even later in the file. The result would have been worse than the original problem: the format gone and the instruction to fetch it gone too. Loaders now sit where the action starts — ADR rules at step 4, the plan format at step 6, colocated notes in the standing guidance.
+- **The working-tree re-check moved into standing guidance.** It sat at the far edge of the surviving window, and a tree moving mid-session is precisely a long-session concern, which is when compaction has already happened.
+- Step 8 referred to the Amendments rule "below" after the reorder moved it above; it now names the rule without a direction. The plan skeleton offered a `trivial` risk level that the authoritative format forbids, since a trivial change produces no plan at all.
+
+### Changed
+- **The compaction test no longer claims more than it proves.** It measured characters while being named for tokens. It is now named as a conservative proxy, uses a pessimistic 3 characters per token instead of 4, and exists to assert *margin* rather than to simulate a tokenizer. Under the tighter bound the furthest load-bearing rule sits around 4,100 tokens.
+- **"Loaded somewhere" is now "loaded before it is needed."** That test only checked a filename appeared in the skill; it now asserts the loader precedes the inline section it backs.
+
+### Added
+- Guards for the reference loaders surviving truncation, and for the plan skeleton never offering a trivial risk level. Suite 114 → 116.
+
 ## 0.15.0 — 2026-07-21
 
 The post-compaction truncation limit was verified against the documentation rather than taken on trust, and measuring it changed what needed fixing.

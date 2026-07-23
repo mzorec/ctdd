@@ -254,15 +254,43 @@ class ChangeSkillStructureTests(unittest.TestCase):
             self.assertIn(name, self.skill,
                           f"references/{name} exists but the skill never tells "
                           f"the agent to read it")
+        # "somewhere" is not "before it is needed". The load instruction must come
+        # before the inline section it backs, because that section is the part that
+        # gets truncated: an agent that reaches the skeleton without having been
+        # told to fetch the authoritative version works from the stub alone.
+        for ref, inline_section in (("plan-format.md", "## The implementation plan"),
+                                    ("adr-rules.md", "## ADR rules")):
+            self.assertLess(
+                self.skill.index(ref), self.skill.index(inline_section),
+                f"the instruction to read {ref} must precede the inline section it "
+                f"replaces, not follow it")
 
-    def test_load_bearing_rules_survive_post_compaction_truncation(self):
-        """Claude Code re-attaches only the first 5,000 tokens of a skill after
-        auto-compaction. Presence in the file is therefore not enough: a rule
-        past that point is gone for the rest of a long session, which is exactly
-        when the discipline matters most. Rules that apply *throughout* must sit
-        before the step-by-step detail, and anything truncated must be backed by
-        a reference the skill loads or a checker that fails without it."""
-        head = re.sub(r"^---\n.*?\n---\n", "", self.skill, flags=re.S)[:5000 * 4]
+    def test_plan_skeleton_does_not_offer_a_trivial_risk_level(self):
+        """A trivial change produces no plan, so `trivial` inside a plan's risk
+        line is a contradiction the authoritative format already excludes."""
+        m = re.search(r"\*\*Risk level\*\*[^\n]*", self.skill)
+        self.assertIsNotNone(m)
+        self.assertNotIn("trivial /", m.group(0),
+                         "the skeleton must not offer a risk level the format forbids")
+
+    # Claude Code re-attaches only the first 5,000 *model tokens* of a skill after
+    # auto-compaction. No authoritative tokenizer is available here, so this uses a
+    # deliberately pessimistic character proxy: 3 chars/token rather than the ~4
+    # typical of English prose, because markdown with backticks, paths and code
+    # tokenizes worse than prose. The property being asserted is therefore MARGIN —
+    # these rules sit comfortably inside the surviving window — not a simulation of
+    # the real boundary. Keep required rules well ahead of it, never near it.
+    COMPACTION_PROXY_CHARS = 5000 * 3
+
+    def _surviving_head(self):
+        return re.sub(r"^---\n.*?\n---\n", "", self.skill,
+                      flags=re.S)[:self.COMPACTION_PROXY_CHARS]
+
+    def test_load_bearing_rules_survive_conservative_compaction_proxy(self):
+        """Presence in the file is not the property that matters; presence in the
+        re-attached head is. A rule past the boundary is gone for the rest of a
+        long session, which is exactly when the discipline matters most."""
+        head = self._surviving_head()
         must_survive = {
             "no status claim without a run (#8, #12, #26)": "status claim",
             "changed test is a changed requirement (amendments)": "### Amendments",
@@ -272,12 +300,25 @@ class ChangeSkillStructureTests(unittest.TestCase):
             "distributed-systems escalation (#6)": "distributed-systems",
             "plan written before entering plan mode (#25)": "before entering plan mode",
             "presentation copied, not composed (#28)": "copy it in verbatim",
-            "working tree checked before implementing (#32)": "re-check the tree",
+            "working tree can move mid-session (#32)": "working tree moves under you",
         }
         for label, probe in must_survive.items():
             self.assertIn(probe, head,
-                          f"'{label}' falls past the 5,000-token truncation point — "
+                          f"'{label}' falls outside the surviving head — "
                           f"move it ahead of the sequential steps")
+
+    def test_reference_loaders_survive_the_same_boundary(self):
+        """Content moved to a reference is only safe if the instruction to READ it
+        survives. A loader past the boundary leaves the agent with 'assemble the
+        plan (format below)' and neither the format nor the instruction to fetch
+        it — the fallback silently stops existing."""
+        head = self._surviving_head()
+        for name in sorted(f.name for f in (self.base / "references").glob("*.md")):
+            if name == "adr-template.md":
+                continue  # fetched by adr-rules.md, which is itself loaded early
+            self.assertIn(name, head,
+                          f"the instruction to read references/{name} falls outside "
+                          f"the surviving head, so the fallback it backs would vanish")
 
 
 if __name__ == "__main__":
