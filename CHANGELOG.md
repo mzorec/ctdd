@@ -10,6 +10,11 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.12.2 — 2026-07-21
+
+### Added
+- **A cheaper middle guard for when a hold-out is declined: human-verified expected values.** The agent writes the test, a human checks the *number* by doing the arithmetic instead of reading the code that produced it. This breaks the shared-computation path, where the test takes its expected value from the same production helper the implementation uses and both encode the same wrong rule. It is explicitly **not** a substitute for a hold-out: it cannot catch a misunderstanding the human shares, which is the whole reason a sealed test is written from the business spec by someone who has not seen the implementation. Named as its own tier so it does not quietly become the reason the hold-out never gets written.
+
 ## 0.12.1 — 2026-07-21
 
 ### Changed
