@@ -58,123 +58,35 @@ Work through these steps in order. Scale ceremony to the risk of the change. A c
 
 9. **Present the spec for human review.** When green, present the diff with the tests and the contract framed as the spec, not just the code: changed tests are changed requirements, contract diffs are boundary changes. If `"${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py"` is available, run the diff through it (`{ git diff --name-status -M <baseline>; git ls-files --others --exclude-standard | sed 's/^/A\t/'; } | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" -`, or `python`/`py` on Windows; `<baseline>` is the one you fixed in step 0 — `HEAD` for uncommitted work, `$(git merge-base HEAD <target-branch>)` when the change is a branch or PR, since `HEAD` alone would miss everything already committed on it — listing untracked files alongside the diff catches a newly-created test file, the blind spot where a bare `git diff` reports no surface and a new regression test slips through) and include its output: any test or contract surface it reports that the plan didn't declare — or declared trivial — means stop and reclassify before review. For a load-bearing diff, also produce a **back-translation** before handing over: state, from the tests in this diff alone, the requirement they encode — one or two plain sentences — and put it next to the business requirement so the human compares prose to prose. If the plan recorded a hold-out as required, this is when it runs: ask the human to execute the sealed tests now, after green, treat their result as part of this review, and update the plan's hold-out `result:` line accordingly (the outcomes, and what each one blocks, live in the plan format's Hold-out field). The `ctdd-review` skill drives the reviewer's side of this gate.
 
-10. **Invariant note — only where needed.** If a rule is universal or a boundary is intentionally undefined and can't be made executable, add one colocated sentence (docstring/contract comment), e.g. "Must hold for all N > 0; behavior for N ≤ 0 is intentionally undefined." Do not write prose for anything a test or contract already covers. Same sentence-sized budget for **a fact this code depends on that lives outside this repo** and cost real time to establish: an upstream system's semantics (status `7` in the ledger feed means *settled*, not *pending*), a non-obvious key relationship (a capture's id is its authorization's id, not one of its own), a storage format (this column is compressed in production and raw in test), a framework quirk that constrains the shape. The entry test is one question: **could the next reader derive this from the code, the tests, or the contract in this repo?** If yes, do not write it. If no, and rediscovering it means reading another system, write the one sentence where the code touches it. **State the rule first; attach provenance only when it is stable.** Write what is true ("ledger status 7 means settled; a capture in that state must not be re-submitted"), not where you found it ("the upstream service checks this in its settlement handler"). A file path pins your comment to another team's directory layout, so it breaks silently when they refactor and nothing here will ever notice. A *stable* identifier does not: a contract version or a ticket key ("ledger status 7 means settled, per Ledger Contract v3") survives their refactors and gives the next reader somewhere to check. Prefer, in order: an executable consumer contract, a versioned schema identifier, a stable ticket or ADR reference, and a bare sentence only when none of those exist. The test is durability: **a colocated note states something that stays true; anything true only as of today belongs in the plan or an ADR**, which are point-in-time records and may name specifics freely. So the plan carries the provenance and the code carries the rule. This is not an ADR (that records a decision you made) and not a spec (a test covers behavior) — it is the external fact both of those assume.
-
-### Bug fixes
-
-A bug fix runs the same loop, compressed. Confirm the *expected* behavior (step 1), read the slice (step 2), then write a failing behavior-level regression test that reproduces the bug — that test *is* the spec of the fix — and implement until it's green. The test stays forever; that is how the suite accumulates edge cases. (The regression-test rule itself lives in `ctdd-tests`; this section owns only the workflow around it.) The plan gate collapses to a *short* plan — the sections still appear, most as one-liners ("Existing behavior: test X asserts Y; Proposed tests: the regression test; Contract changes: none") — not to a trivial one-line skip. Adding a regression test is adding spec, so a bug fix is not the trivial lane; `check-plan.py` reports an added-test diff distinctly for exactly this reason. The trivial lane is for code-only changes that touch no test or contract surface at all. One caution: if an existing test asserts the buggy behavior *on purpose*, this is not a bug fix but a spec change — stop and run the full gate (step 6), calling out the test change explicitly.
-
-### Amendments — the everyday case
-
-Most real changes modify behavior an existing test asserts — neither pure preservation nor pure creation. Route these as spec changes, not code changes: the business requirement overrides the old test, and only through a reviewed diff. The plan must show each affected test's old and new assertion (see the plan format); the gate and the step-9 review do most of their real work here. The reflex to resist by name: "update the test to match" turns a spec change into a silent one.
-
-### When artifacts disagree
-
-A contract that allows what a test rejects, an example test contradicting a property test, a Pact expecting a shape the contract dropped — a cross-artifact conflict is a **detected spec bug**, not a tiebreak. First check that it *is* one: artifacts conflict only when they make incompatible claims about the **same observable constraint**. Different artifacts legitimately own different layers — a schema stating a payload's shape while a test asserts a state-dependent business rule is not a contradiction, and a Pact or example narrowing a broader permitted space is specialization, not conflict. Stop, decide which artifact is wrong against the business intent, and fix it as a reviewed spec change. The one forbidden move is quietly adjusting whichever artifact is easiest to change until CI goes green.
-
-### Standalone ADR requests
-
-When the ask is only to record a decision ("write an ADR for choosing RabbitMQ over Kafka"), skip the workflow and apply the ADR rules directly: interview for context, decision, and consequences where they aren't given; find the next number in the ADR directory; write the file from the template.
+10. **Invariant note — only where needed.** Write one colocated sentence when, and only when, a rule is universal, a boundary is intentionally undefined, or the code depends on a fact that lives outside this repo and cost real time to establish. Never write prose for anything a test or contract already covers. **When one of those fires, read `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/colocated-notes.md` before writing it** — it carries the entry tests that keep these notes from becoming the spec document this method exists to avoid, and the rule about stating durable facts rather than volatile citations.
 
 ## The implementation plan (output before coding)
 
-Produce this as a reviewable summary, then stop for approval on non-trivial changes:
+**Before writing a plan, read `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/plan-format.md`** — it is the
+authoritative output contract, and this list is only its skeleton. Lead with the decision summary (what
+surprised you, or what you will not guess at), close it with the categorical line, then these fields in order:
 
-**Lead with a decision summary the human can read in under a minute**, then put the supporting detail below it — the gate asks for a *ruling on decisions and risks*, not a reading of the whole file inventory. **The test of the summary is that a reader who agrees with it can approve without scrolling**; if they must go into the detail to find out what they are agreeing to, the summary has failed and the two-layer structure has bought nothing.
-
-Write it the way you would tell a colleague what you found, standing at their desk with thirty seconds of their attention — **lead with what surprised you, or what you are not willing to guess at**. A summary that reads like a filled-in form has failed even when every field is correct: fields carry categories, and what a reviewer needs is the one thing about *this* change that is not routine. If nothing about it is surprising, say exactly that in a sentence and stop — a short honest summary is the goal, not a filled page.
-
-Close it with a single categorical line, demoted because it is genuinely form-like: `Risk: normal · contract: additive · ADR 0005 required · hold-out: 2 sealed tests from you`. State `contract: breaking` explicitly whenever an existing response shape, route, or error code changes — a breaking change a reviewer meets in the file inventory rather than the summary is the failure this line exists to prevent — and name anything the human is on the hook for, because those are commitments, not information.
-
-Then the two buckets:
-
-- **BLOCKING — I will not guess.** The open questions whose answer changes the implementation and which you refuse to assume: each as a one-line question with your recommended answer. These are what approval actually turns on.
-- **Proceeding unless you object.** Decisions you've made and will act on (schema choices, ordering, nullability, what the repository returns): one line each. Consequences you'll absorb belong here, not in BLOCKING — the point is to show them without asking permission for each.
-
-A reader who agrees with every recommendation should be able to approve from the summary alone. The detail below is backup for when they don't.
-
-The detail section, in full:
-
-- **Risk level** — normal / high-risk, with one line on why (a trivial change produces no plan at all — see the workflow preamble — so a plan's risk line never reads `trivial`; and, if a high-risk unknown is carved out of an otherwise-normal change, name it here so the risk call is honest). This is the justification for the ceremony being scaled up or down; a reviewer who disagrees with the risk call should be able to object to that before anything else. **If a BLOCKING decision later resolves in a way that changes scope — a type-only option becoming a breaking rewire, say — restate the risk level and the contract-changes section to match the branch actually chosen.** A plan whose top-line risk reflects the option you didn't take reads as safer than the work is.
-- **Existing behavior** found in the contract and relevant tests — cite the file paths and test names actually retrieved (evidence, not paraphrase), so thin retrieval is visible to the reviewer. State known gaps explicitly — "no Pact found for the checkout caller" converts silence into a reviewable absence.
-- **Assumptions** you are making.
-- **Uncovered or ambiguous cases** — behavior that matters but isn't pinned by a test, and anything the requirement doesn't specify.
-- **Proposed new/changed tests** — named at the behavior level, and **split under two headings when both kinds are present**, because their evidence runs in opposite directions:
- - `New-behavior tests — must be observed failing` (red state applies; `check-redstate.py --tests-from` reads *only* these)
- - `Preservation pins — must pass before and after` (green-then-still-green is their evidence; verified with `check-redstate.py --expect-pass`, never the default red-state check — see step 7)
-
- **When a change both preserves and creates, do the preserving part first** — pins describe how the current code behaves, so a pin written before a change that reshapes what it observes still passes while proving nothing. Pin, convert, verify green, *then* build the new behavior on top. This ordering is a correctness property, not a preference: get it backwards and the suite stays green while the detector is silently gone.
-
- For each *changed existing* test, show the old and the new assertion, not just the name — the name is exactly where a wrong encoding hides.
-- **Contract changes**, if any (and whether they're backward-compatible; flag breaking changes explicitly).
-- **NFR budgets this change could touch** — latency/throughput, authz surface, tenant isolation, retention/audit. State "none" explicitly; an unstated budget is not a free one.
-- **Hold-out** — required / not required, with why. Required when the change alters money, auth, state-machine, or boundary semantics (rounding, inclusivity, timezones, fee treatment). If required, ask the human to write 1–3 acceptance tests directly from the business spec and to withhold them from you; they run once, after green (sealing them is the team's CI job — see the README). Record the decision **and track its outcome**: write `result: pending` at plan time; step 9 updates it to `passed`, `failed`, or `declined by human`. The outcomes are not equivalent: `failed` **blocks approval at review** — `ctdd-review` treats a failed hold-out as a merge-blocking finding, and since nothing mechanical enforces it the reviewer is that gate; a failed hold-out is the method working, and merging past it is the one thing the hold-out exists to prevent. `declined by human` is an explicit **waiver**, reported at review as a deviation on a load-bearing change, never a neutral success. Never proceed as if this step happened when it didn't — and never leave it `pending` past review.
-
-  **Where the hold-out is declined, fall back to human-verified expected values** on the load-bearing assertions — a distinct, cheaper guard, not a degraded hold-out. You write the test; the human checks the *number*, by doing the arithmetic rather than reading the code that produced it (capturing 87.50 of 100 leaves 12.50). Say which assertions you want checked and show the values plainly. This breaks the **shared-computation** path, where a test derives its expected value from the same production helper the implementation uses and both encode the same wrong rule. It cannot break a **shared misunderstanding**: if the human misreads the requirement the same way you did, the number looks right to both of you, and only a sealed test written from the business spec by someone who has not seen the implementation reaches that. Offer it as the fallback, never as the equivalent — a guard that quietly replaces the hold-out makes circularity worse while feeling like progress.
-- **ADR draft**, if step 4 produced one.
+- **BLOCKING — I will not guess.** Questions only the human can answer; you stop until they do.
+- **Proceeding unless you object.** Calls you have made that they can veto cheaply.
+- **Risk level** — trivial / normal / high-risk, with the reason on the same line.
+- **Existing behavior** — what you found, cited to real files and test names.
+- **Assumptions** — what you are taking as true without having checked.
+- **Uncovered or ambiguous cases** — the gaps, stated so silence becomes reviewable.
+- **Proposed new/changed tests** — split under `New-behavior tests` and `Preservation pins` headings.
+- **Contract changes** — with backward compatibility called out.
+- **NFR budgets this change could touch** — "none" must be written, never implied.
+- **Hold-out** — required / not required, with why, and `result:` tracked to a verdict.
+- **ADR draft** — only when a structural decision is involved.
 - **Files likely to change.**
 
-Treat a change to an existing test as a change to the spec — call it out for review. If this plugin's `"${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py"` is available (that variable resolves to the plugin's install directory, so the command works from any project; quote it, since the path can contain spaces), run the emitted plan through it — adding `--diff` with the current `{ git diff --name-status -M <baseline>; git ls-files --others --exclude-standard | sed 's/^/A\t/'; }` once edits exist (the second half so a new, still-untracked test file is counted, not silently missed), so a trivial claim is cross-checked against the actual surface — and fix any missing sections before presenting.
-
-### Example (condensed)
-
-Request: *"Add partial capture to the payments service — allow capturing less than the authorized amount."*
-
-```
-A backward-compatible relaxation of the capture amount rule — the one thing I
-won't guess is what happens to the auth hold on the released remainder.
-Risk: normal · contract: additive · no ADR · hold-out: 1–2 sealed tests from you
-
-BLOCKING — I will not guess:
-- What happens to the auth hold on the released remainder? (recommend: it
- expires with the original authorization)
-Proceeding unless you object:
-- Zero capture amount is rejected; the released remainder is not re-capturable
-
-Risk level: normal — single-service, backward-compatible contract change;
-money path, so amount edge cases must be pinned in tests
-
-Existing behavior (payments/contract/openapi.yaml; tests/payments/CaptureTests.*):
-- POST /payments/{id}/capture requires amount == authorized amount
-- capture_fails_when_amount_exceeds_authorized_amount covers over-capture
-Known gaps: no consumer contract (Pact) found for the checkout caller
-
-Assumptions:
-- Partial capture moves the payment to CAPTURED (no new PARTIALLY_CAPTURED state)
-- The released remainder is not re-capturable
-
-Uncovered / ambiguous:
-- What happens to the auth hold on the released remainder? (needs confirmation)
-- Is a zero capture amount valid? (assuming no)
-
-Proposed tests:
-- capture_succeeds_when_amount_is_below_authorized
-- capture_releases_remainder_when_partially_captured
-- capture_fails_when_amount_is_zero
-
-Contract changes:
-- Relax amount rule to 0 < amount <= authorized (backward-compatible)
-
-NFR budgets touched: none — no new external calls; authz surface unchanged
-
-Hold-out: required — money-path amount semantics; asked the human for
-1–2 sealed acceptance tests from the business spec (run once, after green);
-result: pending
-
-Files likely to change:
-- payments/contract/openapi.yaml
-- payments/domain/capture.* (+ tests)
-```
-
-The human resolves the ambiguous points, approves, and only then are the contract edit, the tests, and the code written. Had this introduced a `PARTIALLY_CAPTURED` state shared across services, step 4 would have added an ADR draft to the plan.
+Every field is mandatory; an omitted section is a decision skipped, not a decision made.
 
 ## ADR rules
 
-An ADR is a short record (a page or less) of one significant decision, in three parts: **context** (the situation and forces), **decision** (what was chosen), **consequences** (what was accepted, good and bad). Scaffold new ADRs from `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/adr-template.md`.
+An ADR records one structural decision at a point in time — a service boundary, an enforcement location, a pattern the codebase will live with. It is append-only: never edited when the code moves, superseded by a new record instead. That immutability is what stops it drifting, because it never claims to describe the present.
 
-- Store as a numbered, append-only file, e.g. `docs/adr/0007-payments-in-domain-layer.md`.
-- **Append-only:** never edit a past ADR to reflect a new decision. If a decision is reversed, write a new ADR that supersedes the old one and mark the old one "Superseded by NNNN". The record is what was believed *at the time*.
-- Capture the decision and its tradeoffs, not a description of current behavior. The moment it narrates what the code does, it has drifted into spec territory — stop.
+**When a change involves a structural decision, or a standalone ADR is requested, read `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/adr-rules.md`** for what belongs in one, what does not, and the numbering and superseding rules. The template is `adr-template.md` in the same folder.
+
 
 ## Guardrails
 

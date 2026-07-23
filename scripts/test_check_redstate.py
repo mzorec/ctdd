@@ -392,12 +392,17 @@ class GoldenExampleTests(unittest.TestCase):
 
     @staticmethod
     def _example():
-        skill = os.path.join(os.path.dirname(__file__), "..", "skills",
-                             "ctdd-change", "SKILL.md")
-        text = open(skill, encoding="utf-8").read()
-        block = re.search(r"```\n(.*?)```", text, re.S)
-        assert block, "no fenced example block found in ctdd-change/SKILL.md"
-        return block.group(1)
+        # The example lives with the format it illustrates. Search the skill and its
+        # references so this test follows the example wherever it is kept.
+        base = os.path.join(os.path.dirname(__file__), "..", "skills", "ctdd-change")
+        for rel in ("references/plan-format.md", "SKILL.md"):
+            path = os.path.join(base, rel)
+            if not os.path.exists(path):
+                continue
+            block = re.search(r"```\n(.*?)```", open(path, encoding="utf-8").read(), re.S)
+            if block and "Risk:" in block.group(1):
+                return block.group(1)
+        raise AssertionError("no plan example found in ctdd-change skill or references")
 
     def test_example_carries_the_mandated_categorical_line(self):
         ex = self._example()

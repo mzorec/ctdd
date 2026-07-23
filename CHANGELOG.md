@@ -10,6 +10,21 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.14.0 — 2026-07-21
+
+`ctdd-change` was ~8.2k tokens, well past the ~5k guidance for a skill body. Three blocks accounted for most of it, and all three are needed only at one point in the workflow. They now live in `references/` and load on demand. **No rule was removed.**
+
+### Changed
+- **The plan format moved to `references/plan-format.md`** (2569 tokens, 30% of the old body). The skill keeps the field list and a load instruction at step 6. This is the safest block to externalise because it is the one with a checker behind it: a plan written without it is caught by `check-plan.py` rather than shipping malformed.
+- **The colocated-note craft moved to `references/colocated-notes.md`** (1328 tokens). Step 10 keeps the trigger — universal rule, deliberate gap, or an external fact — so the agent still knows *when*; the reference carries the entry tests and the durable-fact rule.
+- **The ADR rules moved to `references/adr-rules.md`** (238 tokens), beside the template they already pointed at. The skill keeps what an ADR is and when one is needed.
+- The design principle throughout: **the trigger stays in the skill, the craft moves to the reference.** A reference that fails to load then degrades quality rather than skipping an action.
+
+### Fixed
+- The golden test caught this restructure moving the plan example out of `SKILL.md` and now follows it into the references, so the example and the parsers stay bound wherever the example lives.
+
+Result: skill body ~8.2k → ~5.0k tokens, with ~4461 tokens of references paid only when the relevant step fires.
+
 ## 0.13.3 — 2026-07-21
 
 ### Added
