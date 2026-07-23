@@ -2,7 +2,7 @@
 
 A Claude Code plugin for backend work. It keeps an AI coding agent honest about *what a service is supposed to do* by treating your API contract and your behaviour tests as the specification: the thing the agent reads before it writes code, and the thing you review after.
 
-The idea in one line: stop maintaining a separate technical spec that quietly goes out of date, and let the contract and the tests be the spec, because they can't lie: they run.
+The idea in one line: stop maintaining a separate technical spec that quietly goes out of date, and let the contract and the tests carry the technical spec instead. They can still be wrong about intent — that is the method's central weakness and it is discussed at length in the rationale — but once they are enforced they cannot *silently* disagree with the implementation they cover. A prose spec can.
 
 If you want the reasoning behind that before you trust it, read [`docs/ctdd-in-depth.md`](docs/ctdd-in-depth.md). If you just want to feel what a change looks like, read [`docs/ctdd-in-practice.md`](docs/ctdd-in-practice.md). This file is the operating manual: what the plugin does, how to install it, and how to wire it into CI.
 
@@ -16,7 +16,7 @@ Instead of writing code straight away, the agent stops and hands you a plan. The
 
 Only then does it write the tests, apply the contract change, and implement until both are green. It finishes by showing you the tests and the contract diff and asking you to review *those* as the spec for the change, because under CTDD, that is the spec.
 
-That pause before coding is the whole point. A misunderstanding is cheap to fix while it's still a sentence in a plan, and expensive to fix once it's in the code.
+That pause before coding is the **first** guard, not the only one: it catches a wrong *direction* while the misunderstanding is still a sentence in a plan rather than something already in the code. It cannot catch a wrong *encoding* — a plan whose test names are right while the assertion bodies underneath encode the wrong rule — because at plan time those bodies do not exist yet. Reviewing the tests as the spec, and the hold-out, are what cover that half.
 
 Reviewing someone else's change works the same way from the other side:
 
@@ -63,7 +63,7 @@ The plugin is three skills that trigger on natural phrasing. You don't invoke th
 
 **`ctdd-tests`** writes and reviews tests as the spec. It enforces behaviour-level naming (so tests read as requirements, not as descriptions of the current implementation), flags brittle tests that will break on a harmless refactor, and adds property-based tests for the invariants that matter, idempotency, ordering, validation, state-machine rules. It never changes a requirement on its own; anything that would touch an asserted expectation goes back through `ctdd-change`.
 
-**`ctdd-review`** is the reviewer's side. Given a finished diff, it runs a checklist spec-first: changed or deleted tests are changed requirements, contract diffs are boundary changes, thin coverage on a risky change escalates the severity, and a missing hold-out record on a high-risk diff is a finding rather than a pass.
+**`ctdd-review`** is the reviewer's side. Given a finished diff, it runs a checklist spec-first: changed or deleted tests are changed requirements, contract diffs are boundary changes, thin coverage on a risky change escalates the severity, and a missing hold-out record on a **load-bearing** diff is a finding rather than a pass — load-bearing meaning money, authorization, state machines, or externally consumed boundary semantics, which is a different axis from implementation risk. A payment amendment is routinely normal-risk and still load-bearing.
 
 They hand off to each other (`ctdd-change` calls `ctdd-tests` for the test-writing, `ctdd-review` calls it for the test portion of a diff) and `ctdd-tests` also stands alone when you just need to write or review tests.
 
@@ -147,7 +147,7 @@ To turn it back off, delete `hooks/hooks.json` (the `.example` stays) and `/relo
 
 ## Hold-out acceptance tests
 
-For load-bearing changes, money, auth, state machines, boundary semantics, the plan carries a mandatory **hold-out** decision, and `ctdd-review` treats a missing record on a high-risk diff as a finding.
+For load-bearing changes, money, auth, state machines, boundary semantics, the plan carries a mandatory **hold-out** decision, and `ctdd-review` treats a missing record as a finding regardless of whether the change's implementation risk is normal or high.
 
 Be clear about the division of labour here, because it's easy to get wrong. The skill can *require the decision and record it*. It **cannot seal anything**: an instruction can't guarantee the agent never sees a file sitting in its own workspace. Sealing is CI's job: keep the one to three human-written acceptance tests in a branch or repo the agent's session never reads, and run them once, after the visible suite is green. A hold-out the agent could read is just another visible test, and proves nothing about independence.
 
@@ -157,25 +157,34 @@ Use a trait or category, `[Trait("ctdd", "hold-out")]`, `[Category("HoldOut")]`,
 
 The scripts only bind when something runs them; CI is where "when run" becomes "always." A minimal merge-request pipeline:
 
+Installing the plugin puts the scripts in Claude Code's plugin directory on a developer's machine, **not** in your application repository — so CI has to fetch them, pinned to a version, and must never run whatever happens to sit at `scripts/` in the project being checked:
+
 ```yaml
+variables:
+  CTDD_VERSION: "v0.15.0"     # pin it; an unpinned checker is a moving gate
+
+.ctdd-tools: &ctdd-tools
+  - git clone --depth 1 --branch "$CTDD_VERSION" https://github.com/mzorec/ctdd.git .ctdd
+
 ctdd:spec-surface:
   stage: test
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   script:
+    - *ctdd-tools
     - git fetch origin $CI_MERGE_REQUEST_TARGET_BRANCH_NAME
     - git diff --name-status -M "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME...HEAD" > surface.txt
     # Inventory is attention, not error — print it loudly, never fail on it:
-    - python3 scripts/check-spec-surface.py surface.txt || echo "SPEC SURFACE TOUCHED — review changed tests as changed requirements"
+    - python3 .ctdd/scripts/check-spec-surface.py surface.txt || echo "SPEC SURFACE TOUCHED — review changed tests as changed requirements"
     # If you adopted the generated authz matrix: fail when the contract
     # gained an endpoint with no matrix rows (regenerate + review as a spec change):
-    - python3 scripts/gen-authz-matrix.py openapi/payments.yaml --check tests/authz-matrix.json
+    - python3 .ctdd/scripts/gen-authz-matrix.py openapi/payments.yaml --check tests/authz-matrix.json
     # The gate: the MR description carries one pointer line —
     #   CTDD-Plan: docs/plans/PAY-123-partial-capture.md
     # — and CI resolves and validates THAT file, so CI, the reviewer, and the
     # skill all read the same plan. A 'trivial' claim is declared visibly in the
     # description and mechanically contradicted if the diff moved spec surface.
-    - echo "$CI_MERGE_REQUEST_DESCRIPTION" | python3 scripts/check-plan.py - --from-description --diff surface.txt
+    - echo "$CI_MERGE_REQUEST_DESCRIPTION" | python3 .ctdd/scripts/check-plan.py - --from-description --diff surface.txt
 
 ctdd:hold-out:
   stage: hold-out            # a stage AFTER the normal test stage is green

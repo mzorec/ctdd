@@ -4,11 +4,72 @@
 
 _Docs and other non-runtime edits collect here and fold into the next runtime release. Version numbers move only when the skills, scripts, or hooks change._
 
+- **README no longer overclaims, in two places where simplifying contradicted the method.** "The contract and the tests can't lie: they run" is false as written — tests can execute perfectly while encoding the wrong business rule, which is the method's own central weakness, and a contract not wired into validation constrains nothing. It now says what is actually true: they can still be wrong about intent, but once enforced they cannot *silently* disagree with the implementation they cover, which a prose spec can. And "that pause before coding is the whole point" contradicted the gate's demotion from main guard to *first* guard: it catches a wrong direction, not a wrong encoding, because at plan time the assertion bodies do not exist yet.
+- **README keys hold-outs on load-bearing semantics rather than implementation risk**, matching the fix already made in `ctdd-review`. A payment amendment is routinely normal-risk and still load-bearing.
+- **The CI recipe now fetches the scripts.** Installing the plugin puts them in Claude Code's plugin directory on a developer's machine, not in the application repository CI checks out — so the recipe silently ran nothing, or worse, whatever happened to sit at `scripts/` in the target project. It now clones the plugin at a pinned version into `.ctdd/` and calls the scripts from there.
+
 - `ctdd-in-depth.md` given the same rewrite, the largest of the three. The relentless em-dash cadence (over 300 of them) that made the argument exhausting to read is broken into sentences, and the most deeply-nested paragraphs are un-stacked. Every claim, hedge, number, citation, weakness, and *(Proposed — not yet built)* tag is preserved exactly, and verified mechanically after the pass — the density here is partly the argument pre-empting objections, so nothing was simplified away, only made readable. It stays the hostile-review rationale; it just no longer fights the reader to deliver it.
 - `ctdd-in-practice.md` given the same rewrite: the em-dash-heavy cadence that read as machine-written is gone, a few passages that assumed the point were re-explained, and the structure and content are unchanged. It complements the new README and points at `ctdd-in-depth.md` for the full argument.
 - README rewritten for a senior engineer meeting CTDD for the first time. It now opens with what using the plugin looks like before the philosophy, leads the three-doc split cleanly (README = operating manual, *in practice* = the ten-minute feel, *in depth* = the reasoning), and cuts the em-dash-heavy phrasing that made it read as machine-written. Same content and same six-deterministic-pieces honesty; about 1,000 tokens lighter.
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
+
+## 0.15.0 — 2026-07-21
+
+The post-compaction truncation limit was verified against the documentation rather than taken on trust, and measuring it changed what needed fixing.
+
+### Changed
+- **Rules that apply throughout now come before the steps that apply once.** After auto-compaction, Claude Code keeps only the first 5,000 tokens of a skill — so at ~5.9k the tail was being dropped from long sessions, which is exactly when the discipline matters most. The section that was disappearing was Guardrails: *no status claim without a run*, the preservation-detector rule, and the distributed-systems escalation. Every step-6 rule already survived, so the split everyone assumed was the fix was not the problem.
+- Three more blocks moved up with them, because they were never steps: **amendments** (fires whenever a change touches an existing test), **artifact conflicts** (a stop condition), and the **bug-fix lane** (a classification rule). What is truncated now — standalone-ADR routing, the plan skeleton, the ADR rules — each has a reference the skill loads, and the plan format also has a checker that fails loudly when it is ignored.
+
+### Added
+- **A test that asserts the load-bearing rules survive truncation**, not merely that they exist somewhere in the file. Nine named rules must fall inside the first 5,000 tokens; verified by pushing one past the boundary, where it fails. Suite 113 → 114.
+
+## 0.14.6 — 2026-07-21
+
+### Added
+- **Guards for the step-6 split, written before the split.** The one remaining structural refactor is also the one most likely to repeat the v0.14.0 defect, where four workflow sections silently moved into a file that almost never loads. Three tests now make that failure loud: eight gate transitions — each traceable to a pilot finding — must stay in the always-loaded skill; a `plan-mode.md` reference, once it exists, must contain none of them; and every reference that exists must be one the skill actually tells the agent to read. Verified against a deliberately bad split, where they fail as intended. Suite 111 → 113 (+1 skipped until the split happens).
+
+## 0.14.5 — 2026-07-21
+
+### Fixed
+- **A malformed diff still passed through `check-plan.py`.** The previous release taught the standalone surface checker to refuse a verdict over input it could not parse, but `check-plan.py` imports that same parser and never looked at the result — so it printed "trivial claim stands" and exited 0 over discarded input. Both callers now fail closed.
+- **Malformed lines are returned rather than kept in module-level state.** Two callers shared one list, nothing reset it between runs, and a second call could inherit the first's leftovers. `parse_name_status` now returns `(entries, malformed)`.
+- **`ctdd-review` asks the hold-out question about load-bearing changes, not high-risk ones.** The method's own example is `Risk: normal` with a hold-out required for money semantics, so keying the review on risk level let a normal-risk payment amendment pass with the question never asked. Risk is implementation complexity; load-bearing is the consequence of getting the semantics wrong.
+
+### Added
+- Regression tests for the composed path and for parser state leaking between calls, both verified failing against 0.14.4 first. Suite 109 → 111.
+
+## 0.14.4 — 2026-07-21
+
+### Fixed
+- **The plan pointer in the MR description is repository-relative again.** Rooting every plan path at the project directory in 0.14.3 also rewrote the `CTDD-Plan:` line, which after substitution becomes an absolute path — and CI rejects absolute pointers from a description on purpose, because that text is untrusted input. Every plan-carrying change would have failed the gate. Filesystem writes stay rooted; repository metadata stays portable.
+- **Unparseable input no longer produces a clean verdict.** `check-spec-surface.py` skipped lines it could not read and then reported "no surface touched" — a conclusion it had not reached, over input it had thrown away. It now names the first bad line and exits 2 without giving a verdict.
+- **`check-plan.py` no longer passes when its triviality cross-check cannot run.** CI could ask for a deterministic check, not receive one, and still go green. A trivial claim that was never verified is not a passing claim.
+- **`ctdd-review`'s example matches its own instructions.** The prose described rooted, baseline-aware surface collection while the example still showed the old bare command — and an example is what gets copied.
+
+### Added
+- Regression tests for all of the above, each verified failing against the previous code first. Suite 107 → 109.
+
+## 0.14.3 — 2026-07-21
+
+### Added
+- **Regression tests for the two defects fixed in 0.14.2**, which shipped without them. Both were verified the right way round: they fail against the previous code and pass against the current, so they are detectors rather than decoration. One covers a staged test change (a bare `git diff` reports it as no surface); the other runs the checker from a nested directory with the new test in a sibling, which the old cwd-relative listing missed. Suite 105 → 107.
+
+### Fixed
+- **Plan and evidence paths are rooted at `${CLAUDE_PROJECT_DIR}`.** After a `cd` into a module directory, a bare `docs/plans/<name>.md` resolves under *that* directory, so the plan gets written somewhere the reviewer and CI never look — the same defect as the untracked-file listing, in a different place. `ctdd-review` reads from the same rooted location.
+
+## 0.14.2 — 2026-07-21
+
+### Fixed
+- **A staged test change reported no spec surface at all.** `check-spec-surface.py --git` ran a bare `git diff`, which compares the working tree against the index — so a test that was modified and then staged returned "no surface touched", exit 0. It now defaults to `HEAD`, covering staged and unstaged together. The previous release note overclaimed: that mode had closed only the untracked half of the blind spot.
+- **Untracked files were discovered relative to the current directory.** After a `cd` into a subdirectory, a new test elsewhere in the repo disappeared from the inventory. Both the script and the skill's pipeline now anchor to `${CLAUDE_PROJECT_DIR}`, and a failing file listing reports an error instead of quietly returning nothing.
+- **`ctdd-review` now uses the same baseline rules as `ctdd-change`** — merge-base for a branch or PR, untracked files included, commands anchored to the project root. The authoring skill understood baselines while the reviewing skill still ran a bare `git diff`.
+- **Two regression tests were being skipped by their own file's documented command.** Both sat after the `if __name__ == "__main__"` block, so running the file directly ran everything except them. Every such block now sits at the end of its file; direct execution went 11 → 15 and 29 → 32 tests.
+- Step 8 pointed at an "Amendments" section "above" that the previous release had restored below it.
+
+### Added
+- **A structure test that fails when load-bearing routing leaves the always-loaded skill.** It asserts the four workflow sections stay in `SKILL.md`, that the notes reference holds only note craft, and that every bundled path the skill names actually exists. This is the defect that shipped in 0.14.0, and the previous changelog admitted nothing checked for it. Suite 102 → 105.
 
 ## 0.14.1 — 2026-07-21
 

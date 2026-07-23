@@ -201,6 +201,18 @@ Each is already written into `ctdd-in-depth.md` tagged *(Proposed — not yet bu
 **Trigger:** available now — this is a reproduced failure with n=5 and the strongest possible subject. The reason not to build tonight is that all three options are real, they trade differently, and choosing between them is a product decision that deserves a rested read plus one actual attempt at writing a hold-out to see what it really costs.
 **Cost:** ~1h for the shrink or the move; the honest downgrade is a doc edit and a paragraph in the rationale.
 
+### Split step 6's presentation and storage protocol into `references/plan-mode.md` — **guards already written**
+**The problem.** Step 6 is ~1,060 tokens in a single 705-word paragraph holding nine distinct things: canonical plan ownership, plan-mode entry order, exit presentation, verbatim-copy rule, mid-gate change handling, filename convention, terminal output, the MR pointer, and commit-vs-ignore. It is the densest block in the skill and the one where instruction competition is highest. The skill is also still above the post-compaction guidance, and this is the largest remaining legitimate reduction.
+**Why it stayed deferred through six reviews.** Moving 705 words intact would not fix it — the lifecycle needs to become explicit states (create / present / re-present after a material change), which is a rewrite, not a move. And this is the single refactor most likely to recreate the v0.14.0 defect where four workflow sections silently vanished into a conditionally-loaded file.
+**What is already in place, so the refactor is now safe to attempt:** three guards in `test_check_spec_surface.py`, written before the refactor on purpose and verified against a deliberately bad split.
+- `test_gate_rules_stay_in_the_always_loaded_skill` — asserts each of eight gate transitions, every one traceable to a pilot finding (#7, #24, #25, #28), is still in `SKILL.md`.
+- `test_a_plan_mode_reference_holds_presentation_craft_only` — skips while `plan-mode.md` does not exist, and the moment it does, fails if any gate transition moved into it.
+- `test_every_reference_is_loaded_somewhere_before_it_is_needed` — a reference the skill never tells the agent to read is a rule that will not be followed.
+Together with the existing structure test (routing stays loaded, every named bundled path resolves) and the golden test (the canonical example still passes `check-plan.py` and `--tests-from`), that is the full protective set a reviewer asked for.
+**What belongs in the reference:** plan-mode scratch-file mechanics, filename convention, terminal output detail, the MR pointer text, tracked-versus-ignored `docs/plans/`. **What must stay in the skill:** the stop condition, what approval means, write-before-plan-mode ordering, repo-file authority, the copied-not-composed rule, and mid-gate material-change handling.
+**Trigger:** a rested session. The guards remove the silent-failure risk; they do not remove the need to think about the state machine.
+**Cost:** ~2h, mostly rewriting the lifecycle as explicit states rather than moving text.
+
 ## Recorded rejections — do not re-propose without engaging the reason
 
 These were proposed (several more than once, by different reviewers) and rejected with cause. They're here so a future round argues with the reasoning instead of re-litigating the conclusion.

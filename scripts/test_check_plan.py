@@ -206,5 +206,41 @@ class CheckPlanTests(unittest.TestCase):
         self.assertIn("omission detector", r.stdout)
 
 
+class ComposedCheckerTests(unittest.TestCase):
+    """The standalone checker refusing malformed input is not enough: check-plan
+    imports the same parser, and a fail-open there turns 'could not parse' into
+    'no surface touched', which passes an unverified trivial claim."""
+
+    def test_trivial_claim_with_malformed_diff_fails_closed(self):
+        import subprocess, sys, os, tempfile
+        d = tempfile.mkdtemp()
+        plan = os.path.join(d, "plan.md")
+        diff = os.path.join(d, "diff.txt")
+        Path(plan).write_text(
+            "Risk: trivial — code-only formatting change. Skipping the plan gate.\n",
+            encoding="utf-8")
+        # space-separated, not the tab-separated name-status format
+        Path(diff).write_text("M tests/payment_tests.py\n", encoding="utf-8")
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "check-plan.py")
+        r = subprocess.run([sys.executable, script, plan, "--diff", diff],
+                           capture_output=True, text=True)
+        self.assertEqual(r.returncode, 2, f"must not pass over discarded input:\n{r.stdout}")
+        self.assertIn("unparseable", r.stdout)
+        self.assertNotIn("trivial claim stands", r.stdout)
+
+    def test_parser_does_not_leak_state_between_calls(self):
+        """Malformed lines are returned, not accumulated in module state, so one
+        caller cannot inherit another's leftovers."""
+        import importlib.util, os
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "check-spec-surface.py")
+        spec = importlib.util.spec_from_file_location("cs", path)
+        mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+        _, bad = mod.parse_name_status("M nope\n")
+        self.assertEqual(len(bad), 1)
+        entries, bad2 = mod.parse_name_status("M\ttests/ok.py\n")
+        self.assertEqual(bad2, [], "a clean second call must not inherit the first's malformed lines")
+        self.assertEqual(len(entries), 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

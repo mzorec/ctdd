@@ -380,11 +380,6 @@ class CheckRedstateTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0)
         self.assertIn("observed failing", r.stdout)
 
-
-if __name__ == "__main__":
-    unittest.main(verbosity=1)
-
-
 class GoldenExampleTests(unittest.TestCase):
     """The plan example embedded in ctdd-change/SKILL.md must satisfy the parsers
     it illustrates. Without this, the example and the scripts drift apart silently
@@ -442,3 +437,7 @@ class GoldenExampleTests(unittest.TestCase):
                 self.assertIn(n, r.stdout, f"{n} was silently dropped")
         finally:
             os.unlink(plan); os.unlink(log)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=1)

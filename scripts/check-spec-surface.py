@@ -85,7 +85,14 @@ STATUS_WORD = {"A": "added", "M": "modified", "D": "deleted", "T": "type-changed
 
 
 def parse_name_status(text):
-    """Yield (status, old_path, new_path_or_None) per name-status line."""
+    """Return (entries, malformed) for `git diff --name-status` text.
+
+    `entries` is a list of (status, old_path, new_path_or_None). `malformed`
+    holds any non-empty line that could not be parsed. It is returned rather
+    than accumulated in module state so that a caller cannot forget to reset it
+    between runs, and cannot silently inherit another caller's leftovers.
+    """
+    entries, malformed = [], []
     for raw in text.splitlines():
         line = raw.rstrip("\n")
         if not line.strip():
@@ -93,10 +100,15 @@ def parse_name_status(text):
         parts = line.split("\t")
         status = parts[0].strip()
         if status[:1] in ("R", "C") and len(parts) >= 3:
-            yield status, parts[1], parts[2]
+            entries.append((status, parts[1], parts[2]))
         elif len(parts) >= 2:
-            yield status, parts[1], None
-        # silently skip unparseable lines rather than crash mid-review
+            entries.append((status, parts[1], None))
+        else:
+            # A line we cannot parse is input we did not see. Reporting a clean
+            # verdict over discarded input is the fail-silent shape this script
+            # exists to prevent, so surface it and let main() refuse to conclude.
+            malformed.append(raw)
+    return entries, malformed
 
 
 def main():
@@ -106,8 +118,17 @@ def main():
         return 0
 
     if args and args[0] == "--git":
-        cmd = ["git", "diff", "--name-status", "-M"] + args[1:]
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        # Anchor to the project root: `git ls-files --others` is relative to the
+        # current directory, so running from a subdirectory silently omits a new
+        # test living elsewhere in the repo. The agent changes directory often.
+        repo = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+        # Default to HEAD, not a bare `git diff`. A bare diff compares the working
+        # tree against the *index*, so a test that has been modified and staged
+        # reports as no surface touched at all — the fail-silent shape this whole
+        # script exists to prevent. HEAD covers staged and unstaged together.
+        git_args = args[1:] or ["HEAD"]
+        cmd = ["git", "diff", "--name-status", "-M", *git_args]
+        r = subprocess.run(cmd, capture_output=True, text=True, cwd=repo)
         if r.returncode != 0:
             print(f"check-spec-surface: git failed: {r.stderr.strip()}")
             return 2
@@ -116,7 +137,12 @@ def main():
         # surface at all. List untracked files alongside it and mark them added, so the
         # convenience mode cannot quietly reopen the blind spot the pipeline closes.
         u = subprocess.run(["git", "ls-files", "--others", "--exclude-standard"],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, cwd=repo)
+        if u.returncode != 0:
+            # Failing quietly here would under-report surface, which is the one
+            # outcome this script must never produce.
+            print(f"check-spec-surface: could not list untracked files: {u.stderr.strip()}")
+            return 2
         untracked = "".join(f"A\t{line}\n"
                             for line in u.stdout.splitlines() if line.strip())
         text = r.stdout + untracked
@@ -132,7 +158,8 @@ def main():
     findings = {"contract": [], "test": [], "adr": []}
     other = 0
 
-    for status, old, new in parse_name_status(text):
+    entries, malformed = parse_name_status(text)
+    for status, old, new in entries:
         if status[:1] in ("R", "C"):
             verb = "renamed" if status[:1] == "R" else "copied"
             old_cls, new_cls = classify(old), classify(new)
@@ -160,6 +187,12 @@ def main():
                 other += 1
 
     touched = any(findings.values())
+    if malformed:
+        print(f"check-spec-surface: {len(malformed)} unparseable input line(s); "
+              f"the inventory is incomplete, so no verdict is given. First: "
+              f"{malformed[0][:80]!r}. Expected tab-separated `git diff --name-status` output.")
+        return 2
+
     print("check-spec-surface: spec-surface inventory (deterministic; "
           "patterns shared with the spec-edit hook, env overrides honored)")
     for cls, title in (("contract", "Contract surface"),

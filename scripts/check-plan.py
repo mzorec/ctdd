@@ -175,11 +175,21 @@ def main():
         except Exception as exc:
             print(f"check-plan: WARNING — could not load check-spec-surface "
                   f"({exc}); trivial claim NOT cross-checked.", file=sys.stderr)
-            print("check-plan: trivial-skip declaration found; cross-check "
-                  "unavailable — classification unverified.")
-            return 0
+            print("check-plan: trivial-skip declaration found, but the "
+                  "cross-check could not run — a trivial claim that was never "
+                  "verified is not a passing claim.")
+            return 2
         touched, added_only = [], True
-        for status, old, new in surface.parse_name_status(diff_text):
+        entries, malformed = surface.parse_name_status(diff_text)
+        if malformed:
+            # The standalone checker refuses a verdict over discarded input; the
+            # composed one must too, or "could not parse" silently becomes
+            # "no surface touched" and a trivial claim passes unverified.
+            print(f"check-plan: the diff has {len(malformed)} unparseable line(s); "
+                  f"first: {malformed[0][:80]!r}. The triviality cross-check is "
+                  f"incomplete, so this is not a pass.")
+            return 2
+        for status, old, new in entries:
             for p in (old, new):
                 if p and surface.classify(p) in ("test", "contract"):
                     touched.append(p)
