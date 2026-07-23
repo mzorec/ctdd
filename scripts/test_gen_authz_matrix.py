@@ -161,5 +161,53 @@ class GenAuthzMatrixTests(unittest.TestCase):
         self.assertIn("scaffold, not a generated file", r.stdout)
 
 
+class ContractFidelityTests(unittest.TestCase):
+    """The matrix must describe the contract, and must refuse to describe a
+    contract it could not fully read."""
+
+    @staticmethod
+    def _spec(text):
+        import tempfile
+        f = tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False, encoding="utf-8")
+        f.write(text); f.close(); return f.name
+
+    def _run(self, path, *extra):
+        import subprocess, sys, os
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gen-authz-matrix.py")
+        return subprocess.run([sys.executable, script, path, *extra],
+                              capture_output=True, text=True)
+
+    def test_empty_security_requirement_allows_anonymous(self):
+        """`- {}` in the security array means authentication is OPTIONAL. Denying
+        anonymous whenever it appeared beside an alternative contradicted the
+        contract the matrix exists to describe."""
+        import json, os
+        spec = self._spec(
+            "openapi: 3.0.3\ninfo: {title: t, version: '1'}\n"
+            "components:\n  securitySchemes:\n    bearerAuth: {type: http, scheme: bearer}\n"
+            "paths:\n  /optional:\n    get:\n      security:\n        - {}\n"
+            "        - bearerAuth: []\n      responses: {'200': {description: ok}}\n")
+        try:
+            r = self._run(spec)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            rows = {x["identity"]: x["expect"] for x in json.loads(r.stdout)["rows"]}
+            self.assertEqual(rows["anonymous"], "allow",
+                             "optional auth must not deny anonymous")
+        finally:
+            os.unlink(spec)
+
+    def test_unreadable_path_item_refuses_in_every_output_mode(self):
+        import os, tempfile
+        for body, label in (("  /p:\n    $ref: './x.yaml'\n", "external $ref"),
+                            ("  /p: []\n", "malformed path item")):
+            spec = self._spec("openapi: 3.0.3\ninfo: {title: t, version: '1'}\npaths:\n" + body)
+            out = tempfile.mktemp(suffix=".json")
+            try:
+                self.assertEqual(self._run(spec).returncode, 2, f"stdout mode, {label}")
+                self.assertEqual(self._run(spec, "-o", out).returncode, 2, f"-o mode, {label}")
+            finally:
+                os.unlink(spec)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

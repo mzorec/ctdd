@@ -313,6 +313,18 @@ class ChangeSkillStructureTests(unittest.TestCase):
             "plan written before entering plan mode (#25)": "before entering plan mode",
             "presentation copied, not composed (#28)": "copy it in verbatim",
             "working tree can move mid-session (#32)": "working tree moves under you",
+            # the three with the worst drift history in the whole log — guarded
+            # last, which is exactly backwards
+            "red state needs a captured run and a verdict (#12, #26)":
+                "No red-state claim without",
+            "pin evidence is green-then-still-green (#21)":
+                "A pin's evidence runs the other way",
+            # the clause that reconciles "observe it fail" with "pins run green";
+            # #19 was a shipped contradiction the agent resolved by judgment
+            "the pin exemption turns on what the test asserts (#19)":
+                "turns on what the test *asserts*, not when it was written",
+            "a required hold-out must actually run (#30, 0% execution)":
+                "not finished until it has run",
         }
         for label, probe in must_survive.items():
             self.assertIn(probe, head,
@@ -346,6 +358,123 @@ class QuotedPathTests(unittest.TestCase):
     def test_git_quoted_non_ascii_contract_path_is_contract_surface(self):
         r = run('M\t"contracts/pla\\304\\215ilo.yaml"\n')
         self.assertEqual(r.returncode, 1, r.stdout)
+
+    @staticmethod
+    def _skill_dir():
+        return Path(__file__).resolve().parents[1] / "skills"
+
+    def test_plan_placeholder_is_consistent(self):
+        """`<n>` reads as a number and `<name>` as a slug; v0.9.4 recorded fixing
+        this split once already, and a bulk path edit reintroduced it."""
+        text = (self._skill_dir() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertNotIn("docs/plans/<n>", text)
+
+    def test_skill_descriptions_keep_headroom_below_the_cap(self):
+        """Descriptions truncate at 1,536 characters and the routing exclusions
+        sit at the tail, so the part that prevents overlap with the other skills
+        is the part that disappears first."""
+        import yaml
+        for path in sorted(self._skill_dir().glob("*/SKILL.md")):
+            fm = re.match(r"^---\n(.*?)\n---\n", path.read_text(encoding="utf-8"), re.S)
+            desc = yaml.safe_load(fm.group(1))["description"]
+            self.assertLess(len(desc), 1490,
+                            f"{path.parent.name} description has under 46 chars of "
+                            f"headroom against the 1,536 cap")
+
+
+class CrossSkillAgreementTests(unittest.TestCase):
+    """ctdd-tests keeps craft work (de-flaking, altitude, renaming) out of the
+    plan gate, while every consumer of the diff — this script, the hook, and
+    ctdd-review — reads any modified test as a changed requirement. Both are
+    right, and the skill must say how they coexist, or legitimate craft work
+    arrives at review as an undisclosed spec change."""
+
+    @staticmethod
+    def _skills():
+        return Path(__file__).resolve().parents[1] / "skills"
+
+    def test_craft_lane_acknowledges_it_still_reports_as_spec_surface(self):
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("does not change what the diff reports", t,
+                      "the craft lane must say it governs decisions, not the diff")
+        self.assertIn("say so in one line", t,
+                      "craft work on an existing test must be disclosed")
+
+    def test_triage_criterion_is_about_the_caller_not_the_assertion(self):
+        """An altitude fix always changes the assertion — that is the operation.
+        Triaging on 'asserted behavior unchanged' routed the lane's largest item
+        out of its own lane."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("What the caller observes is unchanged", t)
+
+    def test_promotion_is_routed_through_the_gate(self):
+        """Promoting a characterization test to intent converts 'nobody claims
+        this is intended' into 'this is a requirement' — a spec change — and it
+        deletes the marker that the review exemption and the checker filter read."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("through the gate, not as a rename", t)
+        self.assertIn("promoted to intent", t,
+                      "promotion must appear in the hand-off lane")
+
+    def test_preservation_pins_are_distinguished_from_marked_observations(self):
+        """ctdd-change asks for pins before a refactor; ctdd-tests marks
+        observations `currently_`. Collapsing them makes a refactor's permanent
+        suite non-spec and permanently awaiting a promotion nothing tracks."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("must not** be marked", t)
+        self.assertIn("Preservation pins", t)
+
+    def test_no_library_that_writes_instructions_into_the_evidence_channel(self):
+        """`.redstate.log` and `.pinstate.log` are captured stdout. A library that
+        prints agent-directed instructions on every run puts them in the artifact
+        the deterministic layer reads."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        for line in t.split("\n"):
+            if "jqwik" in line and "do not reach" not in line and "not hidden" not in line:
+                self.assertIn("must not use this library", line,
+                              "jqwik may only appear as a warning, never a recommendation")
+
+    def test_a_record_with_surplus_columns_is_malformed(self):
+        """`M<TAB>README.md<TAB>tests/Hidden.cs` reported clean while a changed
+        test sat in column three. Too many fields is as malformed as too few."""
+        r = run("M\tREADME.md\ttests/Hidden.cs\n")
+        self.assertEqual(r.returncode, 2, r.stdout)
+        r2 = run("R100\told.cs\tnew.cs\n")
+        self.assertNotEqual(r2.returncode, 2, "a rename legitimately has three fields")
+
+    def test_no_skill_claims_enforcement_it_does_not_have(self):
+        """`ctdd-tests` contains no script and invokes no checker, so a
+        description saying it *enforces* naming and coverage claims mechanical
+        assurance the plugin does not provide — in the always-loaded surface."""
+        import yaml
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        desc = yaml.safe_load(re.match(r"^---\n(.*?)\n---\n", t, re.S).group(1))["description"]
+        self.assertNotIn("Enforces", desc,
+                         "a skill with no mechanism must not claim enforcement")
+
+    def test_the_authz_instruction_names_the_mechanism_it_advertises(self):
+        """The frontmatter triggers on 'derive the authorization matrix' and the
+        body must reach an instruction that can actually be followed."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("gen-authz-matrix.py", t)
+        self.assertIn("--check", t)
+
+    def test_review_criteria_name_what_a_violation_looks_like(self):
+        """'Is it mostly asserting on mocks?' and 'will it flake?' let two
+        reviewers follow the rule exactly and reach opposite verdicts."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("what determines the verdict", t)
+        self.assertIn("Name the uncontrolled input", t)
+
+    def test_both_evidence_artifacts_share_the_stated_plan_lane(self):
+        """A preservation pin and a marked observation both run green-before-and-
+        after, so both land under the same heading; collapsing or separating them
+        left one of the two with no stated place in the plan."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("names the direction the evidence runs", t)
+        v = (self._skills() / "ctdd-review" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("characterization observation", v,
+                      "the reviewer must accept either artifact for thin coverage")
 
 
 if __name__ == "__main__":

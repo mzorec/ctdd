@@ -2,9 +2,9 @@
 """check-redstate.py — verify new tests were *observed failing* before implementation.
 
 Usage:
-    python3 scripts/check-redstate.py run.log --test Name1 --test Name2
-    dotnet test 2>&1 | python3 scripts/check-redstate.py - --test Name1
-    python3 scripts/check-redstate.py run.log --tests-from docs/plans/<plan>.md
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" run.log --test Name1 --test Name2
+    dotnet test 2>&1 | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" - --test Name1
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" run.log --tests-from docs/plans/<plan>.md
 
 Why this exists: "run the new tests and watch them fail first" is the cheapest
 guard against a vacuously-passing test — a test that has never failed is
@@ -120,6 +120,34 @@ def looks_like_failure(line):
     return True
 
 
+def _match_span(line, name):
+    """Return (start, end) where `name` appears as a whole identifier, else None.
+
+    A bare `name in line` let `--test Foo` be satisfied by `FooBar`, certifying a
+    test that never ran. Runner output surrounds a test name with `::`, `.`, `(`,
+    whitespace and similar, so the boundary is "not a word character and not one
+    of the characters a test name may itself contain".
+    """
+    for m in re.finditer(re.escape(name), line):
+        before = line[m.start() - 1] if m.start() else " "
+        after = line[m.end()] if m.end() < len(line) else " "
+        if not (before.isalnum() or before in "_.") and \
+           not (after.isalnum() or after in "_"):
+            return m.start(), m.end()
+    return None
+
+
+def _verdict_text(line, name):
+    """The runner's own text, with the matched test name removed.
+
+    Marker words inside an identifier are not verdicts: `error_handling_is_logged`
+    contains "error" and `success_is_logged` contains "success", and scanning the
+    whole line let either certify itself with no verdict present anywhere.
+    """
+    span = _match_span(line, name)
+    return line if span is None else line[:span[0]] + " " + line[span[1]:]
+
+
 def looks_like_pass(line):
     """True if this line reports the named test passing."""
     low = line.lower()
@@ -140,9 +168,9 @@ def observed_passing(log, name):
     """(seen, passed) — the mirror of observed_failing, for pin evidence."""
     seen = False
     for line in log.splitlines():
-        if name in line:
+        if _match_span(line, name) is not None:
             seen = True
-            if looks_like_pass(line):
+            if looks_like_pass(_verdict_text(line, name)):
                 return True, True
     return seen, False
 
@@ -151,9 +179,9 @@ def observed_failing(log, name):
     """(seen, failed) — was the test mentioned at all, and on a failing line?"""
     seen = False
     for line in log.splitlines():
-        if name in line:
+        if _match_span(line, name) is not None:
             seen = True
-            if looks_like_failure(line):
+            if looks_like_failure(_verdict_text(line, name)):
                 return True, True
     return seen, False
 
@@ -256,7 +284,12 @@ def names_from_plan(path, want_pins=False):
         if section != want:
             continue
         m = NAME_RX.match(line)
-        if m and (want_pins or not m.group(1).lower().startswith("currently_")):
+        # The marker is recognised in every rendering an author writes:
+        # `currently_x`, `Currently_X` and `CurrentlyReturnsX`. Extraction learned
+        # PascalCase at finding #29 and this *classification* filter did not, so a
+        # PascalCase observation read as a new-behaviour test — the same
+        # fix-one-call-site shape as finding #36.
+        if m and (want_pins or not re.match(r"currently", m.group(1), re.I)):
             found.append(m.group(1))
     return list(dict.fromkeys(found))
 
@@ -286,6 +319,12 @@ def main():
                           f"write `Preservation pins — must pass before and after` "
                           f"(or `Preservation pins: none` when there genuinely are "
                           f"none). Refusing to verify a pin lane that has no pins.")
+                    return 2
+                if not expect_pass and not _found:
+                    print(f"check-redstate: {_plan} contributed no test names — "
+                          f"the plan cross-check is not operating, so a test swapped "
+                          f"between plan and implementation would pass unnoticed. "
+                          f"Check the new-behavior heading and that names are bullets.")
                     return 2
                 names.extend(_found)
             except OSError as exc:

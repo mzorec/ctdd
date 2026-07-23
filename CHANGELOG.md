@@ -4,6 +4,22 @@
 
 _Docs and other non-runtime edits collect here and fold into the next runtime release. Version numbers move only when the skills, scripts, or hooks change._
 
+- `ctdd-in-depth.md` gains an honest limit on the deterministic tiers: moving a rule into a checker removes drift but not wrongness, and substitutes a quieter failure. Twenty defects of one shape — a checker reporting success over input it never read — came out of running this method's own tooling, several of them fixes for the previous one that reached a single caller. The two rules that follow are free and were not obvious in advance: test checkers against malformed, partial and empty input rather than well-formed input, and enumerate every caller before declaring a fail-silent path closed.
+- Checked and found accurate, so unchanged: the status pin (version and all three measurements), the six deterministic pieces, hold-out vocabulary, and the absence of any withdrawn library recommendation. `ctdd-in-practice.md` and the README need nothing — the night's changes were runtime and packaging, which those documents deliberately stay clear of.
+
+- Backlog: the truncation work is now measured and filed in priority order. Cutting step 6's rationale is the low-risk first move (184 characters of margin becomes ~1,400, nothing becomes load-dependent). Moving steps 7–10 into references is the only change that reaches the 5,000 guidance, and it is *strictly better* rather than a trade, because those steps are already truncated — a reference with a surviving loader is available on demand where truncation is simply gone. Its trigger can resolve either way: run one real change through a compacting session, and if nothing goes wrong the refactor should not be built at all. Splitting step 6's structure is demoted to last: it converts rules that currently survive into conditionally-loaded ones with no checker behind them.
+
+- A second improvements audit of `ctdd-tests` converged independently on the same candidates and the same verdict: build none, every trigger unfired. Existing entries refined (report the marker-removal *event* rather than inferring promotion; altitude churn needs a human behaviour-preserving label as input) and one new candidate filed — a validated craft receipt that checks the disclosure's completeness without certifying its reason. Four rejections recorded with reproductions, including the counterexample showing a mutation score cannot detect altitude: an interaction-coupled and a behaviour-level test both kill the same mutant, and only a preserving refactor separates them. The rationale now states that distinction with the case that shows it.
+
+- Coherence audit after the review run: no contradictions introduced, vocabulary consistent across the three skills, and the repeated softening of absolutes did not dilute the rules (hedge density 0.05–0.16%). One structural drift found and recorded: `ctdd-change` has grown past the point where moving a rule earlier can rescue it — a guarded rule now sits 184 characters inside the truncation boundary, and moving two others in pushed it out. The step-6 split's trigger has fired on that measurement.
+
+- Backlog: four mechanisation candidates for `ctdd-tests` filed with fireable triggers and false-alarm costs — a promotion detector, an observation ledger, altitude-churn analysis, and a sleep-only determinism lint. **None built**: every trigger is unfired. Six proposals recorded as rejected with their measured false-positive rates, including a name linter at 43% and the full determinism clause at 50%, which is why the lint is filed narrowed to sleeps alone.
+
+- Backlog: the step-6 split's trigger was "a rested session" — a schedule, not a failure condition, in the file whose purpose is holding work until evidence arrives. Replaced with a condition that can actually fire, and the rule is now stated once at the top: a trigger names an observable event, or it is an intention to build dressed as discipline. The two ready-to-build entries also gained the half they were missing — what would show each was a mistake.
+
+- Step 7 no longer restates the evidence rule the standing guardrails already carry. The guardrail copy survives compaction and the step-7 copy did not, so the duplication cost attention without adding coverage; step 7 now points at it. 159 characters removed, no rule lost.
+- Backlog: the machine-readable test block and the single evidence-verification command are filed as ready to build, with the design settled — a fenced block under the existing headings rather than YAML frontmatter, because a plan may live in plan-mode output or a PR description, and the block must be the human-readable list rather than a second copy of it.
+
 - **README no longer overclaims, in two places where simplifying contradicted the method.** "The contract and the tests can't lie: they run" is false as written — tests can execute perfectly while encoding the wrong business rule, which is the method's own central weakness, and a contract not wired into validation constrains nothing. It now says what is actually true: they can still be wrong about intent, but once enforced they cannot *silently* disagree with the implementation they cover, which a prose spec can. And "that pause before coding is the whole point" contradicted the gate's demotion from main guard to *first* guard: it catches a wrong direction, not a wrong encoding, because at plan time the assertion bodies do not exist yet.
 - **README keys hold-outs on load-bearing semantics rather than implementation risk**, matching the fix already made in `ctdd-review`. A payment amendment is routinely normal-risk and still load-bearing.
 - **The CI recipe now fetches the scripts.** Installing the plugin puts them in Claude Code's plugin directory on a developer's machine, not in the application repository CI checks out — so the recipe silently ran nothing, or worse, whatever happened to sit at `scripts/` in the target project. It now clones the plugin at a pinned version into `.ctdd/` and calls the scripts from there.
@@ -13,6 +29,123 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 - README rewritten for a senior engineer meeting CTDD for the first time. It now opens with what using the plugin looks like before the philosophy, leads the three-doc split cleanly (README = operating manual, *in practice* = the ten-minute feel, *in depth* = the reasoning), and cuts the em-dash-heavy phrasing that made it read as machine-written. Same content and same six-deterministic-pieces honesty; about 1,000 tokens lighter.
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
+
+## 0.20.1 — 2026-07-21
+
+The non-blocking half of the `ctdd-tests` audit: the delete list and the sharpening list.
+
+### Removed
+- Eight further clauses of exhortation and repetition — "left unfixed it corrupts the spec", "untested behavior reads as unconstrained", "a flaky perf gate … worse than an honest absence", "this asymmetry is the point", and the sentence in the opening that described what the skill does, which the always-loaded description already says.
+
+### Changed
+- **A green property run is sampled evidence, not proof.** The runner exercises a finite configured number of generated cases looking for a counterexample and shrinks one when it finds it; saying so keeps the guarantee honest.
+- **Idempotency is stated so it can be asserted**: under the same key, the observable result is identical *and* there is no duplicate side effect. "Twice equals once" is the slogan, not the assertion.
+- **"The ecosystem's standard tools" is now "an established, project-approved tool."** Standard is not a property a tool has.
+- **An SLO check must name five things** — metric, percentile, workload, environment, threshold. Fewer than five is an aspiration wearing a check's name.
+
+### Kept, against the review
+- The delete list marked "tests are the spec for preservation; they do not tell you what new thing to build" as a fourth restatement. It is the routing boundary that sends creation to the business requirement and the plan, and it is the only place this skill says where new behavior comes from. Kept; the genuinely decorative sentence beside it was cut instead.
+
+## 0.20.0 — 2026-07-21
+
+A rule-by-rule audit of `ctdd-tests`, which had never been read clause by clause.
+
+### Fixed
+- **The always-loaded description claimed to *enforce* rules the skill only prompts.** `ctdd-tests` ships one file and invokes no checker; it now says it applies criteria and reviews coverage rather than enforcing them.
+- **A marked characterization observation had no stated place in a plan.** The distinction added in 0.17.1 landed in one skill and not its consumers. Both artifacts now share the `Preservation pins` heading, because that heading names the direction the evidence runs — green before, still green after — not the artifact's intent. `ctdd-review` accepts either.
+- **Two review checks could not produce reproducible findings.** "Mostly asserting on mocks?" and "will it flake?" are now stated as criteria: flag a test whose verdict comes only from collaborator interactions when an observable outcome was available, and name the uncontrolled input rather than predicting flakiness.
+- **The authorization-matrix instruction named no mechanism**, despite the skill triggering on it. It now gives the exact generate and check commands, and it has moved out of property-based testing — the generator derives a finite exhaustive table, which is contract conformance, not sampling.
+- A surviving mutant no longer implies a weak test: equivalent mutants cannot be killed by any test, and chasing one produces an implementation-detail assertion. A regression test now stays *while the behavior is required*, which stops it contradicting the amendment lane. A flaky marked test has a tiebreak. The name examples now include a behavior-sounding name that is still implementation-coupled.
+- "Visual/UX correctness, which tests can't assert" is now a scope statement rather than a false absolute — visual regression and accessibility tooling exist; they are simply out of scope here.
+
+### Removed
+- Eleven clauses classified as exhortation or repetition, including two superlatives that offered no decision procedure.
+
+### Added
+- Four guards: no skill may claim enforcement it lacks, the authz instruction must name its mechanism, the review criteria must state what a violation looks like, and both evidence artifacts must share the stated plan lane. Suite 140 → 144.
+
+## 0.19.1 — 2026-07-21
+
+### Fixed
+- **Step 6 stated a configuration-dependent behaviour as an absolute.** It justified writing the plan before entering plan mode by claiming plan mode's own file is necessarily outside the repository and that an agent inside plan mode cannot create the canonical plan. `plansDirectory` is configurable, so that is a policy about which artifact is authoritative, not a limit of the tool. Rewritten as policy — and the configurable case strengthens the rule rather than weakening it, since pointing it into the repo puts two plans in one directory with only one of them reviewed.
+
+### Added
+- The golden test now asserts the authoritative example carries **both** mandated test headings, so it cannot drift from the format again. Suite 139 → 140.
+
+## 0.19.0 — 2026-07-21
+
+Six blockers in the deterministic scripts, all reproduced before fixing.
+
+### Fixed
+- **An optional-authentication endpoint was generated as requiring authentication.** Under OpenAPI, an empty security requirement (`- {}`) means auth is optional; the generator denied anonymous callers whenever it appeared beside an alternative, so the matrix asserted the opposite of the contract and the scaffolded tests would have enforced it.
+- **The authorization generator published matrices for contracts it could not read.** The fix in 0.16.0 covered `--check` and `-o` but not the documented stdout mode, which is exactly what gets redirected into a committed matrix. Malformed path items were skipped silently in every mode. Completeness is now checked once, before any output.
+- **`check-plan.py` accepted surplus positionals and misspelled flags in silence**, so passing a diff in the wrong position — or typing `--from-descriptino` — disabled the only deterministic triviality cross-check while the run still reported success.
+- **A diff record with extra columns hid a changed test from both surface checkers.** `M<TAB>README.md<TAB>tests/Hidden.cs` reported no surface touched, because the parser accepted two-or-more fields and read only the second.
+- **`check-redstate.py` certified tests that never ran.** A planned name matched any longer name containing it, and marker words inside a test's own name were read as the runner's verdict — so a log with no verdict in it could prove either a failure or a pass.
+- **`check-plan.py` blessed plans whose sections do not exist.** Only the two decision-summary buckets were line-anchored; the rest matched category words anywhere, so a paragraph mentioning them passed as though each were a section.
+
+### Added
+- Seven regression tests, including the optional-auth matrix, the hidden third column, and all three verdict-manufacturing cases. Suite 132 → 139.
+
+### Note
+- Three of these six were earlier fixes that reached one call site and not its siblings — the pattern finding #36 named and which has now recurred twice since being written down.
+
+## 0.18.0 — 2026-07-21
+
+### Changed
+- **`check-plan.py` now requires both test headings.** The rule that a plan must carry `New-behavior tests` and `Preservation pins` — even when one is empty — existed only in the format prose, so every non-conformant shape passed the gate and the failure surfaced at step 7 instead, after approval and after the tests were written. Four heading vocabularies were in circulation, and the two artifacts an agent imitates most, the worked example and the skeleton, both modelled shapes the format forbids. Examples and fixtures updated to the mandated pair.
+- **Five test fixtures were asserting the pre-fix behaviour** and had to be corrected, including one named for satisfying a rule it violated. A suite that encodes an obsolete requirement defends the defect against its own fix.
+- **The pin exemption's discriminator moved inside the surviving window.** *The exemption turns on what the test asserts, not when it was written* is the clause that reconciles "observe it fail" with "pins run green" — it sat past the compaction boundary and unguarded, which is the exact state that produced the shipped contradiction in finding #19. Moved into the standing pin rule, the two redundant step-7 paragraphs removed, a survival probe added. Net 573 characters lighter.
+
+## 0.17.1 — 2026-07-21
+
+### Removed
+- **jqwik is no longer recommended for JVM property testing.** Its maintainer prohibits use by AI coding agents, and the engine prints a line to stdout on every run telling agents to ignore its results — text that would land verbatim in `.redstate.log` and `.pinstate.log`, since those are captured stdout. Recommending it meant planting instruction-shaped content in the evidence channel this method depends on. No replacement is named, because none was verified.
+
+### Fixed
+- **A characterization test and a preservation pin were the same word for different artifacts.** One is a marked, provisional observation that may be pinning a bug; the other is permanent intent, written early so it can act as a detector. Since all test construction routes through `ctdd-tests`, an obedient agent would have marked a refactor's whole suite `currently_`, making it non-spec forever. Preservation pins must not carry the marker.
+- **`load-bearing` and `hold-out` are now defined where they are used.** `ctdd-tests` runs standalone and relied on definitions living in `ctdd-review`; it also said nothing about writing a hold-out, despite owning test craft and being the skill every test passes through.
+- **`ctdd-review` listed five of the six review checks**, dropping coverage of the contract. It now points at the source instead of copying it.
+- **The `currently_` filter missed PascalCase renderings**, so a marked observation written `CurrentlyReturnsX` was classified as new behaviour and pushed into the red-state set it is exempt from.
+- Tool caveats: mutmut needs WSL on Windows, and the authorization rule flagged missing rows while the generator's known defect produces rows that are all deny.
+
+### Added
+- Guards for the marker renderings, the pin/observation distinction, and the withdrawn library. Suite 129 → 132.
+
+## 0.17.0 — 2026-07-21
+
+`ctdd-tests` kept craft work out of the plan gate while every consumer of the resulting diff treated any modified test as a changed requirement. Both were right; the skill never said how they coexist.
+
+### Fixed
+- **The craft lane now says what it actually governs.** Staying in this lane decides what you may do without the gate — it does not change what the diff reports. De-flaking, an altitude fix or a rename still lands as test surface, so it must be disclosed in one line: which tests, and why the observable behavior is unchanged. A reviewer checks that reason against the surface report instead of looking for a plan that correctly does not exist. Without it, legitimate craft work arrived flagged at the highest severity.
+- **The triage question asks about the caller, not the assertion.** Fixing altitude always changes what a test asserts — swapping a call-count assertion for an outcome assertion is the whole operation — so "asserted behavior unchanged" routed the lane's largest activity out of its own lane. The question is whether what a caller observes is the same.
+- **Promoting a characterization test to intent goes through the gate.** It converts "nobody claims this is intended" into "this is a requirement", which is a spec change, and it deletes the `currently_` marker that the review exemption and the red-state filter both read. It is now named in the hand-off lane, with the old marker and new name shown together and the marker dropped last.
+
+### Added
+- Three tests asserting the cross-skill agreement holds, so this contradiction cannot return quietly. Suite 126 → 129.
+
+## 0.16.2 — 2026-07-21
+
+### Fixed
+- **`--test` combined with a `--tests-from` that yielded nothing reported success anyway.** The plan cross-check — the thing that catches a test swapped between plan and implementation — stopped operating silently. It now reports the plan's contribution and refuses.
+- **The decision-summary bucket check matched prose anywhere in the document.** "Nothing here is blocking and I am proceeding unless something breaks" satisfied both buckets with neither heading present, while the changelog claimed they were enforced. Patterns are now anchored to the start of a line.
+- **The `<n>` / `<name>` plan placeholder split returned** after being fixed in v0.9.4; a bulk path edit reintroduced it.
+- **`ctdd-tests`' description had four characters of headroom** against the description cap, with its routing exclusions at the tail — so the next addition would have truncated the part that stops it overlapping the other skills. Trimmed to 1,452 characters, exclusions verified, and a guard now fails below 46 characters of headroom.
+- **Hook enablement assumed a clone.** For a marketplace install the plugin lives in a per-version cache directory that is reclaimed after upgrades, so copying a file there is both awkward and temporary. The README now says so and gives the durable alternative.
+- **The CI recipe pinned a literal version** that goes stale every release; it now carries a placeholder.
+
+### Added
+- Guards for each, including one asserting every skill description keeps headroom below the cap. Suite 122 → 126.
+
+## 0.16.1 — 2026-07-21
+
+### Fixed
+- **The evidence rules with the worst drift history were the ones most likely to be truncated.** Red-state discipline, the verdict-not-the-log rule, and hold-out execution all lived inside steps 7 and 9 — which fire latest in a session, which is exactly when compaction has already happened. They are now standing guidance, stated as conditions rather than step outputs, and the survival test guards them.
+- **The bug-fix lane's worked example failed both checkers.** It showed a compressed plan as three inline one-liners; a plan in that shape is rejected by `check-plan.py` for eight missing sections and gives `check-redstate.py` nothing to read. Since bug fixes are the modal case, the least-supported path was the most-used one. The example is now a complete short plan with the regression test as a bullet, bound to both checkers by a golden test.
+- **The CI recipe made every surface inventory noisy.** It cloned the plugin into the checkout without ignoring it, so the plugin's own tests reported as your changed spec surface. Over-reporting teaches a reader to ignore the verdict just as reliably as under-reporting does.
+
+### Corrected
+- **Findings #31 and #33 recorded a false runtime fact.** They claimed `${CLAUDE_SKILL_DIR}` does not exist, and #33 generalised that into a standing caution about reviewers repeating claims. The variable exists — it is the directory containing a skill's `SKILL.md`, added in v2.1.64 — and the verification behind both rejections consulted the plugins reference rather than the skills substitutions table. `${CLAUDE_PLUGIN_ROOT}` is still the right choice here, because it also resolves in frontmatter where the other has open bugs, but that is a reason on the merits. Both findings are amended in place with the original text preserved.
 
 ## 0.16.0 — 2026-07-21
 

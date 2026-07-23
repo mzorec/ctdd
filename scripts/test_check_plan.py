@@ -25,8 +25,9 @@ Assumptions:
 - y
 Uncovered / ambiguous:
 - z
-Proposed tests:
+New-behavior tests — must be observed failing first:
 - t
+Preservation pins — must pass before and after: none
 Contract changes: none
 NFR budgets touched: none
 Hold-out: not required — read path
@@ -56,7 +57,8 @@ class CheckPlanTests(unittest.TestCase):
 
     def test_missing_sections_fail_and_are_named(self):
         r = run("Risk level: normal — x\nExisting behavior: y\nAssumptions: z\n"
-                "Uncovered: q\nProposed tests: t\nContract changes: none\n"
+                "Uncovered: q\nNew-behavior tests — must be observed failing first:\n- t\n"
+                "Preservation pins — must pass before and after: none\nContract changes: none\n"
                 "Files likely to change: a\n")
         self.assertEqual(r.returncode, 1)
         self.assertIn("NFR budgets", r.stdout)
@@ -112,16 +114,19 @@ class CheckPlanTests(unittest.TestCase):
         finally:
             os.unlink(d)
 
-    def test_pins_only_plan_satisfies_the_test_section(self):
-        # A behavior-preserving refactor's plan lists preservation pins instead
-        # of "Proposed tests" — the heading vocabulary the skill itself mandates.
-        # It must satisfy the required test-section check, not be rejected.
-        plan = FULL_PLAN.replace("Proposed tests:\n- t\n",
-                                 "Preservation pins — must pass before and after:\n"
-                                 "- currently_maps_entity_to_dto\n")
-        r = run(plan)
-        self.assertEqual(r.returncode, 0, r.stdout)
-        self.assertIn("all mandatory sections present", r.stdout)
+    def test_a_single_test_heading_fails_the_gate(self):
+        """Both headings are mandatory, even when one is empty. A plan with only
+        one has no correct lane at step 7 — the default check reads pins as new
+        tests, --expect-pass finds no pin section — so the gate is where that
+        must be caught, not after approval with the tests already written."""
+        for single in ("New-behavior tests — must be observed failing first:\n- t\n",
+                       "Preservation pins — must pass before and after:\n- currently_x\n"):
+            plan = FULL_PLAN.replace(
+                "New-behavior tests — must be observed failing first:\n- t\n"
+                "Preservation pins — must pass before and after: none\n", single)
+            r = run(plan)
+            self.assertEqual(r.returncode, 1, f"single heading must fail:\n{r.stdout}")
+
 
     def test_missing_decision_summary_buckets_fail(self):
         plan = FULL_PLAN.replace("BLOCKING — I will not guess:", "Open questions:")
@@ -240,6 +245,63 @@ class ComposedCheckerTests(unittest.TestCase):
         entries, bad2 = mod.parse_name_status("M\ttests/ok.py\n")
         self.assertEqual(bad2, [], "a clean second call must not inherit the first's malformed lines")
         self.assertEqual(len(entries), 1)
+
+    def test_prose_mentioning_blocking_does_not_satisfy_the_bucket_check(self):
+        """The bucket patterns matched the words anywhere in the document, so
+        'nothing here is blocking and I am proceeding unless something breaks'
+        satisfied both buckets with neither heading present. A presence detector
+        that matches prose is not detecting the presence of what it names."""
+        import subprocess, sys, os, tempfile
+        plan = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8")
+        plan.write("Risk level: normal.\n"
+                   "Nothing here is blocking and I am proceeding unless something breaks.\n"
+                   "Existing behavior: x\nAssumptions: none\n"
+                   "Uncovered or ambiguous: none\n"
+                   "New-behavior tests — must be observed failing first:\n- some_test\n"
+                   "Preservation pins — must pass before and after: none\n"
+                   "Contract changes: none\nNFR budgets: none\n"
+                   "Hold-out: not required. result: n/a\nFiles likely to change: y\n")
+        plan.close()
+        try:
+            r = subprocess.run([sys.executable, os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "check-plan.py"), plan.name],
+                capture_output=True, text=True)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("BLOCKING", r.stdout)
+        finally:
+            os.unlink(plan.name)
+
+    def test_surplus_or_misspelled_arguments_are_refused(self):
+        """A diff passed as a positional, or `--from-descriptino`, used to be
+        discarded in silence — so a typo disabled the only deterministic
+        triviality cross-check while the run still exited 0."""
+        import subprocess, sys, os, tempfile
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "check-plan.py")
+        plan = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8")
+        plan.write("Risk: trivial — docs only. Skipping the plan gate.\n"); plan.close()
+        diff = tempfile.NamedTemporaryFile("w", suffix=".status", delete=False, encoding="utf-8")
+        diff.write("M\ttests/Changed.cs\n"); diff.close()
+        try:
+            r = subprocess.run([sys.executable, script, plan.name, diff.name],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 2, f"surplus positional:\n{r.stdout}")
+            self.assertIn("extra argument", r.stdout)
+        finally:
+            os.unlink(plan.name); os.unlink(diff.name)
+
+    def test_prose_mentioning_section_names_is_not_a_plan(self):
+        """Only the two buckets were line-anchored; the rest matched category
+        words anywhere, so a paragraph merely mentioning them passed as though
+        every section existed."""
+        plan = ("BLOCKING — none.\nProceeding unless you object: x.\n"
+                "Risk level: normal — local change.\n"
+                "New-behavior tests — must be observed failing first:\n- a_test\n"
+                "Preservation pins — must pass before and after: none\n\n"
+                "This paragraph mentions existing behavior, assumptions, uncovered and\n"
+                "ambiguous cases, contract changes, NFR budgets, hold-out, and files to\n"
+                "change, but defines none of them as sections.\n")
+        r = run(plan)
+        self.assertEqual(r.returncode, 1, f"prose mentions are not sections:\n{r.stdout}")
 
 
 if __name__ == "__main__":

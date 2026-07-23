@@ -132,6 +132,8 @@ cp hooks/hooks.json.example hooks/hooks.json
 /reload-plugins
 ```
 
+That works from a clone. **For a marketplace install it does not**, and the reason is worth knowing: the plugin lives under `~/.claude/plugins/cache/<version>/`, a fresh directory per version whose predecessor is reclaimed some days after an update — so a file you copy there is both awkward to find and temporary. Either keep a clone for the teams that want the hook, or copy `hooks.json.example` into your own project's `.claude/` and point it at the plugin's script with `${CLAUDE_PLUGIN_ROOT}`, which survives upgrades because it resolves at run time.
+
 Because it fires on every matching edit, consider narrowing it first, contract files only is a good default, since they're higher-stakes and edited far less often than tests. You tune detection with semicolon-separated regexes, matched case-insensitively against the path:
 
 ```
@@ -161,10 +163,14 @@ Installing the plugin puts the scripts in Claude Code's plugin directory on a de
 
 ```yaml
 variables:
-  CTDD_VERSION: "v0.15.0"     # pin it; an unpinned checker is a moving gate
+  CTDD_VERSION: "<latest-release-tag>"   # e.g. v0.16.1 — a literal here goes stale every release     # pin it; an unpinned checker is a moving gate
 
 .ctdd-tools: &ctdd-tools
   - git clone --depth 1 --branch "$CTDD_VERSION" https://github.com/mzorec/ctdd.git .ctdd
+  # keep the clone out of the surface inventory: without this the plugin's own
+  # tests report as your changed spec surface, and a verdict that over-reports
+  # trains the reader to ignore it, which is the same outcome as under-reporting
+  - grep -qxF '.ctdd/' .gitignore 2>/dev/null || echo '.ctdd/' >> .gitignore
 
 ctdd:spec-surface:
   stage: test

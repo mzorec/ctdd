@@ -2,9 +2,9 @@
 """check-spec-surface.py — deterministic inventory of the spec surface a diff touches.
 
 Usage:
-    git diff --name-status -M | python3 scripts/check-spec-surface.py -
-    python3 scripts/check-spec-surface.py name-status.txt
-    python3 scripts/check-spec-surface.py --git [extra git-diff args...]
+    git diff --name-status -M | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" -
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" name-status.txt
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git [extra git-diff args...]
 
 Reads `git diff --name-status` output (use -M so renames are detected) and
 classifies every touched path against the SAME test/contract patterns the
@@ -119,14 +119,22 @@ def parse_name_status(text):
             continue
         parts = line.split("\t")
         status = parts[0].strip()
-        if status[:1] in ("R", "C") and len(parts) >= 3:
-            entries.append((status, unquote_git_path(parts[1]), unquote_git_path(parts[2])))
-        elif len(parts) >= 2:
+        # Exact field counts. A rename or copy carries three columns; every other
+        # status carries two. Accepting ">= 2" and reading only column two let
+        # `M<TAB>README.md<TAB>tests/Hidden.cs` report clean while a changed test
+        # sat in column three — the subset-verified-and-passed shape reached
+        # through the record's own shape. Too many fields is as malformed as too
+        # few, and a line we cannot parse is input we did not see: reporting a
+        # clean verdict over discarded input is what this script exists to stop.
+        if status[:1] in ("R", "C"):
+            if len(parts) == 3:
+                entries.append((status, unquote_git_path(parts[1]),
+                                unquote_git_path(parts[2])))
+            else:
+                malformed.append(raw)
+        elif len(parts) == 2:
             entries.append((status, unquote_git_path(parts[1]), None))
         else:
-            # A line we cannot parse is input we did not see. Reporting a clean
-            # verdict over discarded input is the fail-silent shape this script
-            # exists to prevent, so surface it and let main() refuse to conclude.
             malformed.append(raw)
     return entries, malformed
 

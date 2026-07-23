@@ -2,10 +2,10 @@
 """gen-authz-matrix.py — derive the authorization matrix from an OpenAPI contract.
 
 Usage:
-    python3 scripts/gen-authz-matrix.py openapi.yaml                  # matrix JSON to stdout
-    python3 scripts/gen-authz-matrix.py openapi.yaml -o authz-matrix.json
-    python3 scripts/gen-authz-matrix.py openapi.yaml --check authz-matrix.json
-    python3 scripts/gen-authz-matrix.py --csharp-scaffold             # xUnit adapter, print once
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gen-authz-matrix.py" openapi.yaml                  # matrix JSON to stdout
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gen-authz-matrix.py" openapi.yaml -o authz-matrix.json
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gen-authz-matrix.py" openapi.yaml --check authz-matrix.json
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gen-authz-matrix.py" --csharp-scaffold             # xUnit adapter, print once
 
 What it does: for every operation in the contract and every derivable
 identity, it emits the expected outcome a caller observes — behavior-level
@@ -119,6 +119,10 @@ HTTP_METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "tra
 def operations(spec):
     for path, item in (spec.get("paths") or {}).items():
         if not isinstance(item, dict):
+            # A path item that is neither a mapping nor a resolvable reference is
+            # contract we could not read. Skipping it silently let a matrix be
+            # published for the subset that parsed.
+            SKIPPED.append(f"{path} (not a mapping)")
             continue
         if "$ref" in item:
             print(f"gen-authz-matrix: WARNING — $ref path item skipped: {path}",
@@ -146,7 +150,17 @@ def collect_identities(spec):
 
 
 def satisfies(identity_scopes, requirement, known_schemes):
-    """One requirement object: AND across its schemes. identity_scopes=None => anonymous."""
+    """Whether an identity meets one requirement object.
+
+    An EMPTY requirement (`- {}` in the security array) means authentication is
+    optional for that operation, so *every* identity satisfies it — including
+    anonymous. Checking the identity first denied anonymous callers whenever
+    `{}` appeared alongside an alternative, which contradicts the contract the
+    matrix is supposed to describe.
+    """
+    if not requirement:
+        return True
+
     if identity_scopes is None:
         return False
     for scheme, scopes in (requirement or {}).items():
@@ -205,10 +219,12 @@ def build_matrix(spec):
     return {"identities": identities, "operations": ops, "rows": rows}
 
 
-SKIPPED = []
+SKIPPED = []   # reset per invocation in main(); see the completeness gate
 
 
 def main():
+    SKIPPED.clear()   # operations() is traversed twice; without this the
+                      # same warning printed twice and leaked between calls
     args = sys.argv[1:]
     if not args or args[0] in ("-h", "--help"):
         print(__doc__.strip())
@@ -237,6 +253,31 @@ def main():
 
     matrix = build_matrix(spec)
     rendered = json.dumps(matrix, indent=2, ensure_ascii=False, sort_keys=True)
+
+    # One completeness gate, before stdout, -o and --check alike. Finding #39 put
+
+    # this in the -o and --check branches only, so the documented stdout mode —
+
+    # which is naturally redirected into a committed matrix — still published a
+
+    # partial contract and exited 0. Third time a fail-silent fix reached one call
+
+    # site and not its siblings.
+
+    if SKIPPED:
+
+        seen = sorted(set(SKIPPED))
+
+        print(f"gen-authz-matrix: {len(seen)} path item(s) could not be read "
+
+              f"({', '.join(seen[:3])}), so this matrix describes only part of the "
+
+              f"contract. Bundle external $refs and fix malformed path items, then "
+
+              f"regenerate — partial coverage published as coverage is worse than none.")
+
+        return 2
+
 
     if check_path:
         try:
@@ -271,12 +312,6 @@ def main():
 
     if out_path:
         open(out_path, "w", encoding="utf-8").write(rendered + "\n")
-        if SKIPPED:
-            print(f"gen-authz-matrix: {len(SKIPPED)} path item(s) could not be read "
-                  f"(external $ref), so the matrix does not describe the whole contract: "
-                  f"{', '.join(SKIPPED[:3])}. Bundle the spec first — a matrix built from "
-                  f"a partially-read contract is not coverage.")
-            return 2
 
         print(f"gen-authz-matrix: wrote {out_path} "
               f"({matrix['operations']} operations x "

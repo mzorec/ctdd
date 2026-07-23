@@ -26,9 +26,7 @@ The detail section, in full:
 - **Existing behavior** found in the contract and relevant tests — cite the file paths and test names actually retrieved (evidence, not paraphrase), so thin retrieval is visible to the reviewer. State known gaps explicitly — "no Pact found for the checkout caller" converts silence into a reviewable absence.
 - **Assumptions** you are making.
 - **Uncovered or ambiguous cases** — behavior that matters but isn't pinned by a test, and anything the requirement doesn't specify.
-**Write both headings every time**, even when one is empty: `New-behavior tests — must be observed failing` and `Preservation pins — must pass before and after`, using `none — this change creates behavior, it preserves nothing` (or the reverse) where a lane is genuinely empty. Omitting a heading does not mean 'no tests of that kind'; it makes the checker's pin lane unreachable, so a pure-preservation refactor gets a false blocker in one lane and a usage error in the other.
- - `New-behavior tests — must be observed failing` (red state applies; `check-redstate.py --tests-from` reads *only* these)
- - `Preservation pins — must pass before and after` (green-then-still-green is their evidence; verified with `check-redstate.py --expect-pass`, never the default red-state check — see step 7)
+**Write both headings every time**, even when one is empty (`Preservation pins: none — this change creates behavior, it preserves nothing`). `check-plan.py` requires both, because a single-heading plan has no correct lane: the default check reads pins as new tests and blocks falsely, while `--expect-pass` finds no pin section at all.
 
  **When a change both preserves and creates, do the preserving part first** — pins describe how the current code behaves, so a pin written before a change that reshapes what it observes still passes while proving nothing. Pin, convert, verify green, *then* build the new behavior on top. This ordering is a correctness property, not a preference: get it backwards and the suite stays green while the detector is silently gone.
 
@@ -74,10 +72,11 @@ Uncovered / ambiguous:
 - What happens to the auth hold on the released remainder? (needs confirmation)
 - Is a zero capture amount valid? (assuming no)
 
-Proposed tests:
+New-behavior tests — must be observed failing first:
 - capture_succeeds_when_amount_is_below_authorized
 - capture_releases_remainder_when_partially_captured
 - capture_fails_when_amount_is_zero
+Preservation pins — must pass before and after: none — this change creates behavior, it preserves nothing
 
 Contract changes:
 - Relax amount rule to 0 < amount <= authorized (backward-compatible)

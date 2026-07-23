@@ -2,11 +2,11 @@
 """check-plan.py — lints a CTDD implementation plan for its mandatory sections.
 
 Usage:
-    python3 scripts/check-plan.py plan.md
-    <plan text> | python3 scripts/check-plan.py -
-    python3 scripts/check-plan.py plan.md --diff surface.txt
-    echo "$CI_MERGE_REQUEST_DESCRIPTION" | python3 scripts/check-plan.py - --diff surface.txt
-    echo "$CI_MERGE_REQUEST_DESCRIPTION" | python3 scripts/check-plan.py - --from-description --diff surface.txt
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" plan.md
+    <plan text> | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" -
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" plan.md --diff surface.txt
+    echo "$CI_MERGE_REQUEST_DESCRIPTION" | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" - --diff surface.txt
+    echo "$CI_MERGE_REQUEST_DESCRIPTION" | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" - --from-description --diff surface.txt
 
 --from-description keeps CI and the runtime pointing at the SAME artifact. The
 skill writes the canonical plan to docs/plans/<name>.md and puts a pointer in
@@ -46,18 +46,35 @@ import sys
 from pathlib import Path
 
 REQUIRED = [
-    ("decision summary: BLOCKING",  r"blocking"),
-    ("decision summary: proceeding", r"proceed(ing)?\s+unless"),
-    ("risk level",            r"risk\s*(level)?\s*[:—-]"),
-    ("existing behavior",     r"existing\s+behavior"),
-    ("assumptions",           r"assumptions?"),
-    ("uncovered/ambiguous",   r"(uncovered|ambiguous)"),
-    ("proposed tests",        r"(proposed|new).{0,20}tests?|preservation\s+pins?"
-                              r"|pin\s+tests?|characterization\s+tests?"),
-    ("contract changes",      r"contract\s+changes?"),
-    ("NFR budgets",           r"(nfr|budget)"),
-    ("hold-out decision",     r"hold.?out"),
-    ("files to change",       r"files\s+(likely\s+)?to\s+change"),
+    # EVERY pattern is anchored to the start of a line. Unanchored ones matched the
+# category word anywhere in prose, so a paragraph merely *mentioning* existing
+# behaviour, assumptions, contract changes and hold-outs passed as though all of
+# them were present sections. Anchored to the start of a line: the earlier bare patterns matched the words
+    # anywhere in the document, so prose like "nothing here is blocking and I am
+    # proceeding unless something breaks" satisfied both buckets without either
+    # heading existing. A presence detector that matches prose is not detecting
+    # presence of the thing it names.
+    ("decision summary: BLOCKING",  r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*blocking\b"),
+    ("decision summary: proceeding", r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*proceed(ing)?\s+unless\b"),
+    ("risk level",            r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*risk\s*(level)?\s*[:—-]"),
+    ("existing behavior",     r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*existing\s+behaviou?r\b"),
+    ("assumptions",           r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*assumptions?\b"),
+    ("uncovered/ambiguous",   r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*(uncovered|ambiguous)\b"),
+    # Both test headings, always — even when one is empty. One pattern used to
+    # cover the whole section, so a plan with a single heading passed the gate and
+    # then had no correct lane at step 7: the default check reads pins as new
+    # tests and blocks falsely, while --expect-pass finds no pin section and exits
+    # on a usage error. Finding #39 made both headings mandatory in the format
+    # prose only, so the gate stayed silent and the failure surfaced after
+    # approval, after the tests were written. Line-anchored like the buckets.
+    ("proposed tests: new-behavior heading",
+     r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*new[- ]behaviou?r\s+tests?\b"),
+    ("proposed tests: preservation-pin heading",
+     r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*preservation\s+pins?\b"),
+    ("contract changes",      r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*contract\s+changes?\b"),
+    ("NFR budgets",           r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*(nfr|budget)"),
+    ("hold-out decision",     r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*hold.?out\b"),
+    ("files to change",       r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*files\s+(likely\s+)?to\s+change\b"),
 ]
 
 # Reason must sit on the SAME line as the risk call: with re.S a bare
@@ -123,6 +140,24 @@ def main():
     from_description = "--from-description" in args
     if from_description:
         args = [a for a in args if a != "--from-description"]
+
+    # A surplus positional or a misspelled flag used to be discarded in silence, so
+
+    # `check-plan.py plan.md diff.status` ran with no cross-check at all and
+
+    # `--from-descriptino` was accepted as if it were the real flag. The one
+
+    # deterministic triviality check could be disabled by a typo.
+
+    if len(args) > 1:
+
+        print(f"check-plan: unexpected extra argument(s): {' '.join(args[1:])}. "
+
+              f"A diff goes after --diff; a plan is the single positional. "
+
+              f"Refusing rather than running without the cross-check you meant to pass.")
+
+        return 2
 
     plan_src = args[0] if args else "-"
     if plan_src == "-" and diff_src == "-":
@@ -220,7 +255,7 @@ def main():
         return 0
 
     missing = [name for name, pat in REQUIRED
-               if not re.search(pat, text, re.IGNORECASE)]
+               if not re.search(pat, text, re.IGNORECASE | re.MULTILINE)]
     if missing:
         print("check-plan: MISSING sections — " + ", ".join(missing))
         print("A plan that omits a section hasn't decided it; it has skipped it.")

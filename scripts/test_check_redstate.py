@@ -340,7 +340,9 @@ class CheckRedstateTests(unittest.TestCase):
             os.unlink(plan.name); os.unlink(log)
 
     def test_expect_pass_tests_from_reads_currently_prefixed_pins(self):
-        # currently_* is the mandated pin naming; under --expect-pass it must be
+        # currently_* marks a characterization *observation* (nobody has confirmed the
+        # behavior is intended). It shares the Preservation pins evidence lane with
+        # unmarked pins because both run green-before-and-after; under --expect-pass it must be
         # extracted, not filtered out (which left nothing to verify — exit 2).
         plan = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8")
         plan.write("- `Preservation pins — must pass before and after`\n"
@@ -403,6 +405,15 @@ class GoldenExampleTests(unittest.TestCase):
         ex = self._example()
         self.assertRegex(ex, r"Risk:.*contract:",
                          "the example must model the closing categorical line")
+
+    def test_example_carries_both_mandated_test_headings(self):
+        """The format requires both headings; the example modelled a bare
+        `Proposed tests:` and both checkers certified the contradiction. Agents
+        imitate the example, so the example is the operative instruction."""
+        ex = self._example()
+        for heading in ("New-behavior tests", "Preservation pins"):
+            self.assertIn(heading, ex,
+                          f"the authoritative example must model `{heading}`")
 
     def test_example_passes_check_plan(self):
         ex = self._example()
@@ -482,6 +493,87 @@ class ExtractionHardeningTests(unittest.TestCase):
             self.assertNotIn("usage error", r.stdout)
         finally:
             os.unlink(plan); os.unlink(log)
+
+    def test_the_bug_fix_example_satisfies_both_checkers(self):
+        """The bug-fix lane is the modal case by the method's own account, and its
+        illustration previously produced a plan that check-plan.py rejected for
+        eight missing sections and check-redstate.py could not read at all.
+        Examples get imitated, so a broken example is a broken instruction."""
+        import subprocess, sys, os
+        skill = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                             "skills", "ctdd-change", "SKILL.md")
+        text = open(skill, encoding="utf-8").read()
+        m = re.search(r"### Bug fixes.*?```\n(.*?)```", text, re.S)
+        self.assertIsNotNone(m, "the bug-fix lane must carry a worked example")
+        plan = self._plan(m.group(1))
+        names = re.findall(r"^- ([A-Za-z][\w.]*)$", m.group(1), re.M)
+        self.assertTrue(names, "the regression test must be a bullet, not prose")
+        log = write("".join(f"  Failed {n} [1 ms]\n" for n in names))
+        try:
+            cp = subprocess.run([sys.executable, os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "check-plan.py"), plan],
+                capture_output=True, text=True)
+            self.assertEqual(cp.returncode, 0, f"example fails check-plan:\n{cp.stdout}")
+            r = run(log, "--tests-from", plan)
+            self.assertEqual(r.returncode, 0, f"example fails check-redstate:\n{r.stdout}")
+        finally:
+            os.unlink(plan); os.unlink(log)
+
+    def test_a_plan_contributing_no_names_is_reported(self):
+        """--test plus a --tests-from that yields nothing reported success for the
+        one explicit name, so the plan cross-check silently stopped operating and
+        a swapped test would have passed unnoticed."""
+        plan = self._plan("No test section here at all.\n")
+        log = write("  Failed SomeTest [1 ms]\n")
+        try:
+            r = run(log, "--test", "SomeTest", "--tests-from", plan)
+            self.assertEqual(r.returncode, 2, r.stdout)
+            self.assertIn("contributed no test names", r.stdout)
+        finally:
+            os.unlink(plan); os.unlink(log)
+
+    def test_every_marker_rendering_is_classified_as_an_observation(self):
+        """Extraction learned PascalCase at finding #29; this classification
+        filter did not, so `CurrentlyReturnsX` read as a new-behaviour test and
+        landed in the red-state set it is exempt from. Fix-one-call-site again."""
+        plan = self._plan("- `New-behavior tests — must be observed failing`\n"
+                          "- CurrentlyReturns200ForUnknownId\n"
+                          "- Currently_returns_200\n"
+                          "- currently_returns_200\n"
+                          "- ReturnsPagedResult\n")
+        log = write("  Failed ReturnsPagedResult [1 ms]\n")
+        try:
+            r = run(log, "--tests-from", plan)
+            self.assertEqual(r.returncode, 0, f"only the unmarked test is new behaviour:\n{r.stdout}")
+            for marked in ("CurrentlyReturns200ForUnknownId", "Currently_returns_200"):
+                self.assertNotIn(marked, r.stdout, f"{marked} is an observation, not new behaviour")
+        finally:
+            os.unlink(plan); os.unlink(log)
+
+    def test_a_name_must_match_as_a_whole_identifier(self):
+        """`--test Foo` was satisfied by a log line mentioning `FooBar`, so the
+        checker certified a test that never ran."""
+        log = write("FAILED tests/test_x.py::FooBar - assertion failed\n")
+        try:
+            r = run(log, "--test", "Foo")
+            self.assertEqual(r.returncode, 1, f"Foo did not run:\n{r.stdout}")
+        finally:
+            os.unlink(log)
+
+    def test_marker_words_inside_a_test_name_are_not_verdicts(self):
+        """`error_handling_is_logged` contains 'error' and `success_is_logged`
+        contains 'success'; scanning the whole line let each certify itself
+        from a log with no verdict anywhere in it."""
+        for text, args in ((("RUNNING error_handling_is_logged\n"),
+                            ("--test", "error_handling_is_logged")),
+                           (("RUNNING success_is_logged\n"),
+                            ("--expect-pass", "--test", "success_is_logged"))):
+            log = write(text)
+            try:
+                r = run(log, *args)
+                self.assertEqual(r.returncode, 1, f"no verdict present:\n{r.stdout}")
+            finally:
+                os.unlink(log)
 
 
 if __name__ == "__main__":
