@@ -10,6 +10,16 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.12.1 — 2026-07-21
+
+### Changed
+- **Colocated notes state the rule, not where it was found.** Write "ledger status 7 means settled; a capture in that state must not be re-submitted," not "the upstream service checks this in its settlement handler." A citation pins the comment to another team's file name, so it breaks silently when they refactor and nothing in this repo notices. The sharper test: a colocated note states something that stays true; anything true only as of today belongs in the plan or an ADR, which are point-in-time records and may name specifics freely. The plan carries the provenance, the code carries the rule.
+
+## 0.12.0 — 2026-07-21
+
+### Added
+- **A place for facts the code depends on that live outside the repo.** Colocated notes previously admitted only universals and deliberate boundaries. They now also take the expensive external fact: a legacy system's semantics, a non-obvious key relationship, a storage format, a framework quirk. These are the things an agent rediscovers from scratch every session because no test, contract, or ADR can hold them. The entry test keeps it from becoming a spec document: **could the next reader derive this from the code, the tests, or the contract in this repo?** If yes, don't write it. If no, and rediscovering it means reading another system, one sentence where the code touches it. Not an ADR (that records a decision) and not a spec (a test covers behavior) — the external fact both of those assume.
+
 ## 0.11.3 — 2026-07-21
 
 ### Changed
