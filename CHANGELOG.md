@@ -10,6 +10,31 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.13.3 — 2026-07-21
+
+### Added
+- **A step 0 that establishes the baseline before anything is read.** The working-tree check used to run at step 7, after the plan was already approved — but what is in the tree decides which tests get retrieved, what the agent thinks current behaviour is, and what contract delta it proposes. All of that is settled before step 7 and frozen by approval. Three real changes were planned against a tree nobody had looked at; one of them proposed a design that collided with work the human had already started.
+- Step 0 also separates two situations the old rule ran together: work already under review (PR comments, a feature branch) is **input** and must never be stashed away, while unrelated local edits or someone else's half-finished work on your target files are **contamination**. It fixes the baseline that every later diff check measures from.
+
+### Fixed
+- **The surface check now measures from that baseline instead of always `HEAD`.** For a branch or PR, `HEAD` misses everything already committed on it, so a PR-shaped change could report no spec surface at all.
+- Step 7 keeps a shorter re-check, since a tree can move while a plan sits under review.
+
+## 0.13.2 — 2026-07-21
+
+### Fixed
+- **Triviality is now judged by artifact, not by size, where the judgement is first made.** The workflow opened with "a one-line fix skips most of this" while the bug-fix rule further down correctly said a regression test is spec. Classification happens at the top, so the top is where the right rule has to be: trivial means code-only, behavior-preserving, and touching no test or contract surface, whatever the line count.
+- **The hand-off to `ctdd-tests` is now caused rather than described.** "Defer to the ctdd-tests skill" did not guarantee it was loaded; the step now says to invoke it before creating or changing any test.
+- **Provenance for external facts was overcorrected.** "Never the citation" also ruled out stable references. A file path does pin your comment to another team's layout, but a contract version or ticket key survives their refactors and tells the next reader where to check. Order of preference is now stated: executable consumer contract, versioned schema identifier, stable ticket or ADR reference, bare sentence last.
+
+### Added
+- **A golden test binding the skill's embedded example to the parsers it illustrates.** The example must carry the mandated categorical line, pass `check-plan.py`, and have every one of its proposed test names extracted by `--tests-from`. Until now these agreed only because someone checked by hand; agents imitate the example, so a drifted example produces plans the gate rejects. Suite 98 → 101.
+
+## 0.13.1 — 2026-07-21
+
+### Fixed
+- **The bundled scripts could not be found by anyone who installed the plugin.** Every invocation used a project-relative path (`scripts/check-plan.py`), but for an installed plugin the working directory is your project while the scripts live in the plugin's own directory — so the deterministic checks silently were not there, and a project with its own `scripts/check-plan.py` would have run that instead. All script and reference paths now use `${CLAUDE_PLUGIN_ROOT}`, which resolves to the plugin's install directory, quoted because that path can contain spaces. This went unnoticed for the whole pilot because the author works from a local clone, where the agent found the scripts anyway.
+
 ## 0.13.0 — 2026-07-21
 
 Fourteen defects from an outside review, reproduced before adopting.

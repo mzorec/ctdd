@@ -5,6 +5,7 @@ Run:  python3 scripts/test_check_redstate.py   (or via pytest)
 """
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -382,3 +383,57 @@ class CheckRedstateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)
+
+
+class GoldenExampleTests(unittest.TestCase):
+    """The plan example embedded in ctdd-change/SKILL.md must satisfy the parsers
+    it illustrates. Without this, the example and the scripts drift apart silently
+    and every agent imitating the example produces plans the gate rejects."""
+
+    @staticmethod
+    def _example():
+        skill = os.path.join(os.path.dirname(__file__), "..", "skills",
+                             "ctdd-change", "SKILL.md")
+        text = open(skill, encoding="utf-8").read()
+        block = re.search(r"```\n(.*?)```", text, re.S)
+        assert block, "no fenced example block found in ctdd-change/SKILL.md"
+        return block.group(1)
+
+    def test_example_carries_the_mandated_categorical_line(self):
+        ex = self._example()
+        self.assertRegex(ex, r"Risk:.*contract:",
+                         "the example must model the closing categorical line")
+
+    def test_example_passes_check_plan(self):
+        ex = self._example()
+        with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False,
+                                         encoding="utf-8") as fh:
+            fh.write(ex)
+            path = fh.name
+        try:
+            r = subprocess.run(
+                [sys.executable,
+                 os.path.join(os.path.dirname(__file__), "check-plan.py"), path],
+                capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0,
+                             f"the skill's own example fails its own linter:\n{r.stdout}")
+        finally:
+            os.unlink(path)
+
+    def test_example_test_names_are_all_extracted(self):
+        ex = self._example()
+        names = re.findall(r"^- ([a-z][a-z0-9_]*)$", ex, re.M)
+        self.assertGreaterEqual(len(names), 3, "example should propose several tests")
+        with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False,
+                                         encoding="utf-8") as fh:
+            fh.write(ex)
+            plan = fh.name
+        log = write("".join(f"  Failed {n} [1 ms]\n" for n in names))
+        try:
+            r = run(log, "--tests-from", plan)
+            self.assertEqual(r.returncode, 0,
+                             f"parser did not extract the example's own tests:\n{r.stdout}")
+            for n in names:
+                self.assertIn(n, r.stdout, f"{n} was silently dropped")
+        finally:
+            os.unlink(plan); os.unlink(log)

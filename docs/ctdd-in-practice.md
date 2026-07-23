@@ -53,7 +53,7 @@ It offers that summary as "here's my reading, correct me," and the plan gate is 
 | ADRs | Why is the structure this way? | Append-only records of decisions; never edited, so never stale |
 | Property tests / Pact | What must always hold? What do consumers rely on? | Executable universals, verified on both sides in CI |
 
-Terms explained:
+A few of those terms, in plain English:
 
 - **ADR** is a short architecture decision note: why a boundary, a pattern, or a structural choice exists.
 - **Pact** is a consumer contract test: one service states what it expects from another, and CI verifies the provider still delivers it.
