@@ -123,6 +123,7 @@ def operations(spec):
         if "$ref" in item:
             print(f"gen-authz-matrix: WARNING — $ref path item skipped: {path}",
                   file=sys.stderr)
+            SKIPPED.append(path)
             continue
         for method in HTTP_METHODS:
             op = item.get(method)
@@ -204,6 +205,9 @@ def build_matrix(spec):
     return {"identities": identities, "operations": ops, "rows": rows}
 
 
+SKIPPED = []
+
+
 def main():
     args = sys.argv[1:]
     if not args or args[0] in ("-h", "--help"):
@@ -241,6 +245,15 @@ def main():
         except Exception as exc:
             return _fail(f"cannot read --check file {check_path}: {exc}")
         if existing == rendered:
+            if not matrix["operations"] or SKIPPED:
+                print("gen-authz-matrix: the contract yielded "
+                      f"{matrix['operations']} operations"
+                      + (f" and {len(SKIPPED)} path item(s) could not be read"
+                         if SKIPPED else "")
+                      + ". 'Current' would mean nothing was checked, so this is "
+                        "not a pass — bundle external $refs and regenerate.")
+                return 2
+
             print(f"gen-authz-matrix: {check_path} is current "
                   f"({matrix['operations']} operations x "
                   f"{len(matrix['identities'])} identities).")
@@ -258,6 +271,13 @@ def main():
 
     if out_path:
         open(out_path, "w", encoding="utf-8").write(rendered + "\n")
+        if SKIPPED:
+            print(f"gen-authz-matrix: {len(SKIPPED)} path item(s) could not be read "
+                  f"(external $ref), so the matrix does not describe the whole contract: "
+                  f"{', '.join(SKIPPED[:3])}. Bundle the spec first — a matrix built from "
+                  f"a partially-read contract is not coverage.")
+            return 2
+
         print(f"gen-authz-matrix: wrote {out_path} "
               f"({matrix['operations']} operations x "
               f"{len(matrix['identities'])} identities = {len(matrix['rows'])} rows).")

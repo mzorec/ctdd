@@ -439,5 +439,50 @@ class GoldenExampleTests(unittest.TestCase):
             os.unlink(plan); os.unlink(log)
 
 
+class ExtractionHardeningTests(unittest.TestCase):
+    """Tenth instance of the fail-silent shape: names dropped, success reported
+    for the subset that survived. Each case below is from a real plan."""
+
+    @staticmethod
+    def _plan(text):
+        fh = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8")
+        fh.write(text); fh.close(); return fh.name
+
+    def test_prose_inside_the_list_does_not_truncate_the_section(self):
+        plan = self._plan("- `New-behavior tests — must be observed failing`\n"
+                          "- FirstTest\n- SecondTest\n\n"
+                          "These cover the paging surface; the next covers the gate.\n\n"
+                          "- ThirdTest\n")
+        log = write("  Failed FirstTest [1 ms]\n  Failed SecondTest [1 ms]\n")
+        try:
+            r = run(log, "--tests-from", plan)
+            self.assertEqual(r.returncode, 1, "ThirdTest was dropped and never run")
+            self.assertIn("ThirdTest", r.stdout)
+        finally:
+            os.unlink(plan); os.unlink(log)
+
+    def test_emphasis_and_colon_separators_do_not_drop_names(self):
+        plan = self._plan("- `New-behavior tests — must be observed failing`\n"
+                          "- **BoldName** — why\n- _ItalicName_ — why\n"
+                          "- ColonName: why\n")
+        log = write("  Failed BoldName [1 ms]\n")
+        try:
+            r = run(log, "--tests-from", plan)
+            for n in ("ItalicName", "ColonName"):
+                self.assertIn(n, r.stdout, f"{n} was silently dropped")
+        finally:
+            os.unlink(plan); os.unlink(log)
+
+    def test_pin_lane_names_the_missing_section_instead_of_a_usage_error(self):
+        plan = self._plan("Proposed tests:\n- MapsAllColumns\n")
+        log = write("  Passed MapsAllColumns [1 ms]\n")
+        try:
+            r = run(log, "--expect-pass", "--tests-from", plan)
+            self.assertIn("no preservation-pin section", r.stdout)
+            self.assertNotIn("usage error", r.stdout)
+        finally:
+            os.unlink(plan); os.unlink(log)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

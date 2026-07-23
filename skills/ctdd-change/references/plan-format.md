@@ -26,7 +26,7 @@ The detail section, in full:
 - **Existing behavior** found in the contract and relevant tests — cite the file paths and test names actually retrieved (evidence, not paraphrase), so thin retrieval is visible to the reviewer. State known gaps explicitly — "no Pact found for the checkout caller" converts silence into a reviewable absence.
 - **Assumptions** you are making.
 - **Uncovered or ambiguous cases** — behavior that matters but isn't pinned by a test, and anything the requirement doesn't specify.
-- **Proposed new/changed tests** — named at the behavior level, and **split under two headings when both kinds are present**, because their evidence runs in opposite directions:
+**Write both headings every time**, even when one is empty: `New-behavior tests — must be observed failing` and `Preservation pins — must pass before and after`, using `none — this change creates behavior, it preserves nothing` (or the reverse) where a lane is genuinely empty. Omitting a heading does not mean 'no tests of that kind'; it makes the checker's pin lane unreachable, so a pure-preservation refactor gets a false blocker in one lane and a usage error in the other.
  - `New-behavior tests — must be observed failing` (red state applies; `check-redstate.py --tests-from` reads *only* these)
  - `Preservation pins — must pass before and after` (green-then-still-green is their evidence; verified with `check-redstate.py --expect-pass`, never the default red-state check — see step 7)
 
@@ -41,7 +41,7 @@ The detail section, in full:
 - **ADR draft**, if step 4 produced one.
 - **Files likely to change.**
 
-Treat a change to an existing test as a change to the spec — call it out for review. If this plugin's `"${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py"` is available (that variable resolves to the plugin's install directory, so the command works from any project; quote it, since the path can contain spaces), run the emitted plan through it — adding `--diff` with the current `{ git diff --name-status -M <baseline>; git ls-files --others --exclude-standard | sed 's/^/A\t/'; }` once edits exist (the second half so a new, still-untracked test file is counted, not silently missed), so a trivial claim is cross-checked against the actual surface — and fix any missing sections before presenting.
+Treat a change to an existing test as a change to the spec — call it out for review. If this plugin's `"${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py"` is available (that variable resolves to the plugin's install directory, so the command works from any project; quote it, since the path can contain spaces), run the emitted plan through it — adding `--diff` with the current the output of `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <baseline>` once edits exist (that invocation checks git's exit status and is anchored to the project root, unlike a bare shell pipeline, which reports a clean pass when git fails; it also so a new, still-untracked test file is counted, not silently missed), so a trivial claim is cross-checked against the actual surface — and fix any missing sections before presenting.
 
 ### Example (condensed)
 

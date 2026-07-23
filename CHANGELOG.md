@@ -14,6 +14,23 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.16.0 — 2026-07-21
+
+Five critical fail-silent defects, all reproduced before fixing.
+
+### Fixed
+- **A modified test file with a non-ASCII name passed CI as trivial.** Git quotes such paths by default (`"tests/Ra\304\215unTests.cs"`), and the leading quote defeated every path pattern, so the file classified as no spec surface at all — defeating the one rule the deterministic layer exists to enforce, in exactly the codebases most likely to have accented filenames. Paths are now unquoted in the parser.
+- **The step-9 pipeline reported a clean pass when git failed.** A bad baseline left stdout empty and the checker concluded "no surface touched", exit 0, with a modified test in the tree. Step 9 and the plan format now use the returncode-checked `--git <baseline>` invocation that `ctdd-review` already used, and empty input refuses a verdict unless `--allow-empty` is given.
+- **Three more ways test names were silently dropped.** An explanatory sentence inside a test list truncated the section; bold, italic and colon-separated bullets were skipped; a bullet beginning with a section phrase inverted the classification. Emphasis is now stripped, `:` accepted as a separator, and a section changes only on a label-shaped line.
+- **The pin lane was unreachable for a pure-preservation refactor** — a false blocker in one lane and a usage error in the other. Both test headings are now written every time, and the pin lane names the missing section rather than failing generically.
+- **The authorization gate passed over a contract it could not read.** A `$ref`-composed OpenAPI spec yielded zero rows, which `--check` then called current. It now refuses when any path item was skipped or the check would cover zero operations.
+
+### Added
+- Regression tests for each, including the quoted-path case. Suite 116 → 121.
+
+### Note
+- The durable fix for name extraction is still the machine-readable test list filed in the backlog. Ten instances of one shape is a verdict on parsing identifiers out of free-form markdown; this release narrows the surface, it does not close it.
+
 ## 0.15.1 — 2026-07-21
 
 ### Fixed

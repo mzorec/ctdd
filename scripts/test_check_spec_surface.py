@@ -78,9 +78,21 @@ class SpecSurfaceTests(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn("Test surface", r.stdout)
 
-    def test_empty_diff_is_clean(self):
+    def test_empty_diff_refuses_a_verdict_unless_allowed(self):
+        """CHANGED REQUIREMENT (was: empty diff is clean, exit 0).
+
+        Empty stdin from a failed `git diff` is indistinguishable from a
+        genuinely empty diff, and the skill's own pipeline had no error check —
+        so a broken baseline produced 'no surface touched', exit 0, with a
+        modified test sitting in the tree. A caller that really means empty now
+        says so with --allow-empty.
+        """
         r = run("")
-        self.assertEqual(r.returncode, 0)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("empty input", r.stdout)
+        r2 = subprocess.run([sys.executable, SCRIPT, "-", "--allow-empty"],
+                            input="", capture_output=True, text=True, timeout=15)
+        self.assertEqual(r2.returncode, 0)
 
     def test_help_exits_zero(self):
         r = subprocess.run([sys.executable, SCRIPT, "--help"],
@@ -319,6 +331,21 @@ class ChangeSkillStructureTests(unittest.TestCase):
             self.assertIn(name, head,
                           f"the instruction to read references/{name} falls outside "
                           f"the surviving head, so the fallback it backs would vanish")
+
+
+class QuotedPathTests(unittest.TestCase):
+    """git quotes non-ASCII paths by default, and the leading quote defeated every
+    path pattern — so an edited test in any Slovenian, German, French or Japanese
+    codebase classified as untouched surface and passed CI as trivial."""
+
+    def test_git_quoted_non_ascii_test_path_is_still_test_surface(self):
+        r = run('M\t"tests/Ra\\304\\215unTests.cs"\n')
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("SPEC SURFACE TOUCHED", r.stdout)
+
+    def test_git_quoted_non_ascii_contract_path_is_contract_surface(self):
+        r = run('M\t"contracts/pla\\304\\215ilo.yaml"\n')
+        self.assertEqual(r.returncode, 1, r.stdout)
 
 
 if __name__ == "__main__":

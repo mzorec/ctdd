@@ -181,7 +181,10 @@ BULLET_RX = re.compile(r"^\s*[-*]\s")
 # (e.g. dotnet ReportsTotalCount) — extraction then verified a subset while the
 # verdict still read as a whole-plan pass. Scoping to the test section (below)
 # is what makes the looser token safe.
-NAME_RX = re.compile(r"\s*[-*]\s+`?([A-Za-z][\w.]*)`?\s*(?:—|-|\(|$)")
+NAME_RX = re.compile(r"\s*[-*]\s+[`*_]{0,3}([A-Za-z](?:[\w.]*[A-Za-z0-9])?)[`*_]{0,3}\s*(?:—|–|-|:|\(|$)")
+# Emphasis and separators are not optional in real plans: `- **Name** — why`,
+# `- _Name_ — why` and `- Name: why` were each dropped silently, taking four of
+# five names in one measured example.
 
 
 def _section_label(line):
@@ -209,7 +212,17 @@ def _is_heading(line, label):
         return True
     if line.lstrip().startswith("#"):
         return True
-    return not BULLET_RX.match(line)
+    if BULLET_RX.match(line):
+        return False
+    # A non-bullet line ends the section only if it is *label-shaped*: short, no
+    # sentence punctuation, typically ending in a colon. Treating every prose
+    # line as a boundary meant one explanatory sentence inside a test list
+    # silently truncated it, and the checker then verified the shorter list and
+    # reported success.
+    text = (label or "").strip()
+    if not text:
+        return False
+    return len(text) <= 72 and not text.rstrip().endswith((".", "!", "?"))
 
 
 def names_from_plan(path, want_pins=False):
@@ -265,7 +278,16 @@ def main():
             names.append(rest.pop(0))
         elif flag == "--tests-from" and rest:
             try:
-                names.extend(names_from_plan(rest.pop(0), want_pins=expect_pass))
+                _plan = rest.pop(0)
+                _found = names_from_plan(_plan, want_pins=expect_pass)
+                if expect_pass and not _found:
+                    print(f"check-redstate: no preservation-pin section found in "
+                          f"{_plan}. A behavior-preserving change still needs one: "
+                          f"write `Preservation pins — must pass before and after` "
+                          f"(or `Preservation pins: none` when there genuinely are "
+                          f"none). Refusing to verify a pin lane that has no pins.")
+                    return 2
+                names.extend(_found)
             except OSError as exc:
                 print(f"check-redstate: cannot read plan: {exc}")
                 return 2

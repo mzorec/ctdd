@@ -84,6 +84,26 @@ def classify(path):
 STATUS_WORD = {"A": "added", "M": "modified", "D": "deleted", "T": "type-changed"}
 
 
+def unquote_git_path(path):
+    """Undo git's C-style quoting of non-ASCII paths.
+
+    With core.quotePath at its default, `git diff --name-status` emits
+    `"tests/Ra\\304\\215unTests.cs"` for a path containing c-caron. The leading
+    quote defeats every path pattern here, so a modified test file in any
+    non-ASCII codebase classified as untouched surface and passed CI as trivial.
+    The piped caller cannot set git's flags, so this is undone in the parser.
+    """
+    if len(path) < 2 or not (path.startswith('"') and path.endswith('"')):
+        return path
+    inner = path[1:-1]
+    try:
+        # octal escapes decode to bytes, which git emitted as UTF-8
+        return inner.encode("latin-1", "backslashreplace").decode(
+            "unicode_escape").encode("latin-1").decode("utf-8")
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        return inner
+
+
 def parse_name_status(text):
     """Return (entries, malformed) for `git diff --name-status` text.
 
@@ -100,9 +120,9 @@ def parse_name_status(text):
         parts = line.split("\t")
         status = parts[0].strip()
         if status[:1] in ("R", "C") and len(parts) >= 3:
-            entries.append((status, parts[1], parts[2]))
+            entries.append((status, unquote_git_path(parts[1]), unquote_git_path(parts[2])))
         elif len(parts) >= 2:
-            entries.append((status, parts[1], None))
+            entries.append((status, unquote_git_path(parts[1]), None))
         else:
             # A line we cannot parse is input we did not see. Reporting a clean
             # verdict over discarded input is the fail-silent shape this script
@@ -187,6 +207,11 @@ def main():
                 other += 1
 
     touched = any(findings.values())
+    if not text.strip() and "--allow-empty" not in sys.argv:
+        print("check-spec-surface: empty input — nothing was inspected, so no "
+              "verdict is given. If the diff really is empty, pass --allow-empty.")
+        return 2
+
     if malformed:
         print(f"check-spec-surface: {len(malformed)} unparseable input line(s); "
               f"the inventory is incomplete, so no verdict is given. First: "
