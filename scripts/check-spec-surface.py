@@ -111,7 +111,15 @@ def main():
         if r.returncode != 0:
             print(f"check-spec-surface: git failed: {r.stderr.strip()}")
             return 2
-        text = r.stdout
+        # A bare `git diff` reports nothing for a file that is not yet tracked, so a
+        # change whose only spec artifact is a NEW test file would read as touching no
+        # surface at all. List untracked files alongside it and mark them added, so the
+        # convenience mode cannot quietly reopen the blind spot the pipeline closes.
+        u = subprocess.run(["git", "ls-files", "--others", "--exclude-standard"],
+                           capture_output=True, text=True)
+        untracked = "".join(f"A\t{line}\n"
+                            for line in u.stdout.splitlines() if line.strip())
+        text = r.stdout + untracked
     elif args and args[0] != "-":
         try:
             text = open(args[0], encoding="utf-8").read()

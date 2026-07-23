@@ -10,6 +10,15 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.14.1 — 2026-07-21
+
+### Fixed
+- **Four workflow rules were accidentally moved into a reference that almost never loads.** The v0.14.0 split carried **Bug fixes**, **Amendments**, **When artifacts disagree**, and **Standalone ADR requests** into `references/colocated-notes.md`, which is read only when a colocated note is being written. An ordinary bug fix or test amendment would have run without them, and step 8 referred to an "Amendments" section that was no longer in the loaded skill. The three workflow rules are back in the skill; standalone-ADR routing stays in the skill with its procedure in `adr-rules.md`; the notes reference is note craft only again.
+- **`check-spec-surface.py --git` missed untracked files.** The script's own convenience mode ran a bare `git diff`, so a change whose only spec artifact was a new test file reported no surface — reopening, through the simpler documented invocation, the blind spot the skill's pipeline had just closed. Now lists untracked files alongside the diff, with a regression test. Suite 101 → 102.
+
+### Note
+- Restoring those rules puts `ctdd-change` at ~5.6k tokens, above the ~5k guidance it met in 0.14.0. Part of that earlier figure was the bug: rules had gone missing rather than moved. The remaining honest reduction is splitting step 6's presentation and storage detail into its own reference, which is also a coherence fix, and the two belong in one deliberate pass rather than another quick one.
+
 ## 0.14.0 — 2026-07-21
 
 `ctdd-change` was ~8.2k tokens, well past the ~5k guidance for a skill body. Three blocks accounted for most of it, and all three are needed only at one point in the workflow. They now live in `references/` and load on demand. **No rule was removed.**

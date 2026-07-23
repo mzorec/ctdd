@@ -60,6 +60,22 @@ Work through these steps in order. Scale ceremony to the risk of the change. A c
 
 10. **Invariant note — only where needed.** Write one colocated sentence when, and only when, a rule is universal, a boundary is intentionally undefined, or the code depends on a fact that lives outside this repo and cost real time to establish. Never write prose for anything a test or contract already covers. **When one of those fires, read `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/colocated-notes.md` before writing it** — it carries the entry tests that keep these notes from becoming the spec document this method exists to avoid, and the rule about stating durable facts rather than volatile citations.
 
+### Bug fixes
+
+A bug fix runs the same loop, compressed. Confirm the *expected* behavior (step 1), read the slice (step 2), then write a failing behavior-level regression test that reproduces the bug — that test *is* the spec of the fix — and implement until it's green. The test stays forever; that is how the suite accumulates edge cases. (The regression-test rule itself lives in `ctdd-tests`; this section owns only the workflow around it.) The plan gate collapses to a *short* plan — the sections still appear, most as one-liners ("Existing behavior: test X asserts Y; Proposed tests: the regression test; Contract changes: none") — not to a trivial one-line skip. Adding a regression test is adding spec, so a bug fix is not the trivial lane; `check-plan.py` reports an added-test diff distinctly for exactly this reason. The trivial lane is for code-only changes that touch no test or contract surface at all. One caution: if an existing test asserts the buggy behavior *on purpose*, this is not a bug fix but a spec change — stop and run the full gate (step 6), calling out the test change explicitly.
+
+### Amendments — the everyday case
+
+Most real changes modify behavior an existing test asserts — neither pure preservation nor pure creation. Route these as spec changes, not code changes: the business requirement overrides the old test, and only through a reviewed diff. The plan must show each affected test's old and new assertion (see the plan format); the gate and the step-9 review do most of their real work here. The reflex to resist by name: "update the test to match" turns a spec change into a silent one.
+
+### When artifacts disagree
+
+A contract that allows what a test rejects, an example test contradicting a property test, a Pact expecting a shape the contract dropped — a cross-artifact conflict is a **detected spec bug**, not a tiebreak. First check that it *is* one: artifacts conflict only when they make incompatible claims about the **same observable constraint**. Different artifacts legitimately own different layers — a schema stating a payload's shape while a test asserts a state-dependent business rule is not a contradiction, and a Pact or example narrowing a broader permitted space is specialization, not conflict. Stop, decide which artifact is wrong against the business intent, and fix it as a reviewed spec change. The one forbidden move is quietly adjusting whichever artifact is easiest to change until CI goes green.
+
+### Standalone ADR requests
+
+When the ask is only to record a decision, skip this workflow entirely and read `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/adr-rules.md`, which carries the procedure.
+
 ## The implementation plan (output before coding)
 
 **Before writing a plan, read `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/plan-format.md`** — it is the

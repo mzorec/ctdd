@@ -90,3 +90,24 @@ class SpecSurfaceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)
+
+
+class GitModeTests(unittest.TestCase):
+    """--git must not be a quieter way to reopen the new-test blind spot."""
+
+    def test_git_mode_reports_an_untracked_test_file(self):
+        import subprocess, tempfile, os, sys
+        repo = tempfile.mkdtemp()
+        run = lambda *a: subprocess.run(a, cwd=repo, capture_output=True, text=True)
+        run("git", "init", "-q"); run("git", "config", "user.email", "t@t")
+        run("git", "config", "user.name", "t")
+        open(os.path.join(repo, "readme.md"), "w").write("x")
+        run("git", "add", "-A"); run("git", "commit", "-qm", "init")
+        os.makedirs(os.path.join(repo, "tests"), exist_ok=True)
+        open(os.path.join(repo, "tests", "test_capture.py"), "w").write("def test_x(): pass")
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "check-spec-surface.py")
+        r = subprocess.run([sys.executable, script, "--git"], cwd=repo,
+                           capture_output=True, text=True)
+        self.assertIn("test_capture.py", r.stdout,
+                      "an untracked new test must appear in --git output")
