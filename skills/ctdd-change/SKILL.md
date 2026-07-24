@@ -1,139 +1,139 @@
 ---
 name: ctdd-change
 description: >-
- Drive a backend API or microservice change the Contract- and Test-Driven
- Development (CTDD) way. Use whenever the user asks to implement, add, modify,
- extend, or fix behavior in a backend service — an endpoint, handler, message
- consumer, domain rule, or bug — even if they never say "CTDD" or mention
- tests. Reads the existing API contract and relevant tests before designing
- anything, produces a reviewable pre-coding implementation plan, gates coding
- on approval, and prompts for an Architecture Decision Record (ADR) on
- structural decisions. Also use for standalone ADR requests ("write an ADR",
- "record this decision"). Triggers include "implement this endpoint", "add
- this to the service", "change this API", "fix this bug in the service",
- "modify this handler", "plan this backend change", "migrate this flow", "refactor this
- service", "raise or change this limit or rule", "implement the review
- comments on my PR", "address the reviewer's feedback", "deprecate a field
- in an event schema", "stage a contract or event-schema rollout", "CTDD
- this". Not for
- visual/UX correctness (testable state logic qualifies wherever it lives),
- not for infrastructure/build/deploy config (Dockerfiles, pipelines, cluster
- manifests), not for test-only tasks (use ctdd-tests), and not for reviewing
- an existing diff or PR (use ctdd-review).
+  Use for "implement this endpoint", "add this to the service", "fix this backend bug", "change this API", "modify this handler", "migrate this flow", "refactor this service",
+  "implement the review comments", "deprecate this event field", "write an ADR", or "CTDD this". Use for backend APIs, handlers, consumers, domain rules, contract rollouts,
+  and structural decisions. Reject "review this PR", "review these tests", "fix this pipeline", "change this Dockerfile", and "fix this CSS layout"; route them to
+  ctdd-review, ctdd-tests, infrastructure tooling, or UI work.
 ---
-
-# CTDD: driving a backend change
-
-**Use this skill when the unit of work is a change** — a feature, endpoint, handler, message consumer, or bug to build or modify. It owns the whole workflow and every non-test artifact: the design plan, the ADR (structural decisions), the API contract, the consumer contract, and the pre-coding implementation plan. When it is time to write or review tests, it hands off to the `ctdd-tests` skill for the test craft. If the task is *only* about tests — writing tests in isolation, or reviewing/fixing existing tests, with no feature being built — use `ctdd-tests` directly instead.
-
-Follow Contract- and Test-Driven Development. The direction is the inverse of prose-spec-driven development: the API contract and tests come first and the technical prose spec is *derived from them*, not written up front. Tests are the executable spec for **preservation** ("don't break what exists"); the business requirement plus the plan are the spec for **creation** ("what to build").
-
-One clarification the name invites: **"contract-first" means the boundary is specified before tests and implementation — not before understanding.** Always read what exists before designing what changes.
-
-Scope: services behind an API — and the real line is *assertable correctness*, not the deployment tier. Don't apply it where correctness is visual or experiential; testable state logic (reducers, routing, client-side state machines) qualifies wherever it lives.
-
-## Guardrails — these apply throughout, not at one step
-
-*(First on purpose. When a long session is compacted, only the opening part of this skill is carried forward, so the rules that must hold at every step are stated before the steps.)*
-
-
-
-- **No red-state claim without a captured run and a verdict.** A new test is a detector only once you have watched it fail before the implementation existed. Capture that run to `docs/plans/<name>.redstate.log` and carry the checker's verdict line, not the log, into the review — an unverified log proves a run happened, not that it covered the tests the plan named.
-- **A pin's evidence runs the other way, and the exemption turns on what the test *asserts*, not when it was written.**: green against the current implementation *before* the change, still green after, captured to `<name>.pinstate.log` and verified with `--expect-pass`. A pin that fails beforehand describes something the code never did.
-- **A required hold-out is not finished until it has run.** After the visible suite is green, the sealed tests run once and the plan's `result:` moves off `pending` to `passed`, `failed`, or `declined`. A hold-out left pending past review is the appearance of the guard without the guard.
-
-- **The working tree moves under you.** The baseline fixed at step 0 can change while a plan sits under review — someone else's edit landing on a target file is a finding, not a detail — so re-check it before implementing rather than trusting the reading you took at the start.
-- If a universal rule, a deliberate gap, or a durable external fact warrants a colocated note, read `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/colocated-notes.md` before writing it.
-- **No status claim without a run in this turn.** Don't say tests pass, the build is clean, a gate is green, or a subagent's work is done unless you ran it in *this* message and read the output. A previous run, a partial check, and an agent's own report of success are not evidence — for a subagent, the diff is the evidence, not its summary. If you couldn't run it, name what you did not verify rather than wording around it.
-- Untested behavior is not permission to change it — and **a claim to *preserve* behavior needs a detector just as much as a change does**. In a thinly-covered area, flag it for human attention rather than trusting a green suite. For a behavior-preserving refactor, "the existing tests are the guard" is an assertion, not a fact, until you name *which* tests assert the behavior being preserved; if you cannot name them, the guard does not exist. Cheapest fix when a refactor replaces an existing implementation (a hand-written mapper swapped for a generated one, a helper for a library): write the new tests against the **old** implementation first and watch them pass, then convert — the same tests must still pass. Same tests, written in the other order; it costs nothing and turns the claim into evidence. Where the old implementation is being deleted, this is the only thing that records what it did. (The `ctdd-tests` skill defines the characterization discipline: `currently_*`-marked observations, distinct from intent.)
-- For distributed-systems logic (async messaging, eventual consistency, retries, ordering, partial failure), treat it as the dangerous core and escalate rigor: property tests, contract tests at the messaging boundary, and human review. Don't rely on example tests alone here.
-- Keep the customer's business spec as the source of intent — this workflow replaces the hand-written technical implementation spec, not the business requirement.
-
-### Bug fixes
-
-A bug fix runs the same loop, compressed. Confirm the *expected* behavior (step 1), read the slice (step 2), then write a failing behavior-level regression test that reproduces the bug — that test *is* the spec of the fix — and implement until it's green. The test stays forever; that is how the suite accumulates edge cases. (The regression-test rule itself lives in `ctdd-tests`; this section owns only the workflow around it.) The plan gate collapses to a *short* plan, not to a trivial one-line skip: **every mandatory section still appears**, most as one-liners. Short means brief, not partial — an abbreviated plan that omits sections fails `check-plan.py`, and one whose regression test is prose rather than a bullet under the new-behavior heading gives `check-redstate.py` nothing to verify. So:
-
-```
-The bug: over-capture is accepted when the amount equals authorized + fees.
-Risk: normal — money path, single service.
-BLOCKING — I will not guess: none.
-Proceeding unless you object: the fee-exclusive reading is the intended rule.
-Existing behavior: CaptureTests covers over-capture but not the fee-inclusive edge.
-Assumptions: fees are never negative.
-Uncovered or ambiguous: none beyond the bug itself.
-New-behavior tests — must be observed failing first:
-- capture_rejects_amount_that_exceeds_authorized_including_fees
-Preservation pins — must pass before and after: none — this fixes behavior, it preserves none.
-Contract changes: none.
-NFR budgets: none.
-Hold-out: not required — the regression test is the detector. result: n/a
-Files likely to change: the capture handler and its test.
-```
- Adding a regression test is adding spec, so a bug fix is not the trivial lane; `check-plan.py` reports an added-test diff distinctly for exactly this reason. The trivial lane is for code-only changes that touch no test or contract surface at all. One caution: if an existing test asserts the buggy behavior *on purpose*, this is not a bug fix but a spec change — stop and run the full gate (step 6), calling out the test change explicitly.
-
-### Amendments — the everyday case
-
-Most real changes modify behavior an existing test asserts — neither pure preservation nor pure creation. Route these as spec changes, not code changes: the business requirement overrides the old test, and only through a reviewed diff. The plan must show each affected test's old and new assertion (see the plan format); the gate and the step-9 review do most of their real work here. The reflex to resist by name: "update the test to match" turns a spec change into a silent one.
-
-### When artifacts disagree
-
-A contract that allows what a test rejects, an example test contradicting a property test, a Pact expecting a shape the contract dropped — a cross-artifact conflict is a **detected spec bug**, not a tiebreak. First check that it *is* one: artifacts conflict only when they make incompatible claims about the **same observable constraint**. Different artifacts legitimately own different layers — a schema stating a payload's shape while a test asserts a state-dependent business rule is not a contradiction, and a Pact or example narrowing a broader permitted space is specialization, not conflict. Stop, decide which artifact is wrong against the business intent, and fix it as a reviewed spec change. The one forbidden move is quietly adjusting whichever artifact is easiest to change until CI goes green.
-
-## Workflow
-
-Work through these steps in order. Scale ceremony to the risk of the change. A change is trivial only when it is code-only, behavior-preserving, and touches no test or contract surface; any added, changed, deleted, or renamed test or contract artifact needs at least a short complete plan, whatever the line count. Size is not the test — a one-line edit to an existing assertion is a spec change, and a hundred-line rename that touches neither may be trivial. On non-trivial changes, **no work product is written to disk — no contract edit, no ADR, no test, no code — until the implementation plan (step 6) is approved**; steps 3–5 produce drafts that ride inside the plan. The plan file itself (step 6) is the one pre-approval write: it is the gate's artifact, written *before* approval so the human reviews it in an editor — deferring it until after approval defeats the point. **Scaling down is visible, never silent:** when you judge a change trivial and skip the gate, first output one line — `Risk: trivial — <reason>. Skipping the plan gate.` — so the human can veto the classification before you touch a file. Two changes are never trivial regardless of size: an edit to an existing test, and any contract-file edit — "just updating a test" is a spec change. Where a diff already exists, `"${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py"` is the deterministic counterweight to this call: if it reports touched test or contract surface, the change is not trivial.
-
-0. **Establish the baseline before you read anything.** In-flight work changes what "current behaviour" means, so find out what you are standing on first: current branch, target branch, and what is staged, unstaged, and untracked. Two situations look identical and are not. Work already under review — you were asked to address PR comments, or the feature branch *is* the change — is **input**: the existing diff is what you are extending, and the baseline is the merge-base with the target branch. Unrelated local edits, or someone else's half-finished work on the files you are about to touch, are **contamination**: report what you found and let the human choose (commit, stash, branch) rather than building a reviewable diff on top of it. Never ask for an intentional PR diff to be stashed. State the baseline you settled on — every later diff check in this workflow measures from it.
-
-1. **Confirm intent.** Restate the business requirement (what the customer/caller needs) in one or two sentences. This is the source of what to build. If it's ambiguous, ask before proceeding.
-
-2. **Read what exists.** Retrieve the relevant slice of the API contract and tests — by route, message type, module, changed files, domain terms, or failing tests — not the whole suite. Summarize the current behavior so you and the developer share an accurate model of what exists. Present this summary as "here's my reading — correct me," never as ground truth. For a greenfield service there is nothing to read — say so and move on; the contract and the plan carry the spec, and everything written in steps 5–7 becomes its seed.
-
-3. **Design plan (brief).** State the approach, the shape of the change, what's explicitly out of scope, and the riskiest part. If the developer already gave direction, capture theirs rather than inventing a competing one. Keep it short — it leads the plan's decision summary, not a maintained doc.
-
-4. **ADR — only for a structural decision.** Before drafting one, read `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/adr-rules.md`. If the change touches a service boundary, a cross-service contract, a data-ownership line, or any architecture choice with real tradeoffs, draft an Architecture Decision Record. See "ADR rules" below. If it's an ordinary behavior change, skip this.
-
-5. **Draft the contract change.** Design the API contract delta (OpenAPI/JSON Schema for REST, protobuf/gRPC IDL, AsyncAPI for events) before tests or implementation — the contract is the boundary spec the service and its consumers build against. State whether it's backward-compatible; flag breaking changes explicitly. For a change that affects another service, include the consumer-driven contract update (e.g. Pact) so both sides are pinned and a breaking change fails in CI, not in production.
-
-6. **Implementation plan — STOP for review.** Before assembling it, read `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/plan-format.md` — that file is the authoritative output contract, not the skeleton further down. Assemble the plan (format below) and stop. For anything beyond a trivial change, wait for a human to review and approve it before touching a file. This is the cheapest place to catch a wrong **direction**, and that is all it catches: at plan time the test encodings don't exist, so a shared misunderstanding in an assertion body sails through. Step 9 and the hold-out handle that half. **Write the plan file before entering plan mode, and in that order** — plan mode holds source edits until you approve, so an agent already inside it falls back to Claude Code's own plan file instead of creating `${CLAUDE_PROJECT_DIR}/docs/plans/<name>.md`. **That file is not the CTDD record, wherever it lives** — its location is configurable (`plansDirectory`, defaulting outside the project), so this is a rule about which artifact is authoritative rather than a claim about what the tool permits. If it is configured *into* the repo the collision is worse, not better: two plans in one directory and only one of them reviewed. Leave plan mode to write or update the canonical plan, and do not use a shell-command approval prompt to write around the gate. Write the plan to the repo, *then* suggest plan mode for high-risk changes if the session isn't already in it — it makes this gate mechanical, and the plan presented for approval already contains the proposed contract diff and test names. If you are already in plan mode with no repo plan file, say so and ask the human to exit it long enough for you to write the file, rather than quietly adopting the scratch file as the record. **When in plan mode: the repo plan file at `${CLAUDE_PROJECT_DIR}/docs/plans/<name>.md` is the authority — never the harness's own plan file. Plan mode's exit presentation is that file's own content — **read the file and copy it in verbatim**, never write a fresh summary of it. Summarizing is the natural move when the box is labelled "plan" and it is the wrong one: the moment the presentation is composed rather than copied, you have two plan documents, they immediately disagree on detail, and the human cannot tell which one they approved. In practice that means the **decision summary section, pasted verbatim, plus the file path**, with the rest left in the file. Short and verbatim are not in tension: the file already opens with the thirty-second read, so copying it satisfies both — the human gets the same brief summary they would have got anyway, and it is the same text the file holds, so there is nothing to drift. What is forbidden is re-wording it. A truthful excerpt, never a re-write. Present it and immediately hand the exit decision to the human; do not sit re-presenting. **If you learn something material while the gate is open** — a corrected fact, a working-tree surprise, an answer that changes the design — you cannot carry it in the presentation instead: a delta that exists only in what you show is the second plan document arriving by another route, and the file the human reviews is then stale on the newest thing you know. Say what you learned, say the plan file needs it, and ask to leave plan mode long enough to write it, then re-present. Never close the gate with the file and the presentation disagreeing. Approving the plan-mode gate means "implement from the plan file," so treat it as the go-signal, not a request to re-plan.** Whenever a plan is produced, write it to `${CLAUDE_PROJECT_DIR}/docs/plans/<name>.md` (create the directory if absent), where `<name>` is `<TICKET>-<kebab-slug>` when a ticket exists, else `<YYYY-MM-DD>-<kebab-slug>`. Use kebab-case for the slug (`capture-partial-payment`, not `capturepartialpayment` or `CapturePartialPayment`). Print the plan **in full, to the terminal as well as the file** — summary first, detail below it — and say where the file was written. Compose it once: the file is authoritative, and the terminal shows that same content, never a separately-written variant. The one exception is a trivial change: it produces no plan (just the `Risk: trivial — <reason>` line), so it produces no file — put that same `Risk: trivial — <reason>` line in the PR/MR description so CI can validate the claim, since there is no plan to point at. Otherwise put one pointer line in the PR/MR description — `CTDD-Plan: docs/plans/<name>.md` — so the reviewer and CI validate the same artifact you wrote rather than a pasted copy that can drift; when `${CLAUDE_PROJECT_DIR}/docs/plans/` is tracked, commit the plan (and any `.redstate.log`/`.pinstate.log`) so the pointer resolves for the reviewer and CI, and when it is git-ignored, paste the plan into the description instead. The plan is not *maintained* after the change ships.
-
-7. **Write the tests and apply the contract.** First re-check the tree against the step-0 baseline; it can move while a plan is under review, and someone else's edit landing on your target file is a finding, not a detail. Then, after approval: apply the contract change, write any ADR the plan drafted to its numbered file (`docs/adr/NNNN-*.md`, per the ADR rules), then write behavior-level tests for the new behavior — new behavior has no tests yet, so this is where its spec is created. Write them at the behavior level, and **invoke `ctdd-tests` before creating or changing any test** rather than working from memory of its rules — it owns test construction and review, this skill keeps the workflow and the plan. Reach for property-based tests where an invariant applies (idempotency, ordering, validation, terminal-state rules). Then run the new tests **before implementing** and observe them fail — a test that has never failed is unvalidated as a detector. A new test that passes before the implementation exists is a finding — either the behavior already exists and the plan missed it, or the test asserts nothing. **Capture that failing run to a file** — `${CLAUDE_PROJECT_DIR}/docs/plans/<name>.redstate.log` beside the plan — and verify it: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" ${CLAUDE_PROJECT_DIR}/docs/plans/<name>.redstate.log --tests-from ${CLAUDE_PROJECT_DIR}/docs/plans/<name>.md` (or `--test <Name>` per test; `python`/`py` on Windows). Carry the verdict line into the review, per the standing evidence rule above. If capturing is impossible in this environment, say so explicitly at review — never state or imply red state was verified when no run was captured. Pins are the preservation counterpart (see the standing pin rule above); a behavior-preserving refactor normally has both kinds. **Capture pin evidence the same way**: run the pins green against the *current* implementation before converting, save that run to `${CLAUDE_PROJECT_DIR}/docs/plans/<name>.pinstate.log`, and verify it with `check-redstate.py ${CLAUDE_PROJECT_DIR}/docs/plans/<name>.pinstate.log --expect-pass --test <Name>`; after converting, the same tests must still pass. Write the new type as a stub (throwing or returning a default) so the test compiles and fails for the right reason, then implement. If you skip the stub, say so rather than reporting red state you never observed.
-
-8. **Implement until the contract validates and the tests are green.** Do not weaken a test to make it pass. **If implementation reveals that a planned test, contract clause, or behavior assumption is wrong, stop and re-open the gate** — this is an amendment (route it through the **Amendments** rule), not an implementation detail: amend the plan in place with the old and new assertion or contract delta, re-run `check-plan.py`, and get approval for the amendment before changing the artifact. Discovering the error late does not downgrade it; "changed the test and mentioned it at the end" is the silent-spec-change path the gate exists to close.
-
-9. **Present the spec for human review.** When green, present the diff with the tests and the contract framed as the spec, not just the code: changed tests are changed requirements, contract diffs are boundary changes. If `"${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py"` is available, run the diff through it (`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <baseline>`, or `python`/`py` on Windows; `<baseline>` is the one you fixed in step 0 — `HEAD` for uncommitted work, `$(git merge-base HEAD <target-branch>)` when the change is a branch or PR, since `HEAD` alone would miss everything already committed on it — One exception, and it is deliberate: the `CTDD-Plan:` pointer in the MR description stays **repo-relative**. That line is repository metadata read by CI in a different checkout at a different path, and `check-plan.py` refuses an absolute pointer from a description on purpose, since the description is untrusted input. Filesystem writes are rooted; repository metadata is portable. Plan and evidence paths carry `${CLAUDE_PROJECT_DIR}` for the same reason: after a `cd` into a module directory, a bare `docs/plans/...` resolves under *that* directory and the plan is written somewhere nobody looks. `git -C` anchors both halves to the project root, because `ls-files` is relative to the current directory and a `cd` earlier in the session would otherwise hide a new test living elsewhere; listing untracked files alongside the diff catches a newly-created test file, the blind spot where a bare `git diff` reports no surface and a new regression test slips through) and include its output: any test or contract surface it reports that the plan didn't declare — or declared trivial — means stop and reclassify before review. For a load-bearing diff, also produce a **back-translation** before handing over: state, from the tests in this diff alone, the requirement they encode — one or two plain sentences — and put it next to the business requirement so the human compares prose to prose. If the plan recorded a hold-out as required, this is when it runs: ask the human to execute the sealed tests now, after green, treat their result as part of this review, and update the plan's hold-out `result:` line accordingly (the outcomes, and what each one blocks, live in the plan format's Hold-out field). The `ctdd-review` skill drives the reviewer's side of this gate.
-
-10. **Invariant note — only where needed.** Write one colocated sentence when, and only when, a rule is universal, a boundary is intentionally undefined, or the code depends on a fact that lives outside this repo and cost real time to establish. Never write prose for anything a test or contract already covers. **When one of those fires, read `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/colocated-notes.md` before writing it** — it carries the entry tests that keep these notes from becoming the spec document this method exists to avoid, and the rule about stating durable facts rather than volatile citations.
-
-### Standalone ADR requests
-
-When the ask is only to record a decision, skip this workflow entirely and read `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/adr-rules.md`, which carries the procedure.
-
-## The implementation plan (output before coding)
-
-**Before writing a plan, read `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/plan-format.md`** — it is the
-authoritative output contract, and this list is only its skeleton. Lead with the decision summary (what
-surprised you, or what you will not guess at), close it with the categorical line, then these fields in order:
-
-- **BLOCKING — I will not guess.** Questions only the human can answer; you stop until they do.
-- **Proceeding unless you object.** Calls you have made that they can veto cheaply.
-- **Risk level** — normal / high-risk, with the reason on the same line. A trivial change produces no plan at all, so `trivial` is never a risk level *inside* one; it is declared visibly in its place.
-- **Existing behavior** — what you found, cited to real files and test names.
-- **Assumptions** — what you are taking as true without having checked.
-- **Uncovered or ambiguous cases** — the gaps, stated so silence becomes reviewable.
-- **Proposed new/changed tests** — split under `New-behavior tests` and `Preservation pins` headings.
-- **Contract changes** — with backward compatibility called out.
-- **NFR budgets this change could touch** — "none" must be written, never implied.
-- **Hold-out** — required / not required, with why, and `result:` tracked to a verdict.
-- **ADR draft** — only when a structural decision is involved.
-- **Files likely to change.**
-
-Every field is mandatory; an omitted section is a decision skipped, not a decision made.
-
-## ADR rules
-
-An ADR records one structural decision at a point in time — a service boundary, an enforcement location, a pattern the codebase will live with. It is append-only: never edited when the code moves, superseded by a new record instead. That immutability is what stops it drifting, because it never claims to describe the present.
-
-**When a change involves a structural decision, or a standalone ADR is requested, read `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/adr-rules.md`** for what belongs in one, what does not, and the numbering and superseding rules. The template is `adr-template.md` in the same folder.
-
-
+# CTDD: drive a backend change
+Rationale, not procedure: `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/rationale.md`.
+## Routing
+- Route a test-only task to `ctdd-tests`.
+- Route review of an existing diff, branch, PR, or MR to `ctdd-review`.
+- Treat testable state logic as backend-style behavior regardless of deployment tier.
+- For a standalone ADR request, skip the change workflow and execute **Standalone ADR procedure**.
+## Unordered guardrails
+Do not infer an order among these condition-triggered rules.
+- Do not claim a test, build, gate, checker, or subagent result without a run completed and read in the current turn.
+- Inspect a subagent diff before accepting its result.
+- Treat the business requirement as the source of intent.
+- Do not change uncovered behavior silently.
+- Name the tests that detect every behavior you claim to preserve.
+- Invoke `ctdd-tests` before creating, changing, renaming, or deleting a test.
+- Require property tests, boundary contract tests, and human review for retries, ordering, eventual consistency, async messaging, or partial failure.
+- Stop on incompatible claims about the same observable constraint.
+- Resolve an artifact conflict against the business requirement through an approved amendment.
+- Read `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/colocated-notes.md` before writing a colocated invariant or external-fact note.
+## Output contract
+| Output name | Exact path | Required shape |
+|---|---|---|
+| Pre-plan statements | `stdout` | Baseline statement: `Baseline: branch=<name>; target=<name>; diff-base=<commit>; staged=<summary>; unstaged=<summary>; untracked=<summary>.` Intent statement: `Business requirement: <one or two sentences>.` Current-behavior reading: `Current behavior:` plus exact path/test bullets or one greenfield bullet, ending `Correct this reading before I plan.` |
+| Trivial-risk declaration | `stdout` and PR/MR description | `Risk: trivial — <reason>. Skipping the plan gate.` |
+| Implementation plan | `${CLAUDE_PROJECT_DIR}/docs/plans/<name>.md`, `stdout`, and PR/MR description when `docs/plans/` is ignored | Decision summary; `BLOCKING`; `Proceeding unless you object`; Risk level; Existing behavior; Assumptions; Uncovered or ambiguous; New-behavior tests; Preservation pins; Contract changes; NFR budgets; Hold-out with `result:`; conditional ADR draft; Files likely to change. Name `<name>` as `<TICKET>-<kebab-slug>` or `<YYYY-MM-DD>-<kebab-slug>` without a ticket. Use `references/plan-format.md` for field rules. Print the full plan plus path outside plan mode; print the verbatim decision summary plus path inside a plan-mode approval surface. |
+| Plan pointer | PR/MR description when `docs/plans/` is tracked | `CTDD-Plan: docs/plans/<name>.md` |
+| ADR | `${CLAUDE_PROJECT_DIR}/docs/adr/NNNN-<kebab-slug>.md` | Render `references/adr-template.md` with Context, Decision, and Consequences. |
+| Contract change | Exact repo-relative contract path listed in the plan | Valid OpenAPI, JSON Schema, protobuf, AsyncAPI, Pact, or repository-native contract syntax. |
+| Test change | Exact repo-relative test path listed in the plan | Behavior-level test names and assertions produced under `ctdd-tests`. |
+| Test evidence logs | Red state: `${CLAUDE_PROJECT_DIR}/docs/plans/<name>.redstate.log`; pin state: `${CLAUDE_PROJECT_DIR}/docs/plans/<name>.pinstate.log` | Complete raw output from the named new-behavior or preservation-pin run. |
+| Review packet | `stdout` | `Business requirement: <text>`; `Back-translation: <text or n/a>`; `Plan: <repo-relative path or n/a>`; `Plan check: <final checker line or n/a>`; `Red state: <final verdict or n/a>`; `Pin state: <final verdict or n/a>`; `Spec surface: <Verdict line>`; `Verification: <command => result or NOT RUN>; ...`; `Hold-out: <passed, failed, declined by human, or not required>`. |
+| Colocated note | Exact repo-relative source or contract path listed in the plan | One sentence stating one universal rule, deliberate gap, or durable external fact. |
+## Ordered change workflow
+Execute steps 0–10 in order.
+Before step 6 approval, write only the step 6 plan file.
+0. **Establish the baseline.**
+   1. Record the current branch, target branch, and staged, unstaged, and untracked files.
+   2. Set `diff-base` to `HEAD` for uncommitted work and to the target-branch merge-base for branch, PR, or MR work.
+   3. Treat an intentional review diff as input.
+   4. Stop and report unrelated target-file edits as contamination.
+   5. Print the Baseline statement.
+1. **Confirm intent.**
+   1. Print the Intent statement.
+   2. Stop for an answer when the business requirement is ambiguous.
+2. **Read the existing slice.**
+   1. Read the relevant contract, tests, changed files, routes, messages, and domain terms.
+   2. Print the Current-behavior reading when existing artifacts were found.
+   3. Print the Current-behavior reading with one bullet, `greenfield; no existing contract or tests found`, when nothing exists.
+3. **Classify the change.**
+   1. Classify as trivial only when the diff is code-only, behavior-preserving, covered by named existing tests, contains no test or contract change, and produces no colocated note.
+   2. Classify every added, changed, deleted, or renamed test or contract as non-trivial.
+   3. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <baseline>` when a diff exists.
+   4. Print the Trivial-risk declaration when the classification is trivial and either no diff exists or the checker reports no test or contract surface.
+   5. Add the same declaration to the PR/MR description when the condition in step 3.4 holds.
+   6. Skip to step 8 when the condition in step 3.4 holds.
+4. **Draft the decision inputs.**
+   1. Draft the approach, scope boundary, and highest risk inside the future plan.
+   2. Read `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/adr-rules.md` when the change contains a structural decision.
+   3. Draft the structural ADR inside the future plan when step 4.2 fires.
+   4. Draft the contract delta inside the future plan.
+   5. State backward compatibility for every contract delta.
+   6. Include the consumer contract delta for a cross-service change.
+5. **Handle special lanes.**
+   1. For a bug fix, require a short complete plan whose `New-behavior tests` section names the regression test.
+   2. Route a changed existing assertion as an amendment that shows its old and new assertion.
+6. **Write and gate the implementation plan.**
+   1. Read `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/plan-format.md`.
+   2. Leave plan mode before writing or updating the canonical plan.
+   3. Treat every harness plan file as non-authoritative.
+   4. Write the Implementation plan to its exact path.
+   5. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" "${CLAUDE_PROJECT_DIR}/docs/plans/<name>.md"`.
+   6. Fix every checker failure.
+   7. Print the complete plan verbatim followed by its path outside a plan-mode approval surface.
+   8. Copy the canonical decision summary verbatim and append its path inside a plan-mode approval surface.
+   9. Add the Plan pointer when `docs/plans/` is tracked.
+   10. Commit the plan file when `docs/plans/` is tracked.
+   11. Paste the complete plan into the PR/MR description when `docs/plans/` is ignored.
+   12. Stop for explicit approval.
+   13. Treat approval as authorization to execute the plan file.
+7. **Apply approved artifacts and create test evidence.**
+   1. Re-check the working tree against step 0.
+   2. Stop when a target file changed outside the approved plan.
+   3. Write each approved contract or ADR artifact to its exact planned path.
+   4. Invoke `ctdd-tests`.
+   5. Skip steps 7.6–7.11 when the plan says `Preservation pins: none`.
+   6. Write preservation pins against the current implementation.
+   7. Run the pins before replacing preserved behavior.
+   8. Save the complete run to the Pin-state evidence path, using a runner setting that prints one line per test (a summary-only log names no test, so the checker can verify nothing — e.g. `dotnet test --logger "console;verbosity=detailed"`, `pytest -v`, `go test -v`).
+   9. Verify pins with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" <pin-log> --tests-from <plan-path> --expect-pass`.
+   10. Apply the preservation-only conversion.
+   11. Re-run the same pins.
+   12. Skip steps 7.13–7.17 when the plan says `New-behavior tests: none`.
+   13. Write the new-behavior tests.
+   14. Run the new-behavior tests before implementing new behavior.
+   15. Save the complete run to the Red-state evidence path, with per-test output as in 7.8.
+   16. Verify red state with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" <red-log> --tests-from <plan-path>`.
+   17. Stop when a new-behavior test passes before implementation.
+8. **Implement remaining behavior and verify.**
+   1. Implement only the approved behavior.
+   2. Do not weaken an assertion to obtain green.
+   3. Run the contract validator.
+   4. Run the relevant tests.
+   5. Run the build.
+   6. Re-run every preservation pin listed in the plan when a plan exists.
+   7. Amend the plan with the old and new assertion or contract delta when an approved assumption, clause, or assertion is wrong.
+   8. Re-run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" "${CLAUDE_PROJECT_DIR}/docs/plans/<name>.md"` when step 8.7 fires.
+   9. Obtain approval before changing the affected artifact when step 8.7 fires.
+9. **Produce the review packet.**
+   1. Stop for the human's sealed hold-out result when the plan says `required`.
+   2. Set Hold-out to `not required`, `passed`, `failed` (blocks approval), or `declined by human` (waiver) from the plan and human result.
+   3. Run the contract validator.
+   4. Set its Verification result to `NOT RUN — no validator found` when none exists.
+   5. Run the relevant tests.
+   6. Run the build.
+   7. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" "${CLAUDE_PROJECT_DIR}/docs/plans/<name>.md"` when a plan exists.
+   8. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" <red-log> --tests-from <plan-path>` when new-behavior tests exist.
+   9. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" <pin-log> --tests-from <plan-path> --expect-pass` when preservation pins exist.
+   10. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <baseline>`.
+   11. Stop and reclassify when its inventory exceeds the approved plan.
+   12. Set Back-translation to one sentence from the changed tests or to `n/a — no test diff`.
+   13. Print the Review packet in its exact shape.
+   14. Invoke `ctdd-review` for the reviewer-side evaluation.
+10. **Write a colocated note only when triggered.**
+   1. Write no note for behavior already expressed by a test or contract.
+   2. Write one Colocated note for one universal rule, deliberate gap, or durable external fact.
+## Standalone ADR procedure
+1. Read `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/adr-rules.md`.
+2. Gather Context, Decision, and Consequences.
+3. Find the next ADR number under `${CLAUDE_PROJECT_DIR}/docs/adr/`.
+4. Render `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/adr-template.md`.
+5. Write `${CLAUDE_PROJECT_DIR}/docs/adr/NNNN-<kebab-slug>.md`.

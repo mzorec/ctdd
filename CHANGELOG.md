@@ -4,6 +4,8 @@
 
 _Docs and other non-runtime edits collect here and fold into the next runtime release. Version numbers move only when the skills, scripts, or hooks change._
 
+- Backlog: an investigate-without-changing lane filed as two options — a diagnostic mode inside `ctdd-change` that runs steps 0–2 and stops (preferred: no new always-on description, no fourth routing surface), or a separate `ctdd-investigate` skill if the findings output needs a contract the step-2 reading cannot carry. Neither built: the trigger is the same request arriving a third time, or findings having to be re-derived when the change workflow runs afterwards. One occurrence is an idea, not a trigger.
+
 - `ctdd-in-depth.md` gains an honest limit on the deterministic tiers: moving a rule into a checker removes drift but not wrongness, and substitutes a quieter failure. Twenty defects of one shape — a checker reporting success over input it never read — came out of running this method's own tooling, several of them fixes for the previous one that reached a single caller. The two rules that follow are free and were not obvious in advance: test checkers against malformed, partial and empty input rather than well-formed input, and enumerate every caller before declaring a fail-silent path closed.
 - Checked and found accurate, so unchanged: the status pin (version and all three measurements), the six deterministic pieces, hold-out vocabulary, and the absence of any withdrawn library recommendation. `ctdd-in-practice.md` and the README need nothing — the night's changes were runtime and packaging, which those documents deliberately stay clear of.
 
@@ -29,6 +31,33 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 - README rewritten for a senior engineer meeting CTDD for the first time. It now opens with what using the plugin looks like before the philosophy, leads the three-doc split cleanly (README = operating manual, *in practice* = the ten-minute feel, *in depth* = the reasoning), and cuts the em-dash-heavy phrasing that made it read as machine-written. Same content and same six-deterministic-pieces honesty; about 1,000 tokens lighter.
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
+
+## 0.21.1 — 2026-07-24
+
+Two defects found by running a real change, not by review.
+
+### Fixed
+- **Fully-qualified test names matched nothing.** The identifier-boundary rule added in 0.19.0 treated a leading `.` as part of the name, so `Namespace.Class.Method` — exactly what `dotnet test --logger "console;verbosity=detailed"` prints — was never found. A dot before a name is a namespace separator; a dot after still rejects a prefix match.
+- **Nothing said how to produce a log the checker can read.** Default `dotnet test` output names no individual test, so an evidence capture could contain only a summary and verify nothing. Step 7 now requires per-test output and names the flag for the common runners, and the checker diagnoses a summary-only log instead of merely reporting every name as missing.
+
+### Added
+- Regression tests for both boundary directions. Suite 140 → 142.
+
+### Note
+- The machine-readable test block in the backlog moved from filed to ready: on this change the agent had to amend its own approved plan so `--tests-from` could parse it. The plan was correct and readable; the parser was the limitation.
+
+## 0.21.0 — 2026-07-21
+
+`ctdd-change` rewritten as procedure. **6,537 → 2,757 tokens**, under the post-compaction limit for the first time since v0.14.0, with every rule intact.
+
+### Changed
+- **The skill is now a numbered procedure with an explicit output contract**, and the reasoning lives in `references/rationale.md`. A table names every artifact's exact path and required shape — plan, pointer, ADR, evidence logs, review packet, colocated note — which is checkable in a way prose was not. Guardrails are declared unordered rather than leaving order to be inferred.
+- **Two rules became structural instead of stated.** Preserve-before-create is encoded in the step order rather than asserted, and `trivial` is a separate declared output rather than a risk level inside a plan, which is the distinction that previously needed a paragraph.
+- The always-loaded description drops from 1,329 to 566 characters.
+- **The worked bug-fix example is removed.** It was added because the bug-fix lane is the modal case, but duplicated examples had produced four competing heading vocabularies; one canonical example, guarded and still passing both checkers, has no drift surface. The rule that replaces it is more precise: a short **complete** plan whose `New-behavior tests` section names the regression test.
+
+### Fixed
+- **The structure guards were pinned to exact sentences and failed on a correct rewrite.** A check that fires on good work is worse than no check — it argues against improvement and teaches people to ignore verdicts. They now match the rules in their current wording.
 
 ## 0.20.1 — 2026-07-21
 

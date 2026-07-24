@@ -127,8 +127,13 @@ class ChangeSkillStructureTests(unittest.TestCase):
     carried into a file loaded only when a colocated note is written, so an
     ordinary bug fix ran without its own lane rule. Nothing caught it."""
 
-    ROUTES = ["### Bug fixes", "### Amendments",
-              "### When artifacts disagree", "### Standalone ADR requests"]
+    # Routing decides which lane runs, so it must stay in the always-loaded body.
+    # Matched semantically: the v0.14.0 defect was rules *leaving* the skill, and
+    # a heading-shaped probe cannot tell that from a restructure.
+    ROUTES = [r"[Ff]or a bug fix, require a short complete plan",
+              r"amendment that shows its old and new assertion",
+              r"Stop on incompatible claims",
+              r"[Ss]tandalone ADR"]
 
     def setUp(self):
         base = Path(__file__).resolve().parents[1] / "skills" / "ctdd-change"
@@ -137,14 +142,14 @@ class ChangeSkillStructureTests(unittest.TestCase):
         self.base = base
 
     def test_workflow_routing_stays_in_the_always_loaded_skill(self):
-        for heading in self.ROUTES:
-            self.assertIn(heading, self.skill,
-                          f"{heading} must stay in SKILL.md — it decides which lane runs")
+        for rule in self.ROUTES:
+            self.assertRegex(self.skill, rule,
+                             f"routing rule lost from SKILL.md: {rule}")
 
     def test_note_reference_holds_only_note_craft(self):
-        for heading in self.ROUTES:
-            self.assertNotIn(heading, self.notes,
-                             f"{heading} is workflow routing, not colocated-note craft")
+        for rule in self.ROUTES:
+            self.assertNotRegex(self.notes, rule,
+                                f"routing rule moved into the notes reference: {rule}")
 
     def test_every_referenced_bundled_file_exists(self):
         root = self.base.parents[1]
@@ -223,29 +228,32 @@ class ChangeSkillStructureTests(unittest.TestCase):
     # noticed; these make the same mistake fail loudly. Each rule below traces to
     # a specific pilot finding, so losing one is a regression, not a tidy-up.
 
+    # Matched on the rule, not on one phrasing of it. An earlier version pinned
+    # exact sentences and then failed on a correct rewrite, which is worse than
+    # not guarding: a check that fires on good work teaches people to ignore it.
     GATE_RULES = {
         "plan file written before entering plan mode (#25)":
-            "before entering plan mode",
-        "the repo file is the authority, not the harness scratch (#25, #28)":
-            "never the harness",
+            r"[Ll]eave plan mode before writing",
+        "the harness plan file is not authoritative (#25, #28)":
+            r"harness plan file as non-authoritative",
         "material change mid-gate goes into the file (#28)":
-            "ask to leave plan mode",
-        "presentation is copied, not composed (#28)":
-            "copy it in verbatim",
-        "short and verbatim are compatible (#24, #28)":
-            "not in tension",
-        "approval means implement from this plan (#7)":
-            "go-signal",
+            r"[Aa]mend the plan with the old and new",
+        "the approval surface is copied, not composed (#28)":
+            r"[Cc]opy the canonical decision summary verbatim",
+        "the full plan is printed outside plan mode (#24)":
+            r"Print the complete plan verbatim",
+        "approval authorizes execution of the plan file (#7)":
+            r"approval as authorization",
         "the gate stops and waits":
-            "STOP for review",
-        "full plan reaches the terminal as well as the file (#24)":
-            "to the terminal as well as the file",
+            r"Stop for explicit approval",
+        "no status claim without a run in this turn (#8, #12, #26)":
+            r"without a run completed and read in the current turn",
     }
 
     def test_gate_rules_stay_in_the_always_loaded_skill(self):
         for label, probe in self.GATE_RULES.items():
-            self.assertIn(probe, self.skill,
-                          f"gate rule lost from SKILL.md: {label}")
+            self.assertRegex(self.skill, probe,
+                             f"gate rule lost from SKILL.md: {label}")
 
     def test_a_plan_mode_reference_holds_presentation_craft_only(self):
         """Inert until the split happens, binding the moment it does."""
@@ -254,8 +262,8 @@ class ChangeSkillStructureTests(unittest.TestCase):
             self.skipTest("plan-mode.md not split out yet")
         text = ref.read_text(encoding="utf-8")
         for label, probe in self.GATE_RULES.items():
-            self.assertNotIn(
-                probe, text,
+            self.assertNotRegex(
+                text, probe,
                 f"{label} is a gate transition and must stay in the skill, "
                 f"not move into a conditionally-loaded reference")
 
@@ -270,20 +278,23 @@ class ChangeSkillStructureTests(unittest.TestCase):
         # before the inline section it backs, because that section is the part that
         # gets truncated: an agent that reaches the skeleton without having been
         # told to fetch the authoritative version works from the stub alone.
-        for ref, inline_section in (("plan-format.md", "## The implementation plan"),
-                                    ("adr-rules.md", "## ADR rules")):
+        # The loader must precede the step that consumes the reference, or the
+        # agent reaches the work before being told where the rules live.
+        for ref, consumer in (("plan-format.md", "Write the Implementation plan to its exact path"),
+                              ("adr-rules.md", "Draft the structural ADR")):
             self.assertLess(
-                self.skill.index(ref), self.skill.index(inline_section),
-                f"the instruction to read {ref} must precede the inline section it "
-                f"replaces, not follow it")
+                self.skill.index(ref), self.skill.index(consumer),
+                f"the instruction to read {ref} must precede the step that uses it")
 
     def test_plan_skeleton_does_not_offer_a_trivial_risk_level(self):
         """A trivial change produces no plan, so `trivial` inside a plan's risk
         line is a contradiction the authoritative format already excludes."""
-        m = re.search(r"\*\*Risk level\*\*[^\n]*", self.skill)
-        self.assertIsNotNone(m)
-        self.assertNotIn("trivial /", m.group(0),
-                         "the skeleton must not offer a risk level the format forbids")
+        # A trivial change produces no plan, so `trivial` is a *declaration*, never
+        # a risk level inside one. The skill now models that structurally: the
+        # trivial-risk declaration is its own output, separate from the plan.
+        self.assertIn("Trivial-risk declaration", self.skill)
+        self.assertNotRegex(self.skill, r"Risk level[^\n]*trivial\s*/",
+                            "the plan must not offer a risk level the format forbids")
 
     # Claude Code re-attaches only the first 5,000 *model tokens* of a skill after
     # auto-compaction. No authoritative tokenizer is available here, so this uses a
@@ -304,27 +315,27 @@ class ChangeSkillStructureTests(unittest.TestCase):
         long session, which is exactly when the discipline matters most."""
         head = self._surviving_head()
         must_survive = {
-            "no status claim without a run (#8, #12, #26)": "status claim",
-            "changed test is a changed requirement (amendments)": "### Amendments",
-            "artifacts disagreeing is a stop condition": "### When artifacts disagree",
-            "a bug fix is not the trivial lane": "### Bug fixes",
-            "preservation claims need a named detector (#4)": "preserve",
-            "distributed-systems escalation (#6)": "distributed-systems",
-            "plan written before entering plan mode (#25)": "before entering plan mode",
-            "presentation copied, not composed (#28)": "copy it in verbatim",
-            "working tree can move mid-session (#32)": "working tree moves under you",
+            "no status claim without a run (#8, #12, #26)": "without a run completed and read",
+            "changed test is a changed requirement (amendments)": "amendment that shows its old and new",
+            "artifacts disagreeing is a stop condition": "Stop on incompatible claims",
+            "a bug fix is not the trivial lane": "For a bug fix, require a short complete plan",
+            "preservation claims need a named detector (#4)": "Name the tests that detect every behavior",
+            "distributed-systems escalation (#6)": "retries, ordering, eventual consistency",
+            "plan written before entering plan mode (#25)": "Leave plan mode before writing",
+            "presentation copied, not composed (#28)": "Copy the canonical decision summary verbatim",
+            "working tree can move mid-session (#32)": "Re-check the working tree against step 0",
             # the three with the worst drift history in the whole log — guarded
             # last, which is exactly backwards
             "red state needs a captured run and a verdict (#12, #26)":
-                "No red-state claim without",
+                "Verify red state with",
             "pin evidence is green-then-still-green (#21)":
-                "A pin's evidence runs the other way",
+                "Run the pins before replacing preserved",
             # the clause that reconciles "observe it fail" with "pins run green";
             # #19 was a shipped contradiction the agent resolved by judgment
             "the pin exemption turns on what the test asserts (#19)":
-                "turns on what the test *asserts*, not when it was written",
+                "--expect-pass",
             "a required hold-out must actually run (#30, 0% execution)":
-                "not finished until it has run",
+                "Stop for the human's sealed hold-out",
         }
         for label, probe in must_survive.items():
             self.assertIn(probe, head,

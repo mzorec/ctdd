@@ -131,8 +131,13 @@ def _match_span(line, name):
     for m in re.finditer(re.escape(name), line):
         before = line[m.start() - 1] if m.start() else " "
         after = line[m.end()] if m.end() < len(line) else " "
-        if not (before.isalnum() or before in "_.") and \
-           not (after.isalnum() or after in "_"):
+        # A dot BEFORE the name is a namespace separator, not part of the
+        # identifier: `dotnet test --logger detailed` prints every test as
+        # Namespace.Class.Method, so rejecting a leading dot rejected the most
+        # common real-world log format outright. A dot AFTER still rejects,
+        # because a match followed by `.` is a prefix of a longer qualified name.
+        if not (before.isalnum() or before == "_") and \
+           not (after.isalnum() or after in "_."):
             return m.start(), m.end()
     return None
 
@@ -379,6 +384,12 @@ def main():
         if missing:
             print(f"  not found in the log ({len(missing)}): {', '.join(missing)}")
             print("    An unrun pin proves nothing about preservation.")
+            if not any(re.search(r"(?i)\b(pass|ok|✓)", l) for l in log.splitlines()
+                       if not SUMMARY_RX.search(l.lower())):
+                print("    The log has no per-test result lines at all, only a summary. "
+                      "Re-run with per-test output (dotnet: --logger "
+                      "\"console;verbosity=detailed\"; pytest: -v; go: -v) — a summary "
+                      "names no test, so nothing can be verified from it.")
         return 1
 
     failing, passing, absent = [], [], []
