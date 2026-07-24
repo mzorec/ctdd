@@ -32,6 +32,28 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.21.3 — 2026-07-24
+
+### Changed
+- **`ctdd-tests` now gives an executable action at the remaining discipline breakpoints.** It stops on unclear intent instead of inventing an API, reports pervasive mocking / oversized setup as design pressure instead of prescribing a production redesign, distinguishes compilation failure from RED, and fixes harness failures without weakening the expectation.
+- Invalid substitutes are evidence-direction aware: manual checks, coverage, inspection, tests-after, sunk effort, and retained exploration do not replace executable RED for `must fail before implementation`; preservation pins and characterization observations still require green-before-refactor.
+- The new table displaced existing breakpoint bullets and compressed nearby prose, so the always-loaded skill remains **113 lines**. Detailed reasoning moved to the on-demand rationale.
+
+### Added
+- Finding #54 records the remaining breakpoint gap and why the sample's “write the wished-for API” / “use dependency injection” prescriptions were not copied into CTDD.
+- Two prose regression guards cover blocked design pressure and evidence-direction-aware invalid substitutes. Suite **144 → 146 passing**, with one existing skip.
+
+## 0.21.2 — 2026-07-24
+
+### Changed
+- **`ctdd-tests` no longer makes xUnit the effective default through its worked example.** Finding #53 showed that a single “translate it” caveat could not outweigh a full copyable framework specimen. The always-loaded body now derives project conventions from applicable `CLAUDE.md` / `.claude/rules/`, verifies them against the target test project and adjacent tests, stops on conflict, and forbids introducing or defaulting a framework.
+- The worked section now teaches case derivation through a framework-neutral table covering representative positive, exact boundary, invalid, error, required-side-effect, and forbidden-side-effect cases. Framework syntax and artifact paths come only from the target repository.
+- No per-framework reference files were added. Ordinary xUnit/NUnit/MSTest/pytest/Jest syntax remains repository-owned; add a framework reference only for a CTDD-specific mechanism that adjacent tests cannot reveal.
+
+### Added
+- Finding #53 records the ownership boundary and the soft contradiction that triggered the change.
+- Two regression guards require repository-owned convention discovery and reject xUnit-specific tokens in the worked section. Suite **142 → 144 passing**, with one existing skip.
+
 ## 0.21.1 — 2026-07-24
 
 Two defects found by running a real change, not by review.

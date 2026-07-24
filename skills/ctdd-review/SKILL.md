@@ -1,64 +1,47 @@
 ---
 name: ctdd-review
 description: >-
-  Review a code change — a PR, merge request, branch diff, staged changes, or
-  pasted diff — for a backend API or microservice the Contract- and Test-Driven
-  Development (CTDD) way. Use whenever the user asks to review, check, or
-  judge a change before merge, even if they never say "CTDD". Reads the tests
-  and the API contract as the spec, not just the code: changed tests are
-  changed requirements, contract diffs are boundary changes, new behavior
-  needs a behavior-level test, structural decisions need an ADR. Triggers
-  include "review this PR", "review this MR", "review this diff", "review my
-  changes", "check this before I merge", "CTDD review", "look it over", "check what
-  the agent did", "sanity-check this diff before I open the PR", "review just
-  the changed tests and contract in this PR". Not for reviewing tests in
-  isolation outside any diff (use ctdd-tests — the test or contract portion
-  of a diff belongs here), not for implementing changes or
-  responding to review comments (use ctdd-change), not for one-off scripts or
-  data migrations with no test or contract surface, and not for visual/UX-only
-  changes (testable state logic qualifies wherever it lives).
+  Use for "review this PR", "review this MR", "review this diff", "check my
+  staged changes", "compare this branch before merge", "look over what the
+  agent changed", or "review just the tests or contract in this PR". Inspect an
+  existing backend/API implementation represented by a PR, MR, commit, branch,
+  staged or uncommitted changes, or pasted diff; establish defects and review
+  readiness without editing it. Route isolated test review or test-writing to
+  ctdd-tests. Route implementing fixes, including review feedback, to
+  ctdd-change. Reject architecture brainstorming, draft-contract review without
+  an implementation diff, infrastructure-only, data-migration-only, and
+  visual/UX-only review; testable state logic remains in scope.
 ---
-
-# CTDD: reviewing a change
-
-**Use this skill when the unit of work is a review** — a finished diff, produced by a human or an agent, to be judged before merge. It is the reviewer's side of the workflow: `ctdd-change` drives the author, `ctdd-tests` owns the test craft, and this skill checks that a change actually treats the tests and the contract as the spec. For reviewing tests in isolation, use `ctdd-tests`; this skill calls it for the test portion of a change.
-
-The core stance: **read the spec artifacts first and the implementation second.** A diff to a test is a diff to the requirements. A diff to the contract is a change to a boundary other parties build against. Most review failures aren't bugs in code — they're spec changes nobody noticed were spec changes.
-
-## Gather the change
-
-Get the full diff before judging anything, and settle what you are diffing *against* first: `HEAD` for uncommitted work, the merge-base with the target branch for a branch or PR (`git diff` alone misses everything already committed on it), and include untracked files, since a change whose only spec artifact is a new test file otherwise reads as touching nothing. Anchor the commands to the project root with `git -C "${CLAUDE_PROJECT_DIR}"`. So: `git diff` for staged or branch changes, the PR/MR diff via whatever tooling is available, or the pasted patch. If `"${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py"` is available, run the diff's name-status through it first (`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <baseline>`, or `python`/`py` on Windows) and report its output before anything else: renamed or deleted tests still count as spec changes until shown otherwise, and its inventory is the deterministic cross-check on the plan's risk call. Retrieve just enough surrounding context to judge it — the contract files it touches, the existing tests around the changed behavior, and the ADR index if structure moved. If an implementation plan exists (`${CLAUDE_PROJECT_DIR}/docs/plans/<name>.md` is the canonical location; else the PR description or pasted plan output), read it first: the review's first job is checking the change against its own stated intent and risk call.
-
-## Review dimensions
-
-Work through these in order — spec first, code second. Scale depth to the risk of the change, and challenge the author's risk call if the diff doesn't match it (a "trivial" diff that touches a state machine is misclassified, and that is itself a finding).
-
-1. **Spec changes — modified or deleted tests.** Every one is a changed requirement. For each: is it acknowledged as a spec change, and is the new expectation right against the business intent? A test relaxed so that failing code passes is the highest-severity finding this skill can raise. A deleted test is a silently dropped requirement unless the deletion is justified.
-2. **Boundary changes — contract diffs.** For OpenAPI/protobuf/AsyncAPI/Pact diffs: is compatibility stated, and stated correctly? Additive changes (new endpoints, new optional fields) are compatible; removals, type changes, and semantic changes to existing fields are breaking and need the consumer contract updated plus a migration story.
-3. **Coverage of new behavior.** Every new observable behavior in the diff needs a behavior-level test naming it. List new behaviors without one as uncovered — untested behavior reads as unconstrained to the next agent that touches this code.
-4. **Test quality.** Apply the `ctdd-tests` review checks (every check in `ctdd-tests`' review section — altitude, naming, coverage of the contract, mock weight, determinism, contract alignment; read it there rather than trusting this list, which has drifted before) to the new and changed tests in the diff.
-5. **Structure.** Does the diff touch a service boundary, data ownership, or cross-service semantics? Then an ADR should be present — or explicitly declined with a reason. Check the ADR records a decision and its tradeoffs, not a description of behavior.
-6. **Risk areas.** Changes in thinly-covered code without the old behavior pinned first — a **preservation pin** where the behavior is confirmed intent, or a marked **characterization observation** where nobody has confirmed it yet; both are written before the change and both verify with `--expect-pass`; distributed-systems logic (messaging, retries, ordering, partial failure) changed without property or messaging-contract tests. Both escalate severity — a green suite is weak evidence exactly here.
-7. **Invariant notes.** If the change introduces a universal rule or an intentional gap that can't be executable, is the one-line colocated note present?
-8. **Red-state evidence.** For every test in the diff that asserts *new* behavior: is there a captured failing run from *before* the implementation **and the checker's verdict over it** — `"${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" <log> --tests-from <plan>`? A log without a verdict is unverified: it proves a run happened, not that it covered the tests the plan named. If only a log is offered, run the check yourself — a test renamed or swapped between plan and implementation surfaces here and nowhere else. A new-behavior test with no captured red state is unvalidated as a detector — it may pass vacuously. **Pin/characterization tests are exempt — their evidence runs the other way:** observed passing against the *old* implementation and still passing after the change; do not expect a failing run for them — verify them with `check-redstate.py --expect-pass` instead, never the default red-state check. Absent evidence is a finding; an explicit "could not capture, here's why" is acceptable, a silent omission is not.
-9. **Budgets and hold-outs.** If the diff plausibly touches a latency/throughput budget, the authz surface, tenant isolation, or retention/audit behavior — and no artifact states the budget — that is a finding, not a pass. For a **load-bearing** change — money, authorization, state-machine, externally consumed boundary, tenant-isolation, retention, or audit semantics — which is *not* the same axis as the risk level (a payment amendment is routinely `Risk: normal` and still load-bearing): was a hold-out decision recorded in the plan (required / not required), and if required, did it run? An absent record, a result left `pending` at review time, or a `failed` result is a merge-blocking finding; a `declined by human` waiver is reported as a deviation on a load-bearing change, not a pass.
-
-## Report format
-
-Order findings by severity, each tagged with a verdict:
-
-- **spec-change** — a test or contract change that alters requirements (call it out even when it's correct; visibility is the point). Cross-artifact conflicts land here too: two spec artifacts disagreeing is a detected spec bug
-- **needs-tests** — new behavior without a behavior-level test
-- **needs-adr** — a structural decision without a record
-- **boundary-risk** — a breaking or ambiguously-compatible contract change
-- **test-quality** — findings delegated from `ctdd-tests`
-- **risk-misclassified** — the diff doesn't match the plan's risk call; a "trivial" diff that touches a state machine is misclassified, and that is itself a finding. A high-risk diff with no plan at all lands here too
-- **nit** — anything that doesn't gate the merge
-
-Close with an overall verdict — **approve** / **approve-with-nits** / **needs-work** — plus the one or two things that most deserve the author's attention. Keep proportion: a three-line fix gets a three-line review.
-
-## Guardrails
-
-- Review the change that exists, not the change you would have written. Style preferences are nits, not findings.
-- When a test change and a code change agree with each other, remember they can agree on the wrong thing — check the pair against the stated business intent, not against each other. For load-bearing diffs, demand (or produce) the back-translation: one or two sentences stating, from the tests alone, the requirement they encode — then compare that sentence to the business intent. Prose against prose is where a flipped boundary or fee semantics becomes visible; two green artifacts against each other is where it hides. This is the circularity failure mode, and review is the last gate that can catch it.
-- Don't fix anything during the review. Findings go back to the author (`ctdd-change` is the fixing lane); silent fixes destroy the review record and merge the author and reviewer roles the method deliberately separates.
+# CTDD: review an existing change
+Rationale only; do not load during review: `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-review/references/rationale.md`.
+## Routing and guardrails
+- Stay here only when the unit of work is judging an existing diff, branch, commit, PR, MR, staged set, or uncommitted set. Route tests reviewed in isolation to `ctdd-tests`; route any requested edit or implementation of review feedback to `ctdd-change`.
+- Do not edit code, tests, contracts, plans, or review artifacts. Finish the independent review first; hand qualifying findings to `ctdd-change` only after the user requests fixes.
+- Do not report execution, build, test, checker, or hold-out results unless the command ran and its complete output was read in the current turn.
+## Evidence threshold
+- Classify each candidate as **reproduced defect**, **statically proven defect**, **evidence-backed inference**, **unresolved suspicion**, or **preference**. Publish only the first three; label an inference with confidence and the missing verification. Put unresolved suspicion only under `Residual risks`; omit preferences.
+- A finding requires one root cause, the actual defective changed line, violated behavior or invariant, triggering input or path, observable consequence, supporting contract/test/code, evidence, severity, and the smallest bounded correction. Consolidate consequences from one root cause. Recheck every candidate against every changed file before publication.
+- Severity: **P0** active or imminent security compromise, irreversible data loss, or total outage; **P1** merge-blocking security, data-integrity, compatibility, or broad user-visible failure; **P2** bounded incorrect behavior, missing required failure handling, or a test gap that leaves shipped behavior unconstrained; **P3** proven non-gating defect. Never inflate severity from code complexity, diff size, or taste.
+- Use one category: `correctness`, `spec-change`, `needs-tests`, `needs-adr`, `boundary-risk`, `test-quality`, `risk-misclassified`, or `process-evidence`; a correct acknowledged spec change belongs in scope/verification, not findings.
+## Ordered review procedure
+1. **Establish target and base. Precondition:** the request identifies repository material. Name the target and comparison base; use `HEAD` for uncommitted work and the merge-base with the target branch for a branch/PR. Include staged, unstaged, renamed, deleted, and untracked files; anchor Git commands with `git -C "${CLAUDE_PROJECT_DIR}"`. Stop and resolve an unknown or disputed base. If available, run `check-spec-surface.py --git <base>` after fixing the base and record its complete inventory.
+2. **Read governing instructions. Precondition:** step 1 fixed the target and base. Read applicable `CLAUDE.md`, `.claude/rules/`, contracts, approved plan/issue/PR intent, and repository review instructions; record conflicts instead of choosing silently.
+3. **Read the complete changed surface. Precondition:** step 2 found the governing sources. Inventory every changed file and read the entire diff plus required surrounding code before forming findings. For a large diff, partition by behavior/root and complete the inventory before judging any part.
+4. **Reconstruct intended behavior. Precondition:** step 3 completed the surface. Derive intent from approved plan/issue context, contracts, and existing tests; treat changed tests/contracts as proposed requirement changes, not automatically correct requirements. Stop publication when intent remains ambiguous.
+5. **Run relevant verification. Precondition:** step 4 established a testable invariant. Run the narrowest reproducer, focused tests, build/checkers, and available contract or red/pin-state checks; capture exact commands and decisive output. A repository/build/harness failure is a verification limit unless evidence proves the change caused it.
+6. **Inspect mandatory dimensions. Precondition:** step 5 completed or recorded why it could not. Check in this order: contract/test intent and unchanged-behavior regressions; positive, negative, boundary, error, cancellation, and forbidden-side-effect paths; compatibility and rollout, including removals/type/semantic changes, consumer updates, and migration; concurrency/retry/idempotency/duplicate delivery; persistence/transactions; security/authorization; observability; test altitude/coupling, vacuous assertions, and production code added only for tests; dead/unreachable code and incomplete migrations. Mark a dimension `not relevant` with the inspected evidence.
+   - Apply the complete `ctdd-tests` review section to every changed test. Verify modified/deleted tests against approved intent, behavior-level coverage for each new observable behavior, the shipped surface against the plan risk call, an ADR or recorded decline for service-boundary/data-ownership/cross-service decisions, a colocated note for intentional non-executable invariants, pre-change pins or marked characterization observations in thinly covered behavior, and project-approved property or messaging-contract evidence for changed distributed logic.
+   - For each new-behavior test require a captured pre-implementation failing run plus `check-redstate.py <log> --tests-from <plan>` verdict; for pins/characterizations require pre-change and post-change passes plus `--expect-pass`. Verify implicated NFR budgets. For money, authorization, state-machine, external-boundary, tenant-isolation, retention, or audit semantics, back-translate the tests into one or two requirement sentences, compare them with approved intent, and require a recorded hold-out decision plus a completed result when required; put unavailable evidence in verification limits and treat silent or failed required evidence as a finding.
+7. **Recheck candidates. Precondition:** step 6 covered every dimension. Trace each candidate across the full diff and surrounding path; discard it when another changed file compensates, consequence cannot be established, it restates code, or it expresses design taste. Merge candidates with one root cause.
+8. **Apply the evidence bar. Precondition:** step 7 left bounded candidates. Assign evidence class and severity; cite the smallest changed line range containing the defect. Do not publish unresolved suspicions, unverified claims, broad redesigns, or findings whose cited line is only a symptom.
+9. **Record limits and residual risk. Precondition:** step 8 finalized findings. State unavailable infrastructure, commands not run, failing harness/build, ambiguous intent, evidence-backed inferences, and hold-out status without converting uncertainty into a defect.
+10. **Emit the review. Precondition:** steps 1–9 are complete. Use the artifact contract below; state `No qualifying findings.` when none remain. Do not stop after the first defect and do not implement corrections.
+## Finding and non-finding examples
+`[P1][correctness][reproduced] src/Payments/CaptureHandler.cs:88-92 — Zero-amount capture publishes an event. Behavior: the contract requires amount > 0. Trigger/path: POST /captures with amount=0 reaches PublishAsync. Consequence: clients receive 200 and PaymentCaptured for an invalid capture. Evidence: dotnet test --filter ZeroAmount -> Failed: expected 400, actual 200; supported by openapi.yaml:214 and CaptureTests.cs:61. Correction: reject amount <= 0 before persistence/publication; retain the existing flow.`
+- No finding: `CaptureHandler.cs:88` looks unusual, but `CaptureValidator.cs:31` rejects the input before that path; discard the candidate. Uncertainty: `Residual risk — retry behavior was not exercised because the broker is unavailable; static inspection found no proven defect.` Approval: `No qualifying findings. Verdict: approve.` Unverified: never write `This could duplicate events` as a finding without a triggering path and evidence.
+## Artifact contract — emit to `stdout` / the current review response in this order
+1. `Review scope`: target, comparison base, changed-file inventory, governing intent sources, and excluded scope.
+2. `Verification`: each exact command followed by decisive output/result; unavailable checks and reason; red/pin-state and hold-out decision/result when implicated.
+3. `Findings`: severity order P0→P3; each finding uses `[severity][category][evidence-class] file:start-end — title` followed by behavior, trigger/path, consequence, evidence/support, confidence for inference, and bounded correction. Emit `No qualifying findings.` instead of an empty or praise-filled section.
+4. `Residual risks`: unresolved suspicions and verification limits only; never duplicate findings.
+5. `Verdict and handoff`: `needs-work` for any P0–P2, `approve-with-P3` for P3 only, otherwise `approve`; list finding IDs for `ctdd-change` only when fixes are requested. Do not publish comments to a PR/MR or create files unless the user explicitly requests that location.

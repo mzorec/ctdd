@@ -463,6 +463,62 @@ class CrossSkillAgreementTests(unittest.TestCase):
         self.assertNotIn("Enforces", desc,
                          "a skill with no mechanism must not claim enforcement")
 
+    def test_test_conventions_are_repository_owned_and_verified(self):
+        """Framework, assertions, naming, fixtures, paths, and runner are project
+        facts. The skill discovers and verifies them instead of publishing a
+        plugin-wide default that can override the repository."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("`CLAUDE.md`", t)
+        self.assertIn("`.claude/rules/`", t)
+        self.assertIn("target test project", t)
+        self.assertIn("adjacent tests", t)
+        self.assertIn("Do not introduce or default to a test framework", t)
+        self.assertIn("stop and report any conflict", t)
+
+    def test_worked_case_derivation_does_not_anchor_one_framework(self):
+        """A concrete framework specimen dominates a generic instruction to
+        adapt it. Keep the case derivation concrete and take syntax only from
+        the target repository."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        worked = t.split("## Worked case derivation", 1)[1].split("## Test review", 1)[0]
+        for framework_token in ("xUnit", "[Fact]", "[Theory]", "Assert.Equal"):
+            self.assertNotIn(framework_token, worked)
+        self.assertIn("Use an adjacent behavior-level test", worked)
+        self.assertIn("Do not copy framework syntax", worked)
+        self.assertIn("Representative positive", worked)
+        self.assertIn("Upper boundary", worked)
+        self.assertIn("Below lower boundary", worked)
+        self.assertIn("Forbidden side effect", worked)
+
+    def test_blocked_test_design_reports_pressure_without_prescribing_a_production_fix(self):
+        """A test-craft skill can expose design pressure, but it must not invent
+        the contract or prescribe a production redesign such as adding DI."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        blocked = t.split("## When blocked", 1)[1].split("## Worked case derivation", 1)[0]
+        self.assertIn("Expected behavior or public API is unclear", blocked)
+        self.assertIn("nearly every dependency needs a mock", blocked)
+        self.assertIn("setup obscures the rule", blocked)
+        self.assertIn("do not invent an API", blocked)
+        self.assertIn("do not expose internals", blocked)
+        self.assertIn("do not expose internals, substitute call counts, or change production design here", blocked)
+        for overreach in ("Write wished-for API", "Use dependency injection", "Delete means delete"):
+            self.assertNotIn(overreach, blocked)
+
+    def test_invalid_substitutes_respect_the_assigned_evidence_direction(self):
+        """Tests-after and manual checks do not replace witnessed RED for new
+        behavior, while green-before is required for pins and observations."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        blocked = t.split("## When blocked", 1)[1].split("## Worked case derivation", 1)[0]
+        for substitute in (
+            "Manual testing", "coverage", "code inspection",
+            "a test written after implementation", "time already spent",
+            "retained exploration", "executable RED",
+        ):
+            self.assertIn(substitute, blocked)
+        self.assertIn("must fail before implementation", blocked)
+        self.assertIn("preservation pins and characterization observations", blocked)
+        self.assertIn("must pass before refactor", blocked)
+
     def test_the_authz_instruction_names_the_mechanism_it_advertises(self):
         """The frontmatter triggers on 'derive the authorization matrix' and the
         body must reach an instruction that can actually be followed."""
