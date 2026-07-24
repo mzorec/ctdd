@@ -1,95 +1,154 @@
-# The implementation plan — output contract
+# Implementation plan format
 
-Read this before writing a plan (step 6). It is the authoritative format; the skill carries only
-the field list. `check-plan.py` validates presence of these sections, so a plan written without
-this file is caught mechanically rather than shipping malformed — but presence is not quality,
-and the guidance below is what makes each field worth reading.
+Load this file only at `SKILL.md` step 6.1.
 
-Produce this as a reviewable summary, then stop for approval on non-trivial changes:
+1. Write the sections below in the displayed order.
+2. Replace every placeholder.
+3. Use exact repository-relative paths.
+4. Use exact test names.
+5. Write `none — <reason>` for an empty mandatory section.
+6. Omit only the sections marked conditional.
 
-**Lead with a decision summary the human can read in under a minute**, then put the supporting detail below it — the gate asks for a *ruling on decisions and risks*, not a reading of the whole file inventory. **The test of the summary is that a reader who agrees with it can approve without scrolling**; if they must go into the detail to find out what they are agreeing to, the summary has failed and the two-layer structure has bought nothing.
+```markdown
+<Decision summary: one to three sentences naming the proposed direction, the highest risk, and every unresolved decision.>
+Risk: <normal | high-risk> · contract: <none | additive | breaking> · ADR: <none | NNNN required> · hold-out: <not required | required: 1–3 sealed tests from human>
 
-Write it the way you would tell a colleague what you found, standing at their desk with thirty seconds of their attention — **lead with what surprised you, or what you are not willing to guess at**. A summary that reads like a filled-in form has failed even when every field is correct: fields carry categories, and what a reviewer needs is the one thing about *this* change that is not routine. If nothing about it is surprising, say exactly that in a sentence and stop — a short honest summary is the goal, not a filled page.
+BLOCKING — I will not guess
+- <one-line question> Recommended answer: <answer>.
 
-Close it with a single categorical line, demoted because it is genuinely form-like: `Risk: normal · contract: additive · ADR 0005 required · hold-out: 2 sealed tests from you`. State `contract: breaking` explicitly whenever an existing response shape, route, or error code changes — a breaking change a reviewer meets in the file inventory rather than the summary is the failure this line exists to prevent — and name anything the human is on the hook for, because those are commitments, not information.
+Proceeding unless you object
+- <decision and consequence>
 
-Then the two buckets:
+Risk level: <normal | high-risk> — <one-line reason>
 
-- **BLOCKING — I will not guess.** The open questions whose answer changes the implementation and which you refuse to assume: each as a one-line question with your recommended answer. These are what approval actually turns on.
-- **Proceeding unless you object.** Decisions you've made and will act on (schema choices, ordering, nullability, what the repository returns): one line each. Consequences you'll absorb belong here, not in BLOCKING — the point is to show them without asking permission for each.
+Existing behavior
+- `<path>` — `<contract clause or exact test name>`: <observed behavior>.
+Known gaps
+- <missing artifact or coverage>
 
-A reader who agrees with every recommendation should be able to approve from the summary alone. The detail below is backup for when they don't.
+Assumptions
+- <assumption>
 
-The detail section, in full:
+Uncovered or ambiguous
+- <case and required resolution>
 
-- **Risk level** — normal / high-risk, with one line on why (a trivial change produces no plan at all — see the workflow preamble — so a plan's risk line never reads `trivial`; and, if a high-risk unknown is carved out of an otherwise-normal change, name it here so the risk call is honest). This is the justification for the ceremony being scaled up or down; a reviewer who disagrees with the risk call should be able to object to that before anything else. **If a BLOCKING decision later resolves in a way that changes scope — a type-only option becoming a breaking rewire, say — restate the risk level and the contract-changes section to match the branch actually chosen.** A plan whose top-line risk reflects the option you didn't take reads as safer than the work is.
-- **Existing behavior** found in the contract and relevant tests — cite the file paths and test names actually retrieved (evidence, not paraphrase), so thin retrieval is visible to the reviewer. State known gaps explicitly — "no Pact found for the checkout caller" converts silence into a reviewable absence.
-- **Assumptions** you are making.
-- **Uncovered or ambiguous cases** — behavior that matters but isn't pinned by a test, and anything the requirement doesn't specify.
-**Write both headings every time**, even when one is empty (`Preservation pins: none — this change creates behavior, it preserves nothing`). `check-plan.py` requires both, because a single-heading plan has no correct lane: the default check reads pins as new tests and blocks falsely, while `--expect-pass` finds no pin section at all.
+New-behavior tests
+- `<exact test name>` — path: `<path>`; <behavior>; expected pre-implementation failure: <assertion failure or behavioral mismatch>.
 
- **When a change both preserves and creates, do the preserving part first** — pins describe how the current code behaves, so a pin written before a change that reshapes what it observes still passes while proving nothing. Pin, convert, verify green, *then* build the new behavior on top. This ordering is a correctness property, not a preference: get it backwards and the suite stays green while the detector is silently gone.
+Preservation pins
+- `<exact test name>` — path: `<path>`; <behavior that must pass before and after>.
 
- For each *changed existing* test, show the old and the new assertion, not just the name — the name is exactly where a wrong encoding hides.
-- **Contract changes**, if any (and whether they're backward-compatible; flag breaking changes explicitly).
-- **NFR budgets this change could touch** — latency/throughput, authz surface, tenant isolation, retention/audit. State "none" explicitly; an unstated budget is not a free one.
-- **Hold-out** — required / not required, with why. Required when the change alters money, auth, state-machine, or boundary semantics (rounding, inclusivity, timezones, fee treatment). If required, ask the human to write 1–3 acceptance tests directly from the business spec and to withhold them from you; they run once, after green (sealing them is the team's CI job — see the README). Record the decision **and track its outcome**: write `result: pending` at plan time; step 9 updates it to `passed`, `failed`, or `declined by human`. The outcomes are not equivalent: `failed` **blocks approval at review** — `ctdd-review` treats a failed hold-out as a merge-blocking finding, and since nothing mechanical enforces it the reviewer is that gate; a failed hold-out is the method working, and merging past it is the one thing the hold-out exists to prevent. `declined by human` is an explicit **waiver**, reported at review as a deviation on a load-bearing change, never a neutral success. Never proceed as if this step happened when it didn't — and never leave it `pending` past review.
+Changed existing assertions (conditional: include only when an existing assertion changes)
+- `<exact test name>` — path: `<path>`; old: `<assertion>`; new: `<assertion>`; business requirement: <reason>.
 
-  **Where the hold-out is declined, fall back to human-verified expected values** on the load-bearing assertions — a distinct, cheaper guard, not a degraded hold-out. You write the test; the human checks the *number*, by doing the arithmetic rather than reading the code that produced it (capturing 87.50 of 100 leaves 12.50). Say which assertions you want checked and show the values plainly. This breaks the **shared-computation** path, where a test derives its expected value from the same production helper the implementation uses and both encode the same wrong rule. It cannot break a **shared misunderstanding**: if the human misreads the requirement the same way you did, the number looks right to both of you, and only a sealed test written from the business spec by someone who has not seen the implementation reaches that. Offer it as the fallback, never as the equivalent — a guard that quietly replaces the hold-out makes circularity worse while feeling like progress.
-- **ADR draft**, if step 4 produced one.
-- **Files likely to change.**
+Contract changes
+- `<path>` — <exact boundary delta>; compatibility: <backward-compatible | breaking>.
 
-Treat a change to an existing test as a change to the spec — call it out for review. If this plugin's `"${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py"` is available (that variable resolves to the plugin's install directory, so the command works from any project; quote it, since the path can contain spaces), run the emitted plan through it — adding `--diff` with the current the output of `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <baseline>` once edits exist (that invocation checks git's exit status and is anchored to the project root, unlike a bare shell pipeline, which reports a clean pass when git fails; it also so a new, still-untracked test file is counted, not silently missed), so a trivial claim is cross-checked against the actual surface — and fix any missing sections before presenting.
+NFR budgets
+- latency/throughput: <unchanged | budget and verification>
+- authorization: <unchanged | changed surface and verification>
+- tenant isolation: <unchanged | changed surface and verification>
+- retention/audit: <unchanged | changed surface and verification>
 
-### Example (condensed)
+Hold-out
+- decision: <required | not required>
+- reason: <reason>
+- request: <1–3 sealed tests written and withheld by the human | n/a>
+- storage: <location outside the agent-readable working tree | n/a>
+- runner: <human or CI job that runs the sealed tests once after green | n/a>
+- result: <pending | not required>
+- human-verified expected values: <assertions and values | n/a> (include when the human declines a required hold-out)
 
-Request: *"Add partial capture to the payments service — allow capturing less than the authorized amount."*
+ADR draft (conditional: include only when step 4.2 fires)
+- Context: <situation, constraints, and options>
+- Decision: <chosen structure>
+- Consequences: <benefits, costs, and follow-up>
 
-```
-A backward-compatible relaxation of the capture amount rule — the one thing I
-won't guess is what happens to the auth hold on the released remainder.
-Risk: normal · contract: additive · no ADR · hold-out: 1–2 sealed tests from you
-
-BLOCKING — I will not guess:
-- What happens to the auth hold on the released remainder? (recommend: it
- expires with the original authorization)
-Proceeding unless you object:
-- Zero capture amount is rejected; the released remainder is not re-capturable
-
-Risk level: normal — single-service, backward-compatible contract change;
-money path, so amount edge cases must be pinned in tests
-
-Existing behavior (payments/contract/openapi.yaml; tests/payments/CaptureTests.*):
-- POST /payments/{id}/capture requires amount == authorized amount
-- capture_fails_when_amount_exceeds_authorized_amount covers over-capture
-Known gaps: no consumer contract (Pact) found for the checkout caller
-
-Assumptions:
-- Partial capture moves the payment to CAPTURED (no new PARTIALLY_CAPTURED state)
-- The released remainder is not re-capturable
-
-Uncovered / ambiguous:
-- What happens to the auth hold on the released remainder? (needs confirmation)
-- Is a zero capture amount valid? (assuming no)
-
-New-behavior tests — must be observed failing first:
-- capture_succeeds_when_amount_is_below_authorized
-- capture_releases_remainder_when_partially_captured
-- capture_fails_when_amount_is_zero
-Preservation pins — must pass before and after: none — this change creates behavior, it preserves nothing
-
-Contract changes:
-- Relax amount rule to 0 < amount <= authorized (backward-compatible)
-
-NFR budgets touched: none — no new external calls; authz surface unchanged
-
-Hold-out: required — money-path amount semantics; asked the human for
-1–2 sealed acceptance tests from the business spec (run once, after green);
-result: pending
-
-Files likely to change:
-- payments/contract/openapi.yaml
-- payments/domain/capture.* (+ tests)
+Files likely to change
+- `<exact path>` — <planned change>
 ```
 
-The human resolves the ambiguous points, approves, and only then are the contract edit, the tests, and the code written. Had this introduced a `PARTIALLY_CAPTURED` state shared across services, step 4 would have added an ADR draft to the plan.
+## Field rules
+
+1. Use `normal` or `high-risk`; never write `trivial` in a plan.
+2. Set `contract: breaking` when an existing route, response shape, request shape, event shape, or error code changes incompatibly.
+3. Put every answer-dependent question under `BLOCKING` with a recommended answer.
+4. Put every assumed decision under `Proceeding unless you object`.
+5. Cite retrieved contracts and tests under `Existing behavior`.
+6. Write both `New-behavior tests` and `Preservation pins` on every plan.
+7. List happy, negative, boundary, and error-path tests required by the change.
+8. Put each changed existing assertion in `Changed existing assertions` with its old and new forms.
+9. Require a hold-out for money, authorization, state-machine, rounding, inclusivity, timezone, fee-treatment, or other load-bearing boundary semantics.
+10. Ask the human to write 1–3 hold-out tests directly from the business requirement and keep their contents outside the agent-readable working tree.
+11. Name the human or CI job that runs the hold-out once after the visible suite is green.
+12. Record `result: pending` at plan time for a required hold-out.
+13. Record `result: not required` when no hold-out is required.
+14. When the human declines a required hold-out, list the load-bearing expected values the human must verify independently and do not label that fallback as a hold-out.
+15. Use exact file paths; do not use wildcards, directories, `(+ tests)`, or unnamed future files.
+16. Update the plan before approval when a resolved BLOCKING answer changes risk, contract compatibility, tests, or files.
+
+## Complete example
+
+Request: `Add partial capture to the payments service.`
+
+```markdown
+Allow one capture below the authorized amount while preserving over-capture rejection. The unresolved decision is the released remainder's hold lifetime. Money-path boundary semantics require a sealed hold-out.
+Risk: normal · contract: additive · ADR: none · hold-out: required: 2 sealed tests from human
+
+BLOCKING — I will not guess
+- What happens to the released authorization remainder? Recommended answer: release it when the original authorization expires.
+
+Proceeding unless you object
+- Reject zero and negative capture amounts.
+- Prevent a second capture of the released remainder.
+
+Risk level: normal — one service and one additive rule change on a money path.
+
+Existing behavior
+- `payments/contract/openapi.yaml` — `POST /payments/{id}/capture`: requires capture amount equal to the authorized amount.
+- `tests/payments/CaptureTests.cs::capture_fails_when_amount_exceeds_authorized_amount`: rejects over-capture.
+Known gaps
+- No consumer contract exists for the checkout caller.
+
+Assumptions
+- A successful partial capture moves the payment to `CAPTURED`.
+- The released remainder is not re-capturable.
+
+Uncovered or ambiguous
+- The released remainder's hold lifetime requires the BLOCKING answer.
+
+New-behavior tests
+- `capture_succeeds_when_amount_is_below_authorized` — path: `tests/payments/CaptureTests.cs`; accepts `87.50` against `100.00`; expected pre-implementation failure: current equality rule rejects the request.
+- `capture_succeeds_when_amount_is_one_cent` — path: `tests/payments/CaptureTests.cs`; accepts the smallest positive amount; expected pre-implementation failure: current equality rule rejects the request.
+- `capture_succeeds_when_amount_is_one_cent_below_authorized` — path: `tests/payments/CaptureTests.cs`; accepts the upper interior boundary; expected pre-implementation failure: current equality rule rejects the request.
+- `capture_fails_when_released_remainder_is_recaptured` — path: `tests/payments/CaptureTests.cs`; starts from a fixture with a released remainder and rejects another capture; expected pre-implementation failure: no released-remainder guard exists.
+
+Preservation pins
+- `capture_succeeds_when_amount_equals_authorized_amount` — path: `tests/payments/CaptureTests.cs`; full capture remains accepted before and after.
+- `capture_fails_when_amount_is_zero` — path: `tests/payments/CaptureTests.cs`; zero remains rejected before and after.
+- `capture_fails_when_amount_is_negative` — path: `tests/payments/CaptureTests.cs`; negative amounts remain rejected before and after.
+- `capture_fails_when_amount_exceeds_authorized_amount` — path: `tests/payments/CaptureTests.cs`; over-capture remains rejected before and after.
+
+Contract changes
+- `payments/contract/openapi.yaml` — change the amount constraint to `0 < amount <= authorizedAmount`; compatibility: backward-compatible.
+
+NFR budgets
+- latency/throughput: unchanged — no new external call or loop.
+- authorization: unchanged — existing capture policy remains on the route.
+- tenant isolation: unchanged — payment lookup remains tenant-scoped.
+- retention/audit: unchanged — the existing audit event already records authorized and captured amounts.
+
+Hold-out
+- decision: required
+- reason: money-path amount and boundary semantics
+- request: 2 sealed tests written and withheld by the human
+- storage: separate hold-out repository unavailable to the agent session
+- runner: CI hold-out job, once after the visible suite is green
+- result: pending
+- human-verified expected values: n/a
+
+Files likely to change
+- `payments/contract/openapi.yaml` — relax the capture amount constraint.
+- `payments/domain/CaptureService.cs` — implement partial capture and released-remainder handling.
+- `tests/payments/CaptureTests.cs` — add new-behavior tests and preserve over-capture rejection.
+```

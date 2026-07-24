@@ -1,7 +1,22 @@
-# Colocated notes — invariants, deliberate gaps, and external facts
+# Colocated note rules
 
-Read this when step 10 fires, i.e. when you are about to write a note. The skill carries the trigger;
-this file carries the craft. Nothing here is executable, so nothing here is checked — which is exactly
-why the entry tests below are strict.
+Load this file only after `SKILL.md` step 10.1 determines that a test or contract does not already express the behavior.
 
-**Invariant note — only where needed.** If a rule is universal or a boundary is intentionally undefined and can't be made executable, add one colocated sentence (docstring/contract comment), e.g. "Must hold for all N > 0; behavior for N ≤ 0 is intentionally undefined." Do not write prose for anything a test or contract already covers. Same sentence-sized budget for **a fact this code depends on that lives outside this repo** and cost real time to establish: an upstream system's semantics (status `7` in the ledger feed means *settled*, not *pending*), a non-obvious key relationship (a capture's id is its authorization's id, not one of its own), a storage format (this column is compressed in production and raw in test), a framework quirk that constrains the shape. The entry test is one question: **could the next reader derive this from the code, the tests, or the contract in this repo?** If yes, do not write it. If no, and rediscovering it means reading another system, write the one sentence where the code touches it. **State the rule first; attach provenance only when it is stable.** Write what is true ("ledger status 7 means settled; a capture in that state must not be re-submitted"), not where you found it ("the upstream service checks this in its settlement handler"). A file path pins your comment to another team's directory layout, so it breaks silently when they refactor and nothing here will ever notice. A *stable* identifier does not: a contract version or a ticket key ("ledger status 7 means settled, per Ledger Contract v3") survives their refactors and gives the next reader somewhere to check. Prefer, in order: an executable consumer contract, a versioned schema identifier, a stable ticket or ADR reference, and a bare sentence only when none of those exist. The test is durability: **a colocated note states something that stays true; anything true only as of today belongs in the plan or an ADR**, which are point-in-time records and may name specifics freely. So the plan carries the provenance and the code carries the rule. This is not an ADR (that records a decision you made) and not a spec (a test covers behavior) — it is the external fact both of those assume.
+1. Write one note only for one of these subjects:
+   - a universal invariant that cannot be executable;
+   - a deliberately undefined boundary that cannot be executable;
+   - a durable external fact required by the code.
+2. Write the note at the exact source or contract path named in the approved plan.
+3. Write one sentence.
+4. State the rule before its provenance.
+5. Add provenance only when it is stable.
+6. Use the first available provenance form in this order: executable consumer contract, versioned schema identifier, stable ticket or ADR identifier, no provenance.
+7. Do not cite another repository's mutable file path.
+8. Put a time-bound fact in the plan or an ADR instead of a colocated note.
+9. Delete the proposed note when the rule is derivable from repository code, tests, or contracts.
+
+Use one of these exact shapes:
+
+- Invariant: `<rule>; behavior for <boundary> is intentionally undefined.`
+- External fact: `<external fact>; therefore <local rule>, per <stable identifier>.`
+- External fact without stable provenance: `<external fact>; therefore <local rule>.`

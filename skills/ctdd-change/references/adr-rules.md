@@ -1,14 +1,20 @@
 # ADR rules
 
-Read this when a change involves a structural decision, or when asked for a standalone ADR.
-The template is beside this file at `adr-template.md`.
+Load this file only when `SKILL.md` step 4.2 fires or the standalone ADR procedure starts.
 
-An ADR is a short record (a page or less) of one significant decision, in three parts: **context** (the situation and forces), **decision** (what was chosen), **consequences** (what was accepted, good and bad). Scaffold new ADRs from `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/adr-template.md`.
-
-- Store as a numbered, append-only file, e.g. `docs/adr/0007-payments-in-domain-layer.md`.
-- **Append-only:** never edit a past ADR to reflect a new decision. If a decision is reversed, write a new ADR that supersedes the old one and mark the old one "Superseded by NNNN". The record is what was believed *at the time*.
-- Capture the decision and its tradeoffs, not a description of current behavior. The moment it narrates what the code does, it has drifted into spec territory — stop.
-
-### Standalone ADR requests
-
-When the ask is only to record a decision ("write an ADR for choosing RabbitMQ over Kafka"), skip the workflow and apply the ADR rules directly: interview for context, decision, and consequences where they aren't given; find the next number in the ADR directory; write the file from the template.
+1. Record one structural decision per ADR.
+2. During the change workflow, draft the template fields inside the implementation plan and do not create the ADR file before approval.
+3. During the standalone ADR procedure, write the ADR after gathering its fields.
+4. Write the approved or standalone ADR to `docs/adr/NNNN-<kebab-slug>.md`.
+5. Find `NNNN` by incrementing the highest existing four-digit ADR number.
+6. Render `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/adr-template.md`.
+7. Set `Status` to `Proposed` unless the user explicitly supplies another valid status.
+8. Set `Date` to the current date.
+9. Name the known deciders; write `Not recorded` when none are supplied.
+10. Write `Context` in two to five sentences describing the situation, constraints, and considered options.
+11. Write `Decision` in one or two sentences stating the chosen structure.
+12. Write `Consequences` with benefits, costs, closed options, and follow-up work.
+13. Keep the rendered ADR to one page or less.
+14. Do not use an ADR to describe current behavior.
+15. Do not rewrite the Context, Decision, or Consequences of an accepted or superseded ADR.
+16. To reverse a decision, create a new ADR and change only the old ADR's `Status` to `Superseded by NNNN`.

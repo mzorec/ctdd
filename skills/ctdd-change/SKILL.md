@@ -7,7 +7,7 @@ description: >-
   ctdd-review, ctdd-tests, infrastructure tooling, or UI work.
 ---
 # CTDD: drive a backend change
-Rationale, not procedure: `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/rationale.md`.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/rationale.md` only when asked to explain the method; never load it to execute a change.
 ## Routing
 - Route a test-only task to `ctdd-tests`.
 - Route review of an existing diff, branch, PR, or MR to `ctdd-review`.
@@ -30,7 +30,7 @@ Do not infer an order among these condition-triggered rules.
 |---|---|---|
 | Pre-plan statements | `stdout` | Baseline statement: `Baseline: branch=<name>; target=<name>; diff-base=<commit>; staged=<summary>; unstaged=<summary>; untracked=<summary>.` Intent statement: `Business requirement: <one or two sentences>.` Current-behavior reading: `Current behavior:` plus exact path/test bullets or one greenfield bullet, ending `Correct this reading before I plan.` |
 | Trivial-risk declaration | `stdout` and PR/MR description | `Risk: trivial — <reason>. Skipping the plan gate.` |
-| Implementation plan | `${CLAUDE_PROJECT_DIR}/docs/plans/<name>.md`, `stdout`, and PR/MR description when `docs/plans/` is ignored | Decision summary; `BLOCKING`; `Proceeding unless you object`; Risk level; Existing behavior; Assumptions; Uncovered or ambiguous; New-behavior tests; Preservation pins; Contract changes; NFR budgets; Hold-out with `result:`; conditional ADR draft; Files likely to change. Name `<name>` as `<TICKET>-<kebab-slug>` or `<YYYY-MM-DD>-<kebab-slug>` without a ticket. Use `references/plan-format.md` for field rules. Print the full plan plus path outside plan mode; print the verbatim decision summary plus path inside a plan-mode approval surface. |
+| Implementation plan | `${CLAUDE_PROJECT_DIR}/docs/plans/<name>.md`, `stdout`, and PR/MR description when `docs/plans/` is ignored | Decision summary; `BLOCKING`; `Proceeding unless you object`; Risk level; Existing behavior; Assumptions; Uncovered or ambiguous; New-behavior tests; Preservation pins; Contract changes; NFR budgets; Hold-out with `result:`; conditional changed-existing-assertions; conditional ADR draft; Files likely to change. Name `<name>` as `<TICKET>-<kebab-slug>` or `<YYYY-MM-DD>-<kebab-slug>` without a ticket. Use `references/plan-format.md` for field rules. Print the full plan plus path outside plan mode; print the verbatim decision summary plus path inside a plan-mode approval surface. |
 | Plan pointer | PR/MR description when `docs/plans/` is tracked | `CTDD-Plan: docs/plans/<name>.md` |
 | ADR | `${CLAUDE_PROJECT_DIR}/docs/adr/NNNN-<kebab-slug>.md` | Render `references/adr-template.md` with Context, Decision, and Consequences. |
 | Contract change | Exact repo-relative contract path listed in the plan | Valid OpenAPI, JSON Schema, protobuf, AsyncAPI, Pact, or repository-native contract syntax. |
@@ -93,14 +93,14 @@ Before step 6 approval, write only the step 6 plan file.
    5. Skip steps 7.6–7.11 when the plan says `Preservation pins: none`.
    6. Write preservation pins against the current implementation.
    7. Run the pins before replacing preserved behavior.
-   8. Save the complete run to the Pin-state evidence path, using a runner setting that prints one line per test (a summary-only log names no test, so the checker can verify nothing — e.g. `dotnet test --logger "console;verbosity=detailed"`, `pytest -v`, `go test -v`).
+   8. Save the complete run to the Pin-state evidence path.
    9. Verify pins with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" <pin-log> --tests-from <plan-path> --expect-pass`.
    10. Apply the preservation-only conversion.
    11. Re-run the same pins.
    12. Skip steps 7.13–7.17 when the plan says `New-behavior tests: none`.
    13. Write the new-behavior tests.
    14. Run the new-behavior tests before implementing new behavior.
-   15. Save the complete run to the Red-state evidence path, with per-test output as in 7.8.
+   15. Save the complete run to the Red-state evidence path.
    16. Verify red state with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" <red-log> --tests-from <plan-path>`.
    17. Stop when a new-behavior test passes before implementation.
 8. **Implement remaining behavior and verify.**

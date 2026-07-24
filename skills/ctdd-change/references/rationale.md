@@ -1,6 +1,6 @@
 # CTDD change rationale
 
-This file preserves explanations removed from the always-loaded `SKILL.md`.
+This file preserves explanations removed from the always-loaded `SKILL.md` and operational references.
 It is not part of the execution procedure.
 
 ## Source lines 29, 31, and 33
@@ -89,3 +89,26 @@ It is not part of the execution procedure.
 
 - ADRs remain append-only because they record a decision at a point in time rather than the current system state.
 - Superseding a prior ADR preserves the historical decision while recording its replacement.
+
+## Rationale moved from `adr-rules.md`
+
+- ADRs stay short so one record represents one decision.
+- ADRs record structural choices and tradeoffs rather than behavior already represented by contracts and tests.
+- Superseding instead of rewriting preserves the decision history.
+
+## Rationale moved from `colocated-notes.md`
+
+- Colocated prose is restricted because it has no executable drift detector.
+- Stable identifiers survive upstream repository refactors better than mutable file paths.
+- Time-bound provenance belongs in point-in-time artifacts; source comments carry only durable rules.
+
+## Rationale moved from `plan-format.md`
+
+- The decision summary leads so the approval gate exposes direction, risk, compatibility, ADR work, and human obligations before file detail.
+- `BLOCKING` separates unanswered choices from assumptions the human can veto.
+- Exact existing-behavior citations expose thin retrieval.
+- Separate new-behavior and preservation sections keep red-state and pass-before-and-after evidence in distinct lanes.
+- Old and new assertions expose requirement changes hidden by unchanged test names.
+- Explicit NFR and hold-out fields turn silence into a reviewable decision.
+- Independently written hold-outs break the shared-implementation path between production code and agent-authored tests.
+- Human-verified expected values reduce shared-computation risk when a required hold-out is declined, but they do not replace independent tests.
