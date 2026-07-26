@@ -324,11 +324,13 @@ def main():
                 _plan = rest.pop(0)
                 _found = names_from_plan(_plan, want_pins=expect_pass)
                 if expect_pass and not _found:
-                    print(f"check-redstate: no preservation-pin section found in "
-                          f"{_plan}. A behavior-preserving change still needs one: "
-                          f"write `Preservation pins — must pass before and after` "
-                          f"(or `Preservation pins: none` when there genuinely are "
-                          f"none). Refusing to verify a pin lane that has no pins.")
+                    print(f"check-redstate: no preservation-pin names found in "
+                          f"{_plan}. Write the `Preservation pins — must pass before "
+                          f"and after` heading with one test name per bullet. When "
+                          f"there are genuinely no pins, declare it on the heading "
+                          f"line (`...: none — <reason>`) and do not run this lane "
+                          f"at all: a plan that names no pin has nothing to verify, "
+                          f"and this result is not a pass.")
                     return 2
                 if not expect_pass and not _found:
                     print(f"check-redstate: {_plan} contributed no test names — "

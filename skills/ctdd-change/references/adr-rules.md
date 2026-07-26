@@ -1,9 +1,9 @@
 # ADR rules
 
-Load this file only when `SKILL.md` step 4.2 fires or the standalone ADR procedure starts.
+Load this file only when `SKILL.md` step 4.3 fires or the Standalone ADR procedure starts.
 
 1. Record one structural decision per ADR.
-2. During the change workflow, draft the template fields inside the implementation plan and do not create the ADR file before approval.
+2. During the change workflow, draft the template fields inside the implementation plan and write no ADR file before the step 6 Approval record exists; write it at step 7.3.
 3. During the standalone ADR procedure, write the ADR after gathering its fields.
 4. Write the approved or standalone ADR to `docs/adr/NNNN-<kebab-slug>.md`.
 5. Find `NNNN` by incrementing the highest existing four-digit ADR number.

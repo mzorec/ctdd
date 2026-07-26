@@ -1,6 +1,6 @@
 # Implementation plan format
 
-Load this file only at `SKILL.md` step 6.1.
+Load this file only at `SKILL.md` step 5.1.
 
 1. Write the sections below in the displayed order.
 2. Replace every placeholder.
@@ -85,7 +85,7 @@ Files likely to change
 13. Record `result: not required` when no hold-out is required.
 14. When the human declines a required hold-out, list the load-bearing expected values the human must verify independently and do not label that fallback as a hold-out.
 15. Use exact file paths; do not use wildcards, directories, `(+ tests)`, or unnamed future files.
-16. Update the plan before approval when a resolved BLOCKING answer changes risk, contract compatibility, tests, or files.
+16. Replace every resolved BLOCKING question with its decision before approval. Re-run `check-plan.py` after every plan edit; re-present the plan when the answer changes any other presented decision.
 
 ## Complete example
 
