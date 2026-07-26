@@ -1,6 +1,6 @@
 # Colocated note rules
 
-Load this file only after `SKILL.md` step 10.1 determines that a test or contract does not already express the behavior.
+Load this file only at `SKILL.md` step 10.2, after 10.1 determines that no test or contract already expresses the behavior.
 
 1. Write one note only for one of these subjects:
    - a universal invariant that cannot be executable;

@@ -32,6 +32,58 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.23.0 — 2026-07-26
+
+The `ctdd-change` rewrite, plus the repairs a review of it found. The rewrite is a real advance on evidence discipline and approval semantics; it also shipped four contradictions, exhausted the compaction budget down to 109 characters, and left one reference untracked.
+
+### Added
+- **Evidence states.** Seven observed states with a required action each: pin pass, intended red, compile red, wrong red, premature green, pin fail, weakened green. Four of them had no rule at all, and premature green and weakened green are the two where a dishonest run looks like success.
+- **Break points.** Required actions for a checker exiting `2`, plan mode owning the write location, a difficult or duplicate planned test, unrelated verification failures, and an unavailable hold-out runner — which must never be recorded as `passed`.
+- **Approval defined by exclusion.** An affirmative message from the human, with your own restatement, silence, a subagent verdict, a passing checker, and harness acceptance of a plan-mode surface all named as *not* approval. Self-approval and self-review are prohibited, and an `Approval record` makes the state visible.
+- **`references/worked-change.md`** — one complete change, steps 0–9, with verbatim checker output and a lane-variants table. Nothing in the surface previously showed a whole change end to end. It defers to `plan-format.md` for the plan itself rather than restating it, so there is still exactly one complete example.
+- **`references/execution.md`** — the evidence-state and break-point lookups plus the standalone-ADR procedure, loaded from step 7.
+- Field rule 23: every `New-behavior tests` entry must be the test that turns some `Implementation slices` entry green. Rule 17 constrained slices→tests and nothing constrained tests→slices, so a named test could go unimplemented.
+
+### Changed
+- **The triviality gate requires a diff that already exists.** Previously *"either no diff exists"* satisfied the checker condition, so any unwritten change could declare itself trivial and skip the plan. Triviality now needs all four: an existing complete diff, `check-spec-surface.py` exit `0` with its exact verdict line, a code-only diff from a named category, and named existing tests. Exit `1` and exit `2` are both plan-gated. Consequence worth naming: the lane now recognizes work already done rather than authorizing work to skip planning.
+- **Amendment reordered** to stop → amend → re-check → return to step 6 → resume at the lowest invalidated step. The old order re-checked against a plan the human had not seen.
+- **The skip conditions key on content, not a literal.** `Skip 7.5–7.8 when the plan's Preservation pins names no test` replaces a match on `Preservation pins: none`, a string no compliant plan contains, because the mandated heading is `Preservation pins — must pass before and after`. The skip therefore never fired and a correct pin-free change failed the pin lane at exit `1`.
+- **Required case coverage follows the evidence direction, not the case.** The Section column was categorical, so a preservation-only refactor declaring `New-behavior tests: none` could not satisfy `Positive: Always → New-behavior`. A case the change alters goes under new behavior; the same case goes under pins when the change must leave it alone.
+- Steps 8 and 9 no longer run the validator, tests, and build twice; test writing is delegated to `ctdd-tests` everywhere the guardrail already said so; `--git <baseline>` became `--git <diff-base>`, which is documentation-only — no script referenced either name.
+
+### Fixed
+- **Preservation-only refactors had no route into implementation.** Step 8 admitted `step 7 recorded intended red, or step 3.6 fired`. That lane skips 7.10–7.12 so never records intended red, and is not trivial because its pins must be written. It satisfied neither door. Entry is now keyed on every applicable evidence lane.
+- **The compile-only stub read as a ceiling on implementation.** The stub is created in step 7, so by the time step 8 said *"add no production code beyond the compile-only stub"* the stub already existed and the literal reading forbade the implementation. Step 8 now replaces the stub.
+- **`check-plan.py` had stopped covering the format it detects.** Seven sections became mandatory and `REQUIRED` stayed at twelve, so a plan omitting all seven exited `0` and step 5 read that as validation. Now nineteen, and a new guard reads `plan-format.md`'s own skeleton so the two cannot drift silently again.
+- **The canonical example violated its own field rules** — a positive test asserting no required side effect, and `side effect — n/a` declared in the same sentence that said where the side effect is asserted. Both corrected, and two new-behavior tests that no slice turned green now have slices. Models copy the example, so the example has to be the most compliant artifact in the plugin.
+- **`references/worked-change.md` was untracked**, so step 4.1 ordered every plan-gated change to read a file that did not exist on a fresh clone. Both existence guards passed vacuously: normalizing every reference load to a relative `references/x.md` had moved all six off the `${CLAUDE_PLUGIN_ROOT}` pattern the guard matched, taking its coverage from five references to zero.
+- **Script references lost their plugin-root anchor in every rewritten skill.** Nine bare invocations across `ctdd-change`, `ctdd-review`, and `ctdd-tests`. The scripts live in Claude Code's plugin directory, not the repository under review, so a bare name runs nothing — the failure this changelog already records for the CI recipe.
+- **`ctdd-review` required a run the guardrail above it forbade.** *"Run the narrowest reproducer"* against *"do not edit tests"*: a reviewer-authored reproducer lands in the spec-surface inventory the review reported at step 1 and trips the spec-edit hook. It now runs only what exists and classifies statically proven otherwise.
+- **`ctdd-review` showed `--expect-pass` without the names it needs** — a usage error, not a pass — and had not received the pin-skip the change skill gained. `check-redstate.py`'s own error message recommended `Preservation pins: none`, a form that reproduces the same error.
+- `.gitignore` now covers `.claude/`, which was untracked and unignored.
+
+**A second cold read found eleven more, four of which made the workflow unexecutable** — recorded as finding #55, with what was run for each.
+- **Step 9 displayed commands with their arguments stripped.** `check-plan.py </dev/null` exits 1; `check-redstate.py` exits 2. A guard written for those two then found two more, in `ctdd-change` and `ctdd-tests`. Every shown invocation now carries its arguments, and a test asserts it.
+- **The standalone-ADR lane could not reach its own procedure** — moved behind a step-7 loader that the lane skips by definition. Self-inflicted during the budget work; the routing line now loads `references/execution.md` directly.
+- **An unavailable hold-out runner was recorded as `declined by human`,** manufacturing a waiver from an outage. Four outcomes are now distinct: `passed`, `failed`, `declined by human`, `NOT RUN — <reason>`.
+- **The post-change pin run had no declared artifact,** so `ctdd-review`'s requirement of pre- *and* post-change passes could only be rechecked against the baseline. `<name>.pinstate-after.log` restored, matching the pilot's own earlier practice.
+- **A resolved BLOCKING answer never reached the plan** when it changed no risk, contract, test, or file entry — leaving an approved plan file still asking its question and the decision living only in chat. Every resolved answer now replaces its question before approval.
+- **The canonical example carried an untested production change** — `CaptureValidator.cs — add the scale rule`, with no requirement, test, slice, or contract delta anywhere in the example, while `invalid input` was marked not reached. Removed.
+- `.gitignore` was too broad: `.claude/` hid `.claude/rules/`, which `ctdd-tests` and `ctdd-review` are instructed to read. Narrowed to `.claude/settings.local.json`.
+- Stale release metadata corrected: `CLAUDE.md` claimed 146 passing, `ctdd-in-depth.md`'s status pin still described v0.21.3 and cited a `ctdd-review` dimension number the skill no longer has.
+
+### Budget
+- Body **11,124 → 14,891 → 12,833**. The rewrite consumed 97% of the margin; the evidence-state and break-point lookups plus the standalone-ADR procedure moved to `references/execution.md`, with the seven state *names* kept in the body so the agent can still recognize one without loading anything. Six `Print the <artifact>` substeps the step header's `Emit:` already named were removed.
+- **The margin guard now reserves space instead of testing a boundary.** `< 15000` passes at 14,999, which is how the body reached +109 and then went red on an ordinary correctness fix — anchoring four script paths. It now requires 1,500 characters of reserve, leaving 667 characters of working headroom. That is short of the 3,000 a reviewer argued for: a first pass set the reserve at 1,500 against a 13,377-character body, which left 123 characters of headroom and reproduced the same surviving-by-a-hair shape one level up. Closing the remaining gap means relocating step 7 or step 8, filed in the backlog with a trigger rather than decided here.
+- Steps 7–9 stayed in the body deliberately. Moving them was filed as *strictly better* when they measured 8,453 characters and sat past the boundary; they now sit inside it, so the same move would convert guaranteed-present rules into conditionally-loaded ones — the trade that entry argues against.
+
+### Not changed, and why
+- **Premature green still returns to step 6 in every case.** Splitting it into "spec was wrong → reopen" and "fixture was wrong → fix and rerun" installs a self-classification escape at the moment the agent has just been told to stop, and this project already carries triviality self-classification as a known weakness. Fixing a fixture also changes the test, and a changed test is a changed requirement.
+- **`worked-change.md` still loads unconditionally.** Making it conditional on the artifact shape *"remaining unclear"* asks the agent to assess its own confusion. Per-plan-gated-change load is now ~39,000 characters; that is the honest price of a complete worked example, and the alternative trigger is not one.
+
+### Guards
+- Nine added: plugin-root anchoring on every script reference in every skill; `--expect-pass` never shown without `--test`/`--tests-from`; the reviewer never told to author a test; step 8 admitting every evidence lane; relative reference paths checked for existence; and `REQUIRED` covering every unconditional section of `plan-format.md`. Each was confirmed to fail when the rule it covers is removed. Suite **161 → 168 passing**, with one existing skip.
+
 ## 0.22.0 — 2026-07-25
 
 A review of the `ctdd-tests` rewrite. The skill held up. The guards around it did not: the previous release shipped red, and the repair in progress was removing more coverage than it restored.

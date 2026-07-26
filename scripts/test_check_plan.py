@@ -18,6 +18,8 @@ FULL_PLAN = """BLOCKING — I will not guess:
 - auth hold on the released remainder? (recommend: expires with the auth)
 Proceeding unless you object:
 - zero capture rejected
+Business requirement: allow one capture below the authorized amount
+Intended behavior: capture accepts 0 < amount <= authorized and moves to CAPTURED
 Risk level: normal — money path
 Existing behavior (openapi.yaml; CaptureTests.cs):
 - x
@@ -25,14 +27,21 @@ Assumptions:
 - y
 Uncovered / ambiguous:
 - z
+Known gaps: none — the caller contract is covered
 New-behavior tests — must be observed failing first:
 - t
+Case coverage not reached: none — every applicable row is covered
 Preservation pins — must pass before and after: none
 Contract changes: none
 NFR budgets touched: none
+Implementation slices:
+- a.cs — accept the lower amount; turns green: `t`
+Verification:
+- `dotnet test --filter t` — expected: passes after the slice lands
 Hold-out: not required — read path
 Files likely to change:
 - a.cs
+Residual risk: none beyond the planned verification
 """
 
 
@@ -114,6 +123,31 @@ class CheckPlanTests(unittest.TestCase):
         finally:
             os.unlink(d)
 
+    def test_required_covers_every_unconditional_section_of_the_format(self):
+        """v0.22.0 made seven more sections mandatory in plan-format.md and left
+        REQUIRED at twelve, so a plan missing all seven exited 0 and step 5 read
+        that as validation. This checker is honestly scoped as an omission
+        detector rather than a quality gate, but an omission detector that stops
+        covering the format it detects has stopped being one. Reads the format's
+        own skeleton so the two cannot drift again silently."""
+        import re as _re, importlib.util, pathlib as _p
+        fmt = (_p.Path(__file__).resolve().parents[1] / "skills" / "ctdd-change"
+               / "references" / "plan-format.md").read_text(encoding="utf-8")
+        skel = _re.search(r"Omit only the sections marked conditional\.\s*\n\s*"
+                          r"```markdown\n(.*?)```", fmt, _re.S)
+        self.assertIsNotNone(skel, "plan-format.md no longer exposes its skeleton")
+        headings = [l for l in skel.group(1).split("\n")
+                    if l.strip() and not l.startswith(("-", " ", "\t", "`", "<"))
+                    and "(conditional" not in l]
+        self.assertGreater(len(headings), 15, "skeleton extraction found too little")
+        spec = importlib.util.spec_from_file_location("cp_mod", SCRIPT)
+        cp = importlib.util.module_from_spec(spec); spec.loader.exec_module(cp)
+        for h in headings:
+            self.assertTrue(
+                any(_re.search(rx, h, _re.I | _re.M) for _, rx in cp.REQUIRED),
+                f"plan-format.md makes {h.split(':')[0].strip()!r} mandatory and no "
+                f"REQUIRED pattern detects it; the gate would pass a plan without it")
+
     def test_a_single_test_heading_fails_the_gate(self):
         """Both headings are mandatory, even when one is empty. A plan with only
         one has no correct lane at step 7 — the default check reads pins as new
@@ -123,6 +157,7 @@ class CheckPlanTests(unittest.TestCase):
                        "Preservation pins — must pass before and after:\n- currently_x\n"):
             plan = FULL_PLAN.replace(
                 "New-behavior tests — must be observed failing first:\n- t\n"
+                "Case coverage not reached: none — every applicable row is covered\n"
                 "Preservation pins — must pass before and after: none\n", single)
             r = run(plan)
             self.assertEqual(r.returncode, 1, f"single heading must fail:\n{r.stdout}")

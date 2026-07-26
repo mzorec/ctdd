@@ -500,7 +500,7 @@ class ExtractionHardeningTests(unittest.TestCase):
         log = write("  Passed MapsAllColumns [1 ms]\n")
         try:
             r = run(log, "--expect-pass", "--tests-from", plan)
-            self.assertIn("no preservation-pin section", r.stdout)
+            self.assertIn("no preservation-pin names", r.stdout)
             self.assertNotIn("usage error", r.stdout)
         finally:
             os.unlink(plan); os.unlink(log)

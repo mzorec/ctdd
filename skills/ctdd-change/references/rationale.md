@@ -2,18 +2,19 @@
 
 This file preserves explanations removed from the always-loaded `SKILL.md` and operational references.
 It is not part of the execution procedure.
+Sections are named after the rule they explain; they carry no line numbers, which rot on every edit of the body.
 
-## Source lines 29, 31, and 33
+## Scope and contract-first
 
 - The API contract and tests precede implementation because tests specify preservation while the business requirement and plan specify creation.
 - Contract-first means specifying the boundary before tests and implementation, not before understanding the existing system.
 - Assertable correctness is the scope boundary because visual and experiential correctness require a different evaluation method.
 
-## Source line 37
+## Guardrail placement
 
 - Guardrails appeared before the workflow because post-compaction loading retained the opening part of the skill.
 
-## Source lines 41–50
+## Evidence and current-turn runs
 
 - A checker verdict matters because an unverified log proves only that a command ran.
 - A preservation pin that fails before conversion describes behavior the current code never had.
@@ -26,20 +27,20 @@ It is not part of the execution procedure.
 - Distributed-system behavior receives stronger checks because examples alone cover too little of retries, ordering, eventual consistency, and partial failure.
 - CTDD replaces a hand-written technical implementation specification, not the customer business requirement.
 
-## Source lines 54 and 72
+## Bug-fix lane
 
 - A regression test is the executable specification of a bug fix and preserves the edge case after the fix ships.
 - A bug fix with a regression test changes the specification surface, so it belongs in the short-plan lane rather than the trivial lane.
 - An existing test that intentionally asserts the reported behavior turns the task into a specification change rather than a bug fix.
 
-## Source lines 76 and 80
+## Amendments and artifact conflict
 
 - Existing asserted behavior changes through an amendment so “update the test to match” cannot silently redefine the requirement.
 - Cross-artifact disagreement is a specification defect only when two artifacts make incompatible claims about the same observable constraint.
 - Different artifacts can state compatible constraints at different layers.
 - Quietly changing the easiest artifact until CI passes hides the unresolved specification decision.
 
-## Source lines 84–96
+## Baseline, classification, and design inputs
 
 - Line count does not determine risk because a one-line assertion edit changes the specification while a large code-only rename can preserve it.
 - The plan file is the only pre-approval write because the reviewer needs a durable artifact to approve.
@@ -51,7 +52,7 @@ It is not part of the execution procedure.
 - The design brief belongs inside the plan instead of becoming a second maintained document.
 - The contract delta precedes tests because services and consumers build against the boundary.
 
-## Source line 98
+## The plan gate
 
 - The plan gate catches wrong direction before implementation cost accumulates.
 - The repository plan remains authoritative when a harness exposes its own plan file.
@@ -63,7 +64,7 @@ It is not part of the execution procedure.
 - Rooted filesystem paths prevent module-directory changes from writing plans and evidence to the wrong location.
 - The plan stops being maintained after the change ships because it records the approved implementation decision rather than current behavior.
 
-## Source lines 100–106
+## Red state, pin state, and colocated prose
 
 - Red-state evidence proves a new test detects the absence of requested behavior.
 - A new test that passes before implementation either describes existing behavior or fails to assert the planned change.
@@ -73,7 +74,7 @@ It is not part of the execution procedure.
 - Back-translation lets the reviewer compare the business requirement with the requirement encoded by changed tests.
 - Colocated prose is restricted because executable contracts and tests resist drift better than comments.
 
-## Source lines 114–131
+## Plan format
 
 - `plan-format.md` is authoritative because `check-plan.py` validates that exact section structure.
 - The decision summary leads because a reviewer needs the non-routine decision and risk before the supporting inventory.
@@ -85,7 +86,7 @@ It is not part of the execution procedure.
 - Explicit NFR and hold-out fields turn silence into a reviewable decision.
 - An omitted mandatory section represents a skipped decision rather than an implicit “none.”
 
-## Source lines 135–137
+## ADR lifecycle
 
 - ADRs remain append-only because they record a decision at a point in time rather than the current system state.
 - Superseding a prior ADR preserves the historical decision while recording its replacement.
@@ -112,3 +113,29 @@ It is not part of the execution procedure.
 - Explicit NFR and hold-out fields turn silence into a reviewable decision.
 - Independently written hold-outs break the shared-implementation path between production code and agent-authored tests.
 - Human-verified expected values reduce shared-computation risk when a required hold-out is declined, but they do not replace independent tests.
+
+## Trivial lane requires an existing diff
+
+- Triviality is a property of a diff, so a change that has not been written yet has nothing to classify; the earlier wording let an unwritten change declare itself trivial and skip the gate.
+- `check-spec-surface.py` exit `1` and exit `2` are treated alike because an unverified triviality claim and a contradicted one are equally unproven.
+- The trivial lane exists for finishing work already on disk, not for choosing to skip planning.
+
+## Approval
+
+- Approval is defined by who sends it because every other candidate — a restatement, a green checker, a subagent verdict, silence, a harness accepting a plan-mode surface — can be produced by the agent itself.
+- Self-approval and self-review would make the gate and the independent review circular.
+
+## Evidence states
+
+- A red run is not evidence by itself: a compile error, a broken fixture, and the planned assertion failure all print as failure, and only one of them proves the test detects the missing behavior.
+- A premature green means the test describes existing behavior or fails to constrain the change, which is a specification finding rather than a test bug.
+- A weakened assertion changes the requirement, so it reopens the gate instead of being applied silently.
+
+## Empty plan sections
+
+- An empty section is written on its heading line because a bullet reading `none` is extracted by `check-redstate.py` as a test name and produces a false unverified verdict.
+- The section still has to appear, because an omitted section is a skipped decision rather than an implicit none.
+
+## Worked example
+
+- Models copy examples more reliably than prose, so the artifact shapes exist once, in full, including the two states that are easiest to accept wrongly: compile red and premature green.

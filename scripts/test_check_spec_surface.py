@@ -170,10 +170,18 @@ class ChangeSkillStructureTests(unittest.TestCase):
                              f"{heading} is workflow routing, not colocated-note craft")
 
     def test_every_referenced_bundled_file_exists(self):
+        """Both path styles must be checked. Normalizing every reference load to a
+        relative `references/x.md` moved all six of them off the ${CLAUDE_PLUGIN_ROOT}
+        pattern this test matched, taking its coverage from five references to zero
+        — and `worked-change.md` then shipped untracked, so a fresh clone had a step
+        ordering the agent to read a file nobody else had. Both guards passed."""
         root = self.base.parents[1]
         for rel in set(re.findall(r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9_./-]+)", self.skill)):
             self.assertTrue((root / rel).exists(),
                             f"skill points at {rel}, which is not bundled")
+        for rel in set(re.findall(r"(?<!/)\breferences/([A-Za-z0-9_.-]+\.md)", self.skill)):
+            self.assertTrue((self.base / "references" / rel).exists(),
+                            f"skill points at references/{rel}, which is not bundled")
 
     @staticmethod
     def _repo():
@@ -388,6 +396,7 @@ class QuotedPathTests(unittest.TestCase):
 
 
 class CrossSkillAgreementTests(unittest.TestCase):
+    MINIMUM_MARGIN_CHARS = 1500
     """ctdd-tests keeps craft work (de-flaking, altitude, renaming) out of the
     plan gate, while every consumer of the diff — this script, the hook, and
     ctdd-review — reads any modified test as a changed requirement. Both are
@@ -445,15 +454,107 @@ class CrossSkillAgreementTests(unittest.TestCase):
         shipped that way through a full review round with three load-bearing
         rules already outside the window. Nothing measured it, because nothing
         was looking. Probes stay per-skill; size is checkable for all of them."""
-        limit = ChangeSkillStructureTests.COMPACTION_PROXY_CHARS
+        # A boundary test is not a margin test: `< 15000` passes at 14,999, which is
+        # how ctdd-change reached +109 and then went red on an ordinary correctness
+        # fix (anchoring four script paths to ${CLAUDE_PLUGIN_ROOT}). Reserve the
+        # space explicitly so the guard fails while there is still room to think.
+        limit = ChangeSkillStructureTests.COMPACTION_PROXY_CHARS - self.MINIMUM_MARGIN_CHARS
         for path in sorted(self._skills().glob("*/SKILL.md")):
             body = re.sub(r"^---\n.*?\n---\n", "",
                           path.read_text(encoding="utf-8"), flags=re.S)
-            self.assertLess(
+            self.assertLessEqual(
                 len(body), limit,
-                f"{path.parent.name}/SKILL.md body is {len(body)} chars, past the "
-                f"{limit}-char proxy — whatever sits at the end is gone after "
-                f"compaction, which is exactly when the discipline matters")
+                f"{path.parent.name}/SKILL.md body is {len(body)} chars; keep at "
+                f"least {self.MINIMUM_MARGIN_CHARS} chars of compaction margin "
+                f"below the {ChangeSkillStructureTests.COMPACTION_PROXY_CHARS}-char "
+                f"proxy, so a correctness fix never has to fight the budget")
+
+    def test_every_bundled_reference_is_tracked_by_git(self):
+        """Existence on disk is not shipping. `worked-change.md` existed locally,
+        was never added, and every guard passed — the skill ordered a read of a
+        file no clone had. Writing this guard reproduced the bug immediately:
+        `execution.md` was untracked too. Skipped outside a git checkout so the
+        suite still runs from an export."""
+        import subprocess
+        root = self._skills().parent
+        probe = subprocess.run(["git", "-C", str(root), "rev-parse", "--git-dir"],
+                               capture_output=True, text=True)
+        if probe.returncode != 0:
+            self.skipTest("not a git checkout")
+        for ref in sorted(self._skills().glob("*/references/*.md")):
+            rel = ref.relative_to(root).as_posix()
+            r = subprocess.run(["git", "-C", str(root), "ls-files", "--error-unmatch", rel],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0,
+                             f"{rel} is bundled and loaded but not tracked; it will "
+                             f"be absent for everyone but its author")
+
+    def test_every_script_reference_is_anchored_to_the_plugin_root(self):
+        """The scripts live in Claude Code's plugin directory, not the repository
+        under review, so a bare `check-spec-surface.py` runs nothing — or worse,
+        whatever happens to sit at that name in the target project. The changelog
+        already records this exact failure for the CI recipe; the procedural
+        rewrites then reintroduced it in ctdd-review and ctdd-tests by stripping
+        the anchor along with everything else they compressed."""
+        for path in sorted(self._skills().glob("*/SKILL.md")):
+            text = path.read_text(encoding="utf-8")
+            for i, line in enumerate(text.split("\n"), 1):
+                for m in re.finditer(r"[\w.-]*\.py\b", line):
+                    self.assertTrue(
+                        line[:m.start()].endswith("${CLAUDE_PLUGIN_ROOT}/scripts/"),
+                        f"{path.parent.name}/SKILL.md:{i} names {m.group(0)} without "
+                        f"the ${{CLAUDE_PLUGIN_ROOT}}/scripts/ anchor")
+
+    def test_every_shown_invocation_carries_its_required_arguments(self):
+        """A compression pass anchored the paths and dropped the arguments, so
+        step 9 displayed `check-plan.py` and `check-redstate.py` bare. Run exactly
+        as shown they exit 1 and 2 — a command in a procedure is an instruction to
+        run it, and one that cannot run teaches the agent the checker is optional."""
+        for path in sorted(self._skills().glob("*/SKILL.md")):
+            for i, line in enumerate(path.read_text(encoding="utf-8").split("\n"), 1):
+                if "check-plan.py" in line:
+                    self.assertRegex(
+                        line, r"<[a-z-]*plan[a-z-]*>|docs/plans/",
+                        f"{path.parent.name}/SKILL.md:{i} shows check-plan.py with no "
+                        f"plan argument; as displayed it exits 1")
+                if "check-redstate.py" in line:
+                    self.assertTrue(
+                        "--tests-from" in line or "--test " in line,
+                        f"{path.parent.name}/SKILL.md:{i} shows check-redstate.py with "
+                        f"no names; as displayed it exits 2")
+
+    def test_expect_pass_is_never_shown_without_the_names_it_needs(self):
+        """`--expect-pass` with no --test/--tests-from exits 2: 'no test names
+        given ... this is a usage error, not a pass.' ctdd-review gave the
+        new-behavior lane the full command and the pin lane only the flag — the
+        pin lane getting the less complete instruction, which is finding #39's
+        shape."""
+        for path in sorted(self._skills().glob("*/SKILL.md")):
+            for i, line in enumerate(path.read_text(encoding="utf-8").split("\n"), 1):
+                if "--expect-pass" in line:
+                    self.assertTrue(
+                        "--tests-from" in line or "--test " in line,
+                        f"{path.parent.name}/SKILL.md:{i} shows --expect-pass without "
+                        f"the names it requires; that invocation is a usage error")
+
+    def test_the_reviewer_is_never_told_to_author_a_test(self):
+        """ctdd-review forbids editing tests and then required running 'the
+        narrowest reproducer'. A reviewer-authored reproducer lands in the same
+        spec-surface inventory the review reported at step 1 and trips the
+        spec-edit hook: the reviewer contaminates the diff it is judging."""
+        t = (self._skills() / "ctdd-review" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("Author no test, fixture, or script", t)
+        self.assertNotIn("Run the narrowest reproducer", t)
+
+    def test_step_eight_admits_every_evidence_lane_not_only_red(self):
+        """Entry read 'step 7 recorded intended red, or step 3.6 fired'. A
+        preservation-only refactor skips 7.10-7.12 so never records intended red,
+        and is not trivial because its pins have to be written — it satisfied
+        neither door and had no route into implementation."""
+        t = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
+        step8 = t.split("\n8. **Implement and verify.**", 1)[1].split("\n9. ", 1)[0]
+        self.assertIn("every applicable evidence lane", step8)
+        self.assertNotIn("Enter: step 7 recorded intended red, or step 3.6 fired", t)
 
     def test_a_record_with_surplus_columns_is_malformed(self):
         """`M<TAB>README.md<TAB>tests/Hidden.cs` reported clean while a changed
