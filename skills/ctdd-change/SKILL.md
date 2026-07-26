@@ -61,11 +61,12 @@ Execute steps 0–10 in ascending order. Until the step 6 Approval record exists
    5. Require named existing tests that already cover every touched behavior, and no colocated note.
    6. Print the Trivial-risk declaration, add it to the PR/MR description, and go to step 8.
    7. Return to 3.1 as plan-gated when any later step contradicts 3.4 or 3.5.
-4. **Draft the decision inputs.** Enter: step 3 did not fire 3.6. Emit: draft content held for step 5. Continue: after 4.4.
-   1. Draft the approach, scope boundary, and highest risk inside the future plan.
-   2. When the change decides a service boundary, data ownership, cross-service protocol, or persistence structure, read `references/adr-rules.md` and draft the structural ADR inside the future plan.
-   3. Draft the contract delta inside the future plan, state backward compatibility for every delta, and name every affected consumer or write `consumers: none — <reason>`.
-   4. Draft the test strategy: new-behavior tests and preservation pins. Route a changed existing assertion as an amendment carrying its old and new form.
+4. **Draft the decision inputs.** Enter: step 3 did not fire 3.6. Emit: draft content held for step 5. Continue: after 4.5.
+   1. Read `references/worked-change.md` and copy its artifact shapes.
+   2. Draft the approach, scope boundary, and highest risk inside the future plan.
+   3. When the change decides a service boundary, data ownership, cross-service protocol, or persistence structure, read `references/adr-rules.md` and draft the structural ADR inside the future plan.
+   4. Draft the contract delta inside the future plan, state backward compatibility for every delta, and name every affected consumer or write `consumers: none — <reason>`.
+   5. Draft the test strategy: new-behavior tests and preservation pins. Route a changed existing assertion as an amendment carrying its old and new form.
 5. **Write and validate the plan.** Enter: step 4 produced every draft. Emit: Implementation plan, Plan pointer. Stop: checker failure.
    1. Read `references/plan-format.md`.
    2. Leave plan mode before writing or updating the canonical plan. Treat every harness plan file as non-authoritative.

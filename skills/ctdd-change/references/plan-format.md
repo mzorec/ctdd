@@ -6,86 +6,73 @@ Load this file only at `SKILL.md` step 5.1.
 2. Replace every placeholder.
 3. Use exact repository-relative paths.
 4. Use exact test names.
-5. Write `none — <reason>` for an empty mandatory section.
+5. Write an empty mandatory section as `<Section name>: none — <reason>` on the heading line itself, with no bullet under it. A bullet reading `none` is extracted by `check-redstate.py` as a test name and fails the run.
 6. Omit only the sections marked conditional.
 
 ```markdown
 <Decision summary: one to three sentences naming the proposed direction, the highest risk, and every unresolved decision.>
-Risk: <normal | high-risk> · contract: <none | additive | breaking> · ADR: <none | NNNN required> · hold-out: <not required | required: 1–3 sealed tests from human>
+Risk: <normal | high-risk> · contract: <none | additive | breaking> · ADR: <none | NNNN required> · hold-out: <not required | required: 1-3 sealed tests from human>
+Business requirement:
+Intended behavior:
 
-BLOCKING — I will not guess
-- <one-line question> Recommended answer: <answer>.
-
+BLOCKING - I will not guess
 Proceeding unless you object
-- <decision and consequence>
-
-Risk level: <normal | high-risk> — <one-line reason>
-
+Risk level: <normal | high-risk> - <one-line reason>
 Existing behavior
-- `<path>` — `<contract clause or exact test name>`: <observed behavior>.
 Known gaps
-- <missing artifact or coverage>
-
 Assumptions
-- <assumption>
-
 Uncovered or ambiguous
-- <case and required resolution>
 
 New-behavior tests
-- `<exact test name>` — path: `<path>`; <behavior>; expected pre-implementation failure: <assertion failure or behavioral mismatch>.
-
+- `<exact test name>` - path: `<path>`; case: <positive | negative | boundary | error path | authorization | side effect | legacy behavior>; <behavior>; expected pre-implementation failure: <what fails>.
+Case coverage not reached
 Preservation pins
-- `<exact test name>` — path: `<path>`; <behavior that must pass before and after>.
-
 Changed existing assertions (conditional: include only when an existing assertion changes)
-- `<exact test name>` — path: `<path>`; old: `<assertion>`; new: `<assertion>`; business requirement: <reason>.
 
 Contract changes
-- `<path>` — <exact boundary delta>; compatibility: <backward-compatible | breaking>.
-
 NFR budgets
-- latency/throughput: <unchanged | budget and verification>
-- authorization: <unchanged | changed surface and verification>
-- tenant isolation: <unchanged | changed surface and verification>
-- retention/audit: <unchanged | changed surface and verification>
-
+ADR draft (conditional: include only when `SKILL.md` step 4.3 fires)
+Implementation slices
+Verification
 Hold-out
-- decision: <required | not required>
-- reason: <reason>
-- request: <1–3 sealed tests written and withheld by the human | n/a>
-- storage: <location outside the agent-readable working tree | n/a>
-- runner: <human or CI job that runs the sealed tests once after green | n/a>
-- result: <pending | not required>
-- human-verified expected values: <assertions and values | n/a> (include when the human declines a required hold-out)
-
-ADR draft (conditional: include only when step 4.2 fires)
-- Context: <situation, constraints, and options>
-- Decision: <chosen structure>
-- Consequences: <benefits, costs, and follow-up>
-
 Files likely to change
-- `<exact path>` — <planned change>
+Residual risk
 ```
 
 ## Field rules
 
+The complete example below is the operative instruction: anything it demonstrates is not restated here. These are the rules an example cannot carry — prohibitions, decisions with more than one branch, and transitions that leave no trace in a finished plan.
+
 1. Use `normal` or `high-risk`; never write `trivial` in a plan.
 2. Set `contract: breaking` when an existing route, response shape, request shape, event shape, or error code changes incompatibly.
-3. Put every answer-dependent question under `BLOCKING` with a recommended answer.
-4. Put every assumed decision under `Proceeding unless you object`.
-5. Cite retrieved contracts and tests under `Existing behavior`.
-6. Write both `New-behavior tests` and `Preservation pins` on every plan.
-7. List happy, negative, boundary, and error-path tests required by the change.
-8. Put each changed existing assertion in `Changed existing assertions` with its old and new forms.
-9. Require a hold-out for money, authorization, state-machine, rounding, inclusivity, timezone, fee-treatment, or other load-bearing boundary semantics.
-10. Ask the human to write 1–3 hold-out tests directly from the business requirement and keep their contents outside the agent-readable working tree.
-11. Name the human or CI job that runs the hold-out once after the visible suite is green.
-12. Record `result: pending` at plan time for a required hold-out.
-13. Record `result: not required` when no hold-out is required.
-14. When the human declines a required hold-out, list the load-bearing expected values the human must verify independently and do not label that fallback as a hold-out.
-15. Use exact file paths; do not use wildcards, directories, `(+ tests)`, or unnamed future files.
-16. Replace every resolved BLOCKING question with its decision before approval. Re-run `check-plan.py` after every plan edit; re-present the plan when the answer changes any other presented decision.
+3. Put each changed existing assertion in `Changed existing assertions` with its old and new forms.
+4. Cover every applicable row of **Required case coverage** below, and record every row the change does not reach under `Case coverage not reached` as `<case> — n/a — <reason>`; never leave a row unaddressed.
+5. Require a hold-out for money, authorization, state-machine, rounding, inclusivity, timezone, fee-treatment, or other load-bearing boundary semantics.
+6. Ask the human to write 1–3 hold-out tests directly from the business requirement and keep their contents outside the agent-readable working tree.
+7. Use `result: pending` until the required hold-out runs. Before the packet, replace it with `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; unavailability is never a decline.
+8. When the human declines a required hold-out, list the load-bearing expected values the human must verify independently, and do not label that fallback a hold-out result.
+9. Use exact file paths; never write wildcards, directories, `(+ tests)`, `TBD`, or unnamed future files.
+10. Replace every resolved BLOCKING question with its decision before approval. Re-run the checker after every plan edit; re-present when the answer changes any other presented decision.
+
+`ctdd-tests` owns test naming, altitude, assertion form, and what may not be asserted. Do not restate them here: two copies of a test rule drift, and the one in this file is the copy nobody checks.
+
+## Required case coverage
+
+Name the tests here; `ctdd-tests` owns how each one is written.
+
+**Section follows the evidence direction, not the case.** A case this change adds or alters goes under `New-behavior tests`; the same case goes under `Preservation pins` when the change must leave it exactly as it is. The column below names the usual direction — write the other one when this change inverts it, and do not record a case as not reached when it is covered in the other direction.
+
+| Case | Required trigger | Assertion form | Usual section | Plan must name it |
+|---|---|---|---|---|
+| Positive | The change adds or alters an accepted input | Observable success result | New-behavior | Always |
+| Negative | An input the rule must reject | Observable rejection, no state change | New-behavior | Always |
+| Boundary | The rule has a minimum, a maximum, or a split | Result at the edge and one step past it, on each edge that exists | New-behavior | When an edge exists |
+| Error path | An observable failure, not-found, conflict, or malformed input | Exact contractual code and body, state unchanged | New-behavior | When an error path changes |
+| Authorization | The operation is secured | Denied identity observes the contractual denial code | New-behavior | When the route or handler authorizes |
+| Side effects | The operation emits, publishes, or writes | Exactly the required effects and none of the forbidden ones | Both | Always |
+| Legacy behavior | Existing behavior must survive | Same observable result before and after | Preservation | Always |
+
+Add a row of your own for concurrency, idempotency, duplicate delivery, persistence, serialization, or cancellation when the change touches one; the seven above are the ones that recur, not the whole world.
 
 ## Complete example
 
@@ -94,6 +81,8 @@ Request: `Add partial capture to the payments service.`
 ```markdown
 Allow one capture below the authorized amount while preserving over-capture rejection. The unresolved decision is the released remainder's hold lifetime. Money-path boundary semantics require a sealed hold-out.
 Risk: normal · contract: additive · ADR: none · hold-out: required: 2 sealed tests from human
+Business requirement: The merchant is allowed one capture below the authorized amount.
+Intended behavior: `POST /payments/{id}/capture` accepts `0 < amount <= authorizedAmount`, moves the payment to `CAPTURED`, and rejects any later capture.
 
 BLOCKING — I will not guess
 - What happens to the released authorization remainder? Recommended answer: release it when the original authorization expires.
@@ -118,25 +107,40 @@ Uncovered or ambiguous
 - The released remainder's hold lifetime requires the BLOCKING answer.
 
 New-behavior tests
-- `capture_succeeds_when_amount_is_below_authorized` — path: `tests/payments/CaptureTests.cs`; accepts `87.50` against `100.00`; expected pre-implementation failure: current equality rule rejects the request.
-- `capture_succeeds_when_amount_is_one_cent` — path: `tests/payments/CaptureTests.cs`; accepts the smallest positive amount; expected pre-implementation failure: current equality rule rejects the request.
-- `capture_succeeds_when_amount_is_one_cent_below_authorized` — path: `tests/payments/CaptureTests.cs`; accepts the upper interior boundary; expected pre-implementation failure: current equality rule rejects the request.
-- `capture_fails_when_released_remainder_is_recaptured` — path: `tests/payments/CaptureTests.cs`; starts from a fixture with a released remainder and rejects another capture; expected pre-implementation failure: no released-remainder guard exists.
+- `capture_succeeds_when_amount_is_below_authorized` — path: `tests/payments/CaptureTests.cs`; case: positive; accepts `87.50` against `100.00`, returns `200`, and publishes exactly one `PaymentCaptured`; expected pre-implementation failure: current equality rule rejects the request.
+- `capture_succeeds_when_amount_is_one_cent` — path: `tests/payments/CaptureTests.cs`; case: boundary; accepts the smallest positive amount; expected pre-implementation failure: current equality rule rejects the request.
+- `capture_succeeds_when_amount_is_one_cent_below_authorized` — path: `tests/payments/CaptureTests.cs`; case: boundary; accepts the upper interior boundary; expected pre-implementation failure: current equality rule rejects the request.
+- `capture_fails_when_released_remainder_is_recaptured` — path: `tests/payments/CaptureTests.cs`; case: error path; starts from a fixture with a released remainder and returns `409` with no second `PaymentCaptured`; expected pre-implementation failure: no released-remainder guard exists.
+
+Case coverage not reached
+- authorization — n/a — the capture policy on the route is unchanged.
 
 Preservation pins
-- `capture_succeeds_when_amount_equals_authorized_amount` — path: `tests/payments/CaptureTests.cs`; full capture remains accepted before and after.
-- `capture_fails_when_amount_is_zero` — path: `tests/payments/CaptureTests.cs`; zero remains rejected before and after.
-- `capture_fails_when_amount_is_negative` — path: `tests/payments/CaptureTests.cs`; negative amounts remain rejected before and after.
-- `capture_fails_when_amount_exceeds_authorized_amount` — path: `tests/payments/CaptureTests.cs`; over-capture remains rejected before and after.
+- `capture_succeeds_when_amount_equals_authorized_amount` — path: `tests/payments/CaptureTests.cs`; case: legacy behavior; full capture remains accepted before and after.
+- `capture_fails_when_amount_is_zero` — path: `tests/payments/CaptureTests.cs`; case: boundary; zero remains rejected before and after.
+- `capture_fails_when_amount_is_negative` — path: `tests/payments/CaptureTests.cs`; case: negative; negative amounts remain rejected before and after.
+- `capture_fails_when_amount_exceeds_authorized_amount` — path: `tests/payments/CaptureTests.cs`; case: boundary; over-capture remains rejected before and after.
 
 Contract changes
-- `payments/contract/openapi.yaml` — change the amount constraint to `0 < amount <= authorizedAmount`; compatibility: backward-compatible.
+- `payments/contract/openapi.yaml` — change the amount constraint to `0 < amount <= authorizedAmount`; compatibility: backward-compatible; consumers: checkout-web, settlement-batch; rollout: single deploy.
 
 NFR budgets
 - latency/throughput: unchanged — no new external call or loop.
 - authorization: unchanged — existing capture policy remains on the route.
 - tenant isolation: unchanged — payment lookup remains tenant-scoped.
 - retention/audit: unchanged — the existing audit event already records authorized and captured amounts.
+- observability: unchanged — the existing capture log line already carries both amounts.
+
+Implementation slices
+- `payments/domain/CaptureService.cs` — accept an amount below the authorized amount; turns green: `capture_succeeds_when_amount_is_below_authorized`.
+- `payments/domain/CaptureService.cs` — accept the smallest positive amount; turns green: `capture_succeeds_when_amount_is_one_cent`.
+- `payments/domain/CaptureService.cs` — accept the upper interior boundary; turns green: `capture_succeeds_when_amount_is_one_cent_below_authorized`.
+- `payments/domain/CaptureService.cs` — reject a capture of the released remainder; turns green: `capture_fails_when_released_remainder_is_recaptured`.
+
+Verification
+- `dotnet test --filter CaptureTests` — expected: all listed new-behavior and pin tests pass.
+- `dotnet build` — expected: exit 0.
+- `spectral lint payments/contract/openapi.yaml` — expected: no errors.
 
 Hold-out
 - decision: required
@@ -151,4 +155,7 @@ Files likely to change
 - `payments/contract/openapi.yaml` — relax the capture amount constraint.
 - `payments/domain/CaptureService.cs` — implement partial capture and released-remainder handling.
 - `tests/payments/CaptureTests.cs` — add new-behavior tests and preserve over-capture rejection.
+
+Residual risk
+- The released remainder's expiry path is exercised only by the sealed hold-out.
 ```

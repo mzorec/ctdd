@@ -73,6 +73,18 @@ REQUIRED = [
      r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*new[- ]behaviou?r\s+tests?\b"),
     ("proposed tests: preservation-pin heading",
      r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*preservation\s+pins?\b"),
+    # The v0.22.0 format made seven more sections mandatory ("omit only the sections
+    # marked conditional") without extending this list, so a plan missing all of
+    # them exited 0 and step 5 read that as validation. Presence, not quality — but
+    # a presence detector that stops covering the format it detects has stopped
+    # being one. Every pattern below is line-anchored for the same reason as above.
+    ("business requirement",  r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*business\s+requirement\b"),
+    ("intended behavior",     r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*intended\s+behaviou?r\b"),
+    ("known gaps",            r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*known\s+gaps?\b"),
+    ("case coverage not reached", r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*case\s+coverage\s+not\s+reached\b"),
+    ("implementation slices", r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*implementation\s+slices?\b"),
+    ("verification",          r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*verification\b"),
+    ("residual risk",         r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*residual\s+risks?\b"),
     ("contract changes",      r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*contract\s+changes?\b"),
     ("NFR budgets",           r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*(nfr|budget)"),
     ("hold-out decision",     r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*hold.?out\b"),

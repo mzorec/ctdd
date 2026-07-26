@@ -173,7 +173,8 @@ class ChangeSkillStructureTests(unittest.TestCase):
         """Both path styles must be checked. Normalizing every reference load to a
         relative `references/x.md` moved all six of them off the ${CLAUDE_PLUGIN_ROOT}
         pattern this test matched, taking its coverage from five references to zero
-        and relative reference loads escaped this test entirely. Both guards passed."""
+        — and `worked-change.md` then shipped untracked, so a fresh clone had a step
+        ordering the agent to read a file nobody else had. Both guards passed."""
         root = self.base.parents[1]
         for rel in set(re.findall(r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9_./-]+)", self.skill)):
             self.assertTrue((root / rel).exists(),
@@ -396,6 +397,7 @@ class QuotedPathTests(unittest.TestCase):
 
 class CrossSkillAgreementTests(unittest.TestCase):
     MINIMUM_MARGIN_CHARS = 1500
+    MAX_PLAN_GATED_METHODOLOGY_CHARS = 37500
     """ctdd-tests keeps craft work (de-flaking, altitude, renaming) out of the
     plan gate, while every consumer of the diff — this script, the hook, and
     ctdd-review — reads any modified test as a changed requirement. Both are
@@ -468,6 +470,47 @@ class CrossSkillAgreementTests(unittest.TestCase):
                 f"below the {ChangeSkillStructureTests.COMPACTION_PROXY_CHARS}-char "
                 f"proxy, so a correctness fix never has to fight the budget")
 
+    def test_plan_gated_methodology_has_a_route_cost_ratchet(self):
+        """The body-size guard stayed green while mandatory references doubled the
+        real plan-gated instruction load from 19,179 to 40,800 characters. Count
+        the route the skill actually orders, not just the always-loaded body."""
+        root = self._skills() / "ctdd-change"
+        skill = (root / "SKILL.md").read_text(encoding="utf-8")
+        body = re.sub(r"^---\n.*?\n---\n", "", skill, flags=re.S)
+        unconditional = {
+            "worked-change.md", "plan-format.md", "execution.md",
+        }
+        total = len(body) + sum(
+            len((root / "references" / name).read_text(encoding="utf-8"))
+            for name in unconditional
+        )
+        self.assertLessEqual(
+            total, self.MAX_PLAN_GATED_METHODOLOGY_CHARS,
+            f"plan-gated methodology is {total} chars; the ratchet is "
+            f"{self.MAX_PLAN_GATED_METHODOLOGY_CHARS}. Displace or condition "
+            "existing instruction before adding more")
+
+    def test_route_budget_names_every_unconditional_reference_load(self):
+        """A route ceiling is accounting theatre if a new mandatory reference can
+        be added without entering the sum. ADR and colocated-note references are
+        excluded only because their load lines carry observable conditions."""
+        skill = (self._skills() / "ctdd-change" / "SKILL.md").read_text(
+            encoding="utf-8")
+        actual = set()
+        for line in skill.splitlines():
+            match = re.search(r"\bread `references/([^`]+)`", line, re.I)
+            if not match:
+                continue
+            prefix = line[:match.start()].lower()
+            conditional = any(marker in prefix for marker in (
+                "when ", "if ", "stop on", "for a standalone"))
+            if not conditional:
+                actual.add(match.group(1))
+        self.assertEqual(
+            actual, {"worked-change.md", "plan-format.md", "execution.md"},
+            f"update the plan-gated route budget when unconditional loads change: "
+            f"{sorted(actual)}")
+
     def test_review_packet_reloads_execution_and_verifies_both_pin_runs(self):
         """The final packet named execution.md without re-reading it after a long
         session, then mechanically checked only the pre-change pin log even though
@@ -483,6 +526,10 @@ class CrossSkillAgreementTests(unittest.TestCase):
         self.assertIn("<pin-after-log>", execution)
         self.assertIn("Pin state before:", execution)
         self.assertIn("Pin state after:", execution)
+        worked = (root / "references" / "worked-change.md").read_text(
+            encoding="utf-8")
+        self.assertIn("Pin state before:", worked)
+        self.assertIn("Pin state after:", worked)
 
     def test_holdout_packet_preserves_not_run_and_named_runner(self):
         """A CI outage was previously converted into a human decline, and the
@@ -495,8 +542,22 @@ class CrossSkillAgreementTests(unittest.TestCase):
         packet = execution.split("## Review packet shape", 1)[1]
         self.assertIn("NOT RUN — <reason>", packet)
 
+    def test_every_plan_edit_refreshes_the_checker_result(self):
+        """A resolved BLOCKING answer edited the canonical plan after check-plan
+        passed, but the worked example said the checker need not run again. The
+        approval then authorized content the recorded checker never inspected."""
+        root = self._skills() / "ctdd-change" / "references"
+        fmt = (root / "plan-format.md").read_text(encoding="utf-8")
+        self.assertIn("Re-run the checker after every plan edit", fmt)
+        worked = (root / "worked-change.md").read_text(encoding="utf-8")
+        self.assertIn("Every plan edit", worked)
+        self.assertNotIn("checker did not have to run again", worked)
+
     def test_every_bundled_reference_is_tracked_by_git(self):
-        """Existence on disk is not shipping. `execution.md` existed locally but was not tracked, while every existence guard passed. Skipped outside a git checkout so the
+        """Existence on disk is not shipping. `worked-change.md` existed locally,
+        was never added, and every guard passed — the skill ordered a read of a
+        file no clone had. Writing this guard reproduced the bug immediately:
+        `execution.md` was untracked too. Skipped outside a git checkout so the
         suite still runs from an export."""
         import subprocess
         root = self._skills().parent
