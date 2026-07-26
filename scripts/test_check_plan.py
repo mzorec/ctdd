@@ -216,6 +216,30 @@ class ComposedCheckerTests(unittest.TestCase):
     imports the same parser, and a fail-open there turns 'could not parse' into
     'no surface touched', which passes an unverified trivial claim."""
 
+    def test_trivial_claim_fails_when_authoritative_classifier_is_unavailable(self):
+        import shutil
+        with tempfile.TemporaryDirectory() as d:
+            scripts = Path(d) / "scripts"
+            scripts.mkdir()
+            for name in ("check-plan.py", "check-spec-surface.py"):
+                shutil.copy(Path(__file__).resolve().parent / name, scripts / name)
+            plan = Path(d) / "plan.md"
+            diff = Path(d) / "diff.txt"
+            plan.write_text("Risk: trivial — rename only\n", encoding="utf-8")
+            diff.write_text("M\tsrc/PaymentTests.cs\n", encoding="utf-8")
+            r = subprocess.run([sys.executable, str(scripts / "check-plan.py"),
+                                str(plan), "--diff", str(diff)],
+                               capture_output=True, text=True, timeout=15)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("authoritative spec-surface classifier", r.stderr)
+        self.assertNotIn("trivial claim stands", r.stdout)
+
+    def test_help_does_not_print_literal_newline_escapes(self):
+        r = subprocess.run([sys.executable, SCRIPT, "--help"],
+                           capture_output=True, text=True, timeout=15)
+        self.assertEqual(r.returncode, 0)
+        self.assertNotIn("\\nA diff", r.stdout)
+
     def test_trivial_claim_with_malformed_diff_fails_closed(self):
         import subprocess, sys, os, tempfile
         d = tempfile.mkdtemp()

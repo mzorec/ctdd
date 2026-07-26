@@ -154,6 +154,16 @@ class GenAuthzMatrixTests(unittest.TestCase):
         finally:
             os.unlink(f)
 
+    def test_missing_openapi_path_is_usage_error(self):
+        r = run()
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("missing OpenAPI path", r.stdout)
+
+    def test_help_exits_zero(self):
+        r = run("--help")
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("derive the authorization matrix", r.stdout)
+
     def test_csharp_scaffold_prints_adapter(self):
         r = run("--csharp-scaffold")
         self.assertEqual(r.returncode, 0)

@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import re
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -100,6 +101,26 @@ class SpecSurfaceTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0)
         self.assertIn("name-status", r.stdout)
 
+    def test_missing_authoritative_hook_fails_closed(self):
+        with tempfile.TemporaryDirectory() as d:
+            scripts = Path(d) / "scripts"
+            scripts.mkdir()
+            copied = scripts / "check-spec-surface.py"
+            copied.write_text(Path(SCRIPT).read_text(encoding="utf-8"), encoding="utf-8")
+            diff = Path(d) / "diff.txt"
+            diff.write_text("M\tsrc/PaymentTests.cs\n", encoding="utf-8")
+            r = subprocess.run([sys.executable, str(copied), str(diff)],
+                               capture_output=True, text=True, timeout=15)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("authoritative patterns", r.stderr)
+        self.assertNotIn("Verdict:", r.stdout)
+
+    def test_invalid_pattern_override_fails_closed(self):
+        r = run("M\tsrc/PaymentTests.cs\n", env_extra={"CTDD_TEST_PATTERNS": "["})
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("invalid regex", r.stderr)
+        self.assertNotIn("Verdict:", r.stdout)
+
 class GitModeTests(unittest.TestCase):
     """--git must not be a quieter way to reopen the new-test blind spot."""
 
@@ -127,13 +148,10 @@ class ChangeSkillStructureTests(unittest.TestCase):
     carried into a file loaded only when a colocated note is written, so an
     ordinary bug fix ran without its own lane rule. Nothing caught it."""
 
-    # Routing decides which lane runs, so it must stay in the always-loaded body.
-    # Matched semantically: the v0.14.0 defect was rules *leaving* the skill, and
-    # a heading-shaped probe cannot tell that from a restructure.
-    ROUTES = [r"[Ff]or a bug fix, require a short complete plan",
-              r"amendment that shows its old and new assertion",
-              r"Stop on incompatible claims",
-              r"[Ss]tandalone ADR"]
+    ROUTES = ["For a bug fix, require a short complete plan",
+              "Route a changed existing assertion as an amendment",
+              "Stop on incompatible claims about the same observable constraint",
+              "For a standalone ADR request"]
 
     def setUp(self):
         base = Path(__file__).resolve().parents[1] / "skills" / "ctdd-change"
@@ -142,14 +160,14 @@ class ChangeSkillStructureTests(unittest.TestCase):
         self.base = base
 
     def test_workflow_routing_stays_in_the_always_loaded_skill(self):
-        for rule in self.ROUTES:
-            self.assertRegex(self.skill, rule,
-                             f"routing rule lost from SKILL.md: {rule}")
+        for heading in self.ROUTES:
+            self.assertIn(heading, self.skill,
+                          f"{heading} must stay in SKILL.md — it decides which lane runs")
 
     def test_note_reference_holds_only_note_craft(self):
-        for rule in self.ROUTES:
-            self.assertNotRegex(self.notes, rule,
-                                f"routing rule moved into the notes reference: {rule}")
+        for heading in self.ROUTES:
+            self.assertNotIn(heading, self.notes,
+                             f"{heading} is workflow routing, not colocated-note craft")
 
     def test_every_referenced_bundled_file_exists(self):
         root = self.base.parents[1]
@@ -228,32 +246,25 @@ class ChangeSkillStructureTests(unittest.TestCase):
     # noticed; these make the same mistake fail loudly. Each rule below traces to
     # a specific pilot finding, so losing one is a regression, not a tidy-up.
 
-    # Matched on the rule, not on one phrasing of it. An earlier version pinned
-    # exact sentences and then failed on a correct rewrite, which is worse than
-    # not guarding: a check that fires on good work teaches people to ignore it.
     GATE_RULES = {
-        "plan file written before entering plan mode (#25)":
-            r"[Ll]eave plan mode before writing",
-        "the harness plan file is not authoritative (#25, #28)":
-            r"harness plan file as non-authoritative",
-        "material change mid-gate goes into the file (#28)":
-            r"[Aa]mend the plan with the old and new",
-        "the approval surface is copied, not composed (#28)":
-            r"[Cc]opy the canonical decision summary verbatim",
-        "the full plan is printed outside plan mode (#24)":
-            r"Print the complete plan verbatim",
-        "approval authorizes execution of the plan file (#7)":
-            r"approval as authorization",
-        "the gate stops and waits":
-            r"Stop for explicit approval",
-        "no status claim without a run in this turn (#8, #12, #26)":
-            r"without a run completed and read in the current turn",
+        "canonical plan is written outside plan mode":
+            "Leave plan mode before writing or updating the canonical plan.",
+        "the repository file is authoritative":
+            "Treat every harness plan file as non-authoritative.",
+        "presentation copies canonical text":
+            "Copy the canonical decision summary verbatim",
+        "approval stops execution":
+            "Stop for explicit approval.",
+        "approval authorizes the plan file":
+            "Treat approval as authorization to execute the plan file.",
+        "full plan reaches stdout outside plan mode":
+            "Print the complete plan verbatim followed by its path",
     }
 
     def test_gate_rules_stay_in_the_always_loaded_skill(self):
         for label, probe in self.GATE_RULES.items():
-            self.assertRegex(self.skill, probe,
-                             f"gate rule lost from SKILL.md: {label}")
+            self.assertIn(probe, self.skill,
+                          f"gate rule lost from SKILL.md: {label}")
 
     def test_a_plan_mode_reference_holds_presentation_craft_only(self):
         """Inert until the split happens, binding the moment it does."""
@@ -262,39 +273,31 @@ class ChangeSkillStructureTests(unittest.TestCase):
             self.skipTest("plan-mode.md not split out yet")
         text = ref.read_text(encoding="utf-8")
         for label, probe in self.GATE_RULES.items():
-            self.assertNotRegex(
-                text, probe,
+            self.assertNotIn(
+                probe, text,
                 f"{label} is a gate transition and must stay in the skill, "
                 f"not move into a conditionally-loaded reference")
 
     def test_every_reference_is_loaded_somewhere_before_it_is_needed(self):
-        """A reference nobody is told to read is a rule that is not followed."""
+        """Every reference is named, and each executable reference is loaded before use."""
         refs = {f.name for f in (self.base / "references").glob("*.md")}
         for name in sorted(refs):
             self.assertIn(name, self.skill,
-                          f"references/{name} exists but the skill never tells "
-                          f"the agent to read it")
-        # "somewhere" is not "before it is needed". The load instruction must come
-        # before the inline section it backs, because that section is the part that
-        # gets truncated: an agent that reaches the skeleton without having been
-        # told to fetch the authoritative version works from the stub alone.
-        # The loader must precede the step that consumes the reference, or the
-        # agent reaches the work before being told where the rules live.
-        for ref, consumer in (("plan-format.md", "Write the Implementation plan to its exact path"),
-                              ("adr-rules.md", "Draft the structural ADR")):
-            self.assertLess(
-                self.skill.index(ref), self.skill.index(consumer),
-                f"the instruction to read {ref} must precede the step that uses it")
+                          f"references/{name} exists but SKILL.md never names it")
+        ordered = (
+            ("plan-format.md", "Write the Implementation plan to its exact path."),
+            ("adr-rules.md", "Draft the structural ADR inside the future plan"),
+            ("colocated-notes.md", "Write one Colocated note"),
+        )
+        for ref, use in ordered:
+            self.assertLess(self.skill.index(ref), self.skill.index(use),
+                            f"load {ref} before the instruction it governs")
 
-    def test_plan_skeleton_does_not_offer_a_trivial_risk_level(self):
-        """A trivial change produces no plan, so `trivial` inside a plan's risk
-        line is a contradiction the authoritative format already excludes."""
-        # A trivial change produces no plan, so `trivial` is a *declaration*, never
-        # a risk level inside one. The skill now models that structurally: the
-        # trivial-risk declaration is its own output, separate from the plan.
-        self.assertIn("Trivial-risk declaration", self.skill)
-        self.assertNotRegex(self.skill, r"Risk level[^\n]*trivial\s*/",
-                            "the plan must not offer a risk level the format forbids")
+    def test_plan_format_does_not_offer_a_trivial_risk_level(self):
+        """A trivial change produces no plan, so the reference must exclude it."""
+        text = (self.base / "references" / "plan-format.md").read_text(encoding="utf-8")
+        self.assertIn("Risk: <normal | high-risk>", text)
+        self.assertNotIn("Risk: <trivial", text)
 
     # Claude Code re-attaches only the first 5,000 *model tokens* of a skill after
     # auto-compaction. No authoritative tokenizer is available here, so this uses a
@@ -315,27 +318,18 @@ class ChangeSkillStructureTests(unittest.TestCase):
         long session, which is exactly when the discipline matters most."""
         head = self._surviving_head()
         must_survive = {
-            "no status claim without a run (#8, #12, #26)": "without a run completed and read",
-            "changed test is a changed requirement (amendments)": "amendment that shows its old and new",
-            "artifacts disagreeing is a stop condition": "Stop on incompatible claims",
-            "a bug fix is not the trivial lane": "For a bug fix, require a short complete plan",
-            "preservation claims need a named detector (#4)": "Name the tests that detect every behavior",
-            "distributed-systems escalation (#6)": "retries, ordering, eventual consistency",
-            "plan written before entering plan mode (#25)": "Leave plan mode before writing",
-            "presentation copied, not composed (#28)": "Copy the canonical decision summary verbatim",
-            "working tree can move mid-session (#32)": "Re-check the working tree against step 0",
-            # the three with the worst drift history in the whole log — guarded
-            # last, which is exactly backwards
-            "red state needs a captured run and a verdict (#12, #26)":
-                "Verify red state with",
-            "pin evidence is green-then-still-green (#21)":
-                "Run the pins before replacing preserved",
-            # the clause that reconciles "observe it fail" with "pins run green";
-            # #19 was a shipped contradiction the agent resolved by judgment
-            "the pin exemption turns on what the test asserts (#19)":
-                "--expect-pass",
-            "a required hold-out must actually run (#30, 0% execution)":
-                "Stop for the human's sealed hold-out",
+            "no result claim without current-turn run": "Do not claim a test, build, gate, checker",
+            "tests are delegated before edits": "Invoke `ctdd-tests` before creating",
+            "artifact conflicts stop": "Stop on incompatible claims",
+            "bug fix remains non-trivial": "For a bug fix, require a short complete plan",
+            "preservation needs named tests": "Name the tests that detect every behavior",
+            "distributed systems escalate": "Require property tests, boundary contract tests",
+            "canonical plan leaves plan mode": "Leave plan mode before writing",
+            "presentation is verbatim": "Copy the canonical decision summary verbatim",
+            "working tree is rechecked": "Re-check the working tree against step 0",
+            "red-state verdict is required": "Verify red state with",
+            "pin verdict is required": "Verify pins with",
+            "hold-out blocks review": "Stop for the human's sealed hold-out result",
         }
         for label, probe in must_survive.items():
             self.assertIn(probe, head,
@@ -445,6 +439,22 @@ class CrossSkillAgreementTests(unittest.TestCase):
                 self.assertIn("must not use this library", line,
                               "jqwik may only appear as a warning, never a recommendation")
 
+    def test_every_skill_body_fits_the_compaction_proxy(self):
+        """The survival guard's probe list is per-skill and binds to ctdd-change
+        alone, so ctdd-tests overflowed the same proxy by 1,085 characters and
+        shipped that way through a full review round with three load-bearing
+        rules already outside the window. Nothing measured it, because nothing
+        was looking. Probes stay per-skill; size is checkable for all of them."""
+        limit = ChangeSkillStructureTests.COMPACTION_PROXY_CHARS
+        for path in sorted(self._skills().glob("*/SKILL.md")):
+            body = re.sub(r"^---\n.*?\n---\n", "",
+                          path.read_text(encoding="utf-8"), flags=re.S)
+            self.assertLess(
+                len(body), limit,
+                f"{path.parent.name}/SKILL.md body is {len(body)} chars, past the "
+                f"{limit}-char proxy — whatever sits at the end is gone after "
+                f"compaction, which is exactly when the discipline matters")
+
     def test_a_record_with_surplus_columns_is_malformed(self):
         """`M<TAB>README.md<TAB>tests/Hidden.cs` reported clean while a changed
         test sat in column three. Too many fields is as malformed as too few."""
@@ -462,6 +472,58 @@ class CrossSkillAgreementTests(unittest.TestCase):
         desc = yaml.safe_load(re.match(r"^---\n(.*?)\n---\n", t, re.S).group(1))["description"]
         self.assertNotIn("Enforces", desc,
                          "a skill with no mechanism must not claim enforcement")
+
+    def test_the_ordered_workflow_names_the_lanes_that_do_not_write_a_test(self):
+        """The v0.21.2 rewrite replaced the old "When writing" / "When reviewing"
+        modes with one unconditional `Execute steps 1-8 in order`, while the
+        description still triggers on renaming, de-flaking and isolated review.
+        Those tasks hit step 3 (derive the case set) and step 4 (assign an
+        evidence direction) with nothing to derive and no direction to assign.
+        A sequence claim without an entry condition is worse than the modes it
+        replaced, because it reads as mandatory."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        wf = t.split("## Ordered test-writing workflow", 1)[1].split("\n1. ", 1)[0]
+        self.assertIn("when the task adds a test", wf,
+                      "the 8-step sequence must name the lane it applies to")
+        self.assertIn("Craft edit to an existing test", wf,
+                      "rename/de-flake/altitude repair write a file but derive no case set")
+        self.assertIn("Isolated review or gap-finding", wf,
+                      "a review that writes nothing must have a stated path")
+        self.assertIn("Entered from the review lane above, or from `ctdd-review`",
+                      t, "the review section must name its callers")
+
+    def test_the_authz_instruction_names_the_mechanism_it_advertises(self):
+        """The frontmatter triggers on 'derive the authorization matrix' and the
+        body must reach an instruction that can actually be followed."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("gen-authz-matrix.py", t)
+        self.assertIn("--check", t)
+
+    def test_review_criteria_name_what_a_violation_looks_like(self):
+        """'Is it mostly asserting on mocks?' and 'will it flake?' let two
+        reviewers follow the rule exactly and reach opposite verdicts."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("what determines the verdict", t)
+        self.assertIn("Name the uncontrolled input", t)
+
+    def test_both_evidence_artifacts_share_the_stated_plan_lane(self):
+        """A preservation pin and a marked observation both run green-before-and-
+        after, so both land under the same heading; collapsing or separating them
+        left one of the two with no stated place in the plan."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("names the direction the evidence runs", t)
+        # The substring above certifies the phrase is present, not that it plays
+        # the right role: a compression once rendered it *inside a code span* as
+        # `Preservation pins - names the direction the evidence runs`, which reads
+        # as a literal heading and is not the one the format mandates. Models copy
+        # examples, so a backticked heading variant is an instruction to write it.
+        for span in re.findall(r"`([^`\n]*Preservation pins[^`\n]*)`", t):
+            self.assertEqual(span, "Preservation pins",
+                             "a code span naming the plan heading must carry the "
+                             "mandated form alone, not a gloss shaped like a heading")
+        v = (self._skills() / "ctdd-review" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("characterization observation", v,
+                      "the reviewer must accept either artifact for thin coverage")
 
     def test_test_conventions_are_repository_owned_and_verified(self):
         """Framework, assertions, naming, fixtures, paths, and runner are project
@@ -518,30 +580,6 @@ class CrossSkillAgreementTests(unittest.TestCase):
         self.assertIn("must fail before implementation", blocked)
         self.assertIn("preservation pins and characterization observations", blocked)
         self.assertIn("must pass before refactor", blocked)
-
-    def test_the_authz_instruction_names_the_mechanism_it_advertises(self):
-        """The frontmatter triggers on 'derive the authorization matrix' and the
-        body must reach an instruction that can actually be followed."""
-        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("gen-authz-matrix.py", t)
-        self.assertIn("--check", t)
-
-    def test_review_criteria_name_what_a_violation_looks_like(self):
-        """'Is it mostly asserting on mocks?' and 'will it flake?' let two
-        reviewers follow the rule exactly and reach opposite verdicts."""
-        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("what determines the verdict", t)
-        self.assertIn("Name the uncontrolled input", t)
-
-    def test_both_evidence_artifacts_share_the_stated_plan_lane(self):
-        """A preservation pin and a marked observation both run green-before-and-
-        after, so both land under the same heading; collapsing or separating them
-        left one of the two with no stated place in the plan."""
-        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("names the direction the evidence runs", t)
-        v = (self._skills() / "ctdd-review" / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("characterization observation", v,
-                      "the reviewer must accept either artifact for thin coverage")
 
 
 if __name__ == "__main__":

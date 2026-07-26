@@ -226,7 +226,9 @@ def main():
     SKIPPED.clear()   # operations() is traversed twice; without this the
                       # same warning printed twice and leaked between calls
     args = sys.argv[1:]
-    if not args or args[0] in ("-h", "--help"):
+    if not args:
+        return _fail("missing OpenAPI path. Use --help for usage.")
+    if args[0] in ("-h", "--help"):
         print(__doc__.strip())
         return 0
     if args[0] == "--csharp-scaffold":

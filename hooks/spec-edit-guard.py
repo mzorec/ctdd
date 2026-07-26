@@ -89,13 +89,20 @@ CONTRACT_MSG = (
 
 def patterns(env_var, default):
     raw = os.environ.get(env_var, "").strip()
-    if not raw:
-        return default
-    return [p.strip() for p in raw.split(";") if p.strip()]
+    values = default if not raw else [p.strip() for p in raw.split(";") if p.strip()]
+    compiled = []
+    for value in values:
+        try:
+            compiled.append(re.compile(value, re.IGNORECASE))
+        except re.error as exc:
+            raise ValueError(
+                f"{env_var} contains invalid regex {value!r}: {exc}"
+            ) from exc
+    return compiled
 
 
 def matches(path, pats):
-    return any(re.search(p, path, re.IGNORECASE) for p in pats)
+    return any(pattern.search(path) for pattern in pats)
 
 
 def emit(event, message):
@@ -118,8 +125,13 @@ def main():
         return
     path = raw_path.replace("\\", "/")
 
-    test_rx = patterns("CTDD_TEST_PATTERNS", TEST_DEFAULT)
-    contract_rx = patterns("CTDD_CONTRACT_PATTERNS", CONTRACT_DEFAULT)
+    try:
+        test_rx = patterns("CTDD_TEST_PATTERNS", TEST_DEFAULT)
+        contract_rx = patterns("CTDD_CONTRACT_PATTERNS", CONTRACT_DEFAULT)
+    except ValueError as exc:
+        print(f"spec-edit-guard: invalid pattern configuration: {exc}",
+              file=sys.stderr)
+        return 2
 
     if event == "PreToolUse":
         # Only job here: catch Write overwriting an EXISTING test file.
@@ -141,4 +153,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

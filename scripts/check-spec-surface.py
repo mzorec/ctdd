@@ -46,31 +46,37 @@ def _load_guard():
     spec.loader.exec_module(mod)
     return mod
 
+PATTERN_LOAD_ERROR = None
 try:
     _guard = _load_guard()
     TEST_PATTERNS = _guard.patterns("CTDD_TEST_PATTERNS", _guard.TEST_DEFAULT)
     CONTRACT_PATTERNS = _guard.patterns("CTDD_CONTRACT_PATTERNS", _guard.CONTRACT_DEFAULT)
-except Exception as exc:  # standalone copy without the hook alongside
-    print(f"check-spec-surface: WARNING — could not load hook patterns ({exc}); "
-          "using minimal built-in defaults. Keep this script next to "
-          "hooks/spec-edit-guard.py for the shared pattern contract.",
-          file=sys.stderr)
-    TEST_PATTERNS = [r"(^|/)(tests?|__tests__|specs?)(/|$)"]
-    CONTRACT_PATTERNS = [r"(^|/)(contracts?|pacts?)(/|$)", r"\.proto$",
-                         r"(^|/)(openapi|swagger|asyncapi)[^/]*\.(ya?ml|json)$"]
+except Exception as exc:
+    PATTERN_LOAD_ERROR = exc
+    TEST_PATTERNS = []
+    CONTRACT_PATTERNS = []
 
 # ADRs are review surface too (a changed decision record is a changed "why"),
 # but they are not the hook's business, so the pattern lives here.
-ADR_PATTERNS = [r"(^|/)adrs?/[^/]+\.md$"]
+ADR_PATTERNS = [re.compile(r"(^|/)adrs?/[^/]+\.md$", re.IGNORECASE)]
 PACT_HINT = re.compile(r"pact", re.IGNORECASE)
 
 
+def ensure_patterns_loaded():
+    if PATTERN_LOAD_ERROR is not None:
+        raise RuntimeError(
+            "could not load the authoritative patterns from "
+            f"hooks/spec-edit-guard.py: {PATTERN_LOAD_ERROR}"
+        )
+
+
 def _matches(path, pats):
-    return any(re.search(p, path, re.IGNORECASE) for p in pats)
+    return any(pattern.search(path) for pattern in pats)
 
 
 def classify(path):
     """Return the surface class of one path: 'contract', 'test', 'adr', or None."""
+    ensure_patterns_loaded()
     p = path.replace("\\", "/")
     if _matches(p, CONTRACT_PATTERNS):
         return "contract"
@@ -144,6 +150,13 @@ def main():
     if args and args[0] in ("-h", "--help"):
         print(__doc__.strip())
         return 0
+
+    try:
+        ensure_patterns_loaded()
+    except RuntimeError as exc:
+        print(f"check-spec-surface: {exc}. No classification was attempted.",
+              file=sys.stderr)
+        return 2
 
     if args and args[0] == "--git":
         # Anchor to the project root: `git ls-files --others` is relative to the

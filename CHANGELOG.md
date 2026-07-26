@@ -32,27 +32,43 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
-## 0.21.3 — 2026-07-24
+## 0.22.0 — 2026-07-25
+
+A review of the `ctdd-tests` rewrite. The skill held up. The guards around it did not: the previous release shipped red, and the repair in progress was removing more coverage than it restored.
+
+### Fixed
+- **0.21.3 shipped with a red suite.** The references rewrite changed `plan-format.md`'s fenced example, and the golden-example extractor — which searched for a bare fence containing `Risk:` — found nothing and raised on four tests. Both commits carried the same version number, so nothing marked the transition. The extractor now matches language-tagged fences and keys on a test name from the example rather than on a field label.
+- **Seven passing guards were being deleted alongside that repair.** Four were the ones added in 0.21.2 and 0.21.3 to hold this rewrite's own bets: repository-owned conventions, the framework-neutral worked section, blocked design pressure, evidence-direction-aware substitutes. Two were the 0.21.1 regression tests for fully-qualified .NET names and the trailing-dot prefix rejection — the only two defects this project has ever found by running a real change rather than by review. The underlying fixes were untouched, which is the dangerous shape: a live fix with its detector removed and nothing failing to say so. All seven restored, all seven green.
+- **The `ctdd-tests` eval set asserted the opposite of its own description.** 0.21.2 named `"review just the tests in this PR"` as a reject routed to `ctdd-review`; `evals/ctdd-tests-triggers.json` still asserted `should_trigger: true` for that exact phrase. Nothing runs the evals, so nothing caught it. The fixture is now a negative case, and `ctdd-review`'s set already owned the positive side, so the handoff is asserted from both ends.
+- **The ordered workflow had no entry condition.** `Execute steps 1-8 in order` was unconditional while the description triggers on renaming, de-flaking, isolated review, and gap-finding — tasks that reach step 3 with no case set to derive and step 4 with no evidence direction to assign. The pre-rewrite skill carried parallel writing and reviewing modes and never claimed sequencing; the procedural rewrite dropped the modes and kept the sequence. Two reduced lanes are now named, and `## Test review` names its callers, including `ctdd-review`, which was already delegating to it silently.
+- **A plan heading was invented in the always-loaded surface.** `Put both under \`Preservation pins - names the direction the evidence runs\`` renders as a literal heading and is not the mandated one. Reproduced: both checkers still read it, because the pattern anchors on `Preservation pins` alone — so this was a wrong instruction, not a broken gate. It got through because the guard asserted the phrase's *presence*: the compression satisfied `assertIn` while turning an explanation into a heading. The sentence is restored to its meaning, including the *not the artifact's intent* half that had been dropped with it.
+- **The jqwik withdrawal was half-reverted.** Finding #45 recorded the fix as removal *plus* the reason stated where a reader will meet it. 0.21.2 kept the removal and dropped the reason, leaving `use a project-approved property-test library` with nothing to tell a JVM adopter that the library writes agent-directed text into the evidence channel. One clause restored, on the bullet where the library is chosen.
+
+**A second pass hardened the four scripts and the hook against malformed and missing input** — the same fail-silent shape as the extraction defects above (a script reporting success over input it never validated), surfaced by exercising each checker with empty, malformed, or misconfigured input instead of the well-formed input the tests had always used. Each now fails *closed* with a diagnostic and exit 2.
+- **`check-spec-surface.py` fell back to a weaker pattern set instead of stopping.** A standalone copy without `hooks/spec-edit-guard.py` beside it dropped the classifier to a hard-coded "minimal built-in defaults" and kept going — so a narrower definition of the spec surface silently passed edited tests as untouched — while an invalid `CTDD_*_PATTERNS` override instead crashed mid-classification, because the overrides were never compiled until a path hit them. Both now route through `ensure_patterns_loaded()`: patterns are compiled when read, and `main()` refuses a verdict and exits 2 rather than emit one from defaults nobody chose or from a regex it cannot compile.
+- **`check-plan.py`'s triviality cross-check would then run against that degraded classifier.** Because the fallback never raised, the `--diff` check could bless a trivial claim over surface the weaker patterns no longer recognised. It now loads the authoritative patterns explicitly and exits 2 when they are unavailable — a claim that could not be cross-checked is not one that survived it. Its `--help` also printed literal `\n` escapes where the bug-fix-lane paragraph should wrap.
+- **`check-redstate.py` and `gen-authz-matrix.py` treated a missing argument as success.** Invoked with no log path / no OpenAPI path, each printed its help and exited 0 — a silent no-op in a position a gate depends on. Both now name the missing argument on error and exit 2; `--help` still exits 0.
+- **`spec-edit-guard.py` crashed on an invalid pattern override.** An unparsable `CTDD_TEST_PATTERNS` / `CTDD_CONTRACT_PATTERNS` regex reached `re.search` mid-run and raised an uncaught `re.error`. The overrides are now compiled once when read, so a bad one produces a bounded `invalid pattern configuration` message on stderr and exit 2 instead of a traceback.
+
+### Added
+- **The compaction guard now measures every skill instead of one.** Its probe list binds to `ctdd-change`, which is why `ctdd-tests` overflowed the same proxy by 1,085 characters and shipped that way through a full review round with nothing looking. Probes stay per-skill; a body-size assertion now walks `skills/*/SKILL.md`. Verified by running it against the pre-0.21.2 body, which it rejects.
+- A guard requiring the ordered workflow to name the lanes that write no test, and an upgrade to the preservation-pin guard so it certifies the heading's *role* rather than the phrase's presence — both confirmed to fail when the rule they cover is removed.
+- Guards for the hardening pass above — invalid override, missing argument, unavailable classifier, standalone fallback, and the `--help` output — plus new coverage pinning the identifier-boundary and marker-classification rules the extraction path already followed.
+- Suite **142 passing / 4 failing at HEAD → 161 passing**, with one existing skip.
+- Finding #54 records the remaining breakpoint gap and why the sample's “write the wished-for API” / “use dependency injection” prescriptions were not copied into CTDD.
+- Two prose regression guards cover blocked design pressure and evidence-direction-aware invalid substitutes. Suite **144 → 146 passing**, with one existing skip.
+- **`ctdd-tests` no longer makes xUnit the effective default through its worked example.** Finding #53 showed that a single “translate it” caveat could not outweigh a full copyable framework specimen. The always-loaded body now derives project conventions from applicable `CLAUDE.md` / `.claude/rules/`, verifies them against the target test project and adjacent tests, stops on conflict, and forbids introducing or defaulting a framework.
+- The worked section now teaches case derivation through a framework-neutral table covering representative positive, exact boundary, invalid, error, required-side-effect, and forbidden-side-effect cases. Framework syntax and artifact paths come only from the target repository.
+- No per-framework reference files were added. Ordinary xUnit/NUnit/MSTest/pytest/Jest syntax remains repository-owned; add a framework reference only for a CTDD-specific mechanism that adjacent tests cannot reveal.
+- Finding #53 records the ownership boundary and the soft contradiction that triggered the change.
+- Two regression guards require repository-owned convention discovery and reject xUnit-specific tokens in the worked section. Suite **142 → 144 passing**, with one existing skip.
+
 
 ### Changed
 - **`ctdd-tests` now gives an executable action at the remaining discipline breakpoints.** It stops on unclear intent instead of inventing an API, reports pervasive mocking / oversized setup as design pressure instead of prescribing a production redesign, distinguishes compilation failure from RED, and fixes harness failures without weakening the expectation.
 - Invalid substitutes are evidence-direction aware: manual checks, coverage, inspection, tests-after, sunk effort, and retained exploration do not replace executable RED for `must fail before implementation`; preservation pins and characterization observations still require green-before-refactor.
 - The new table displaced existing breakpoint bullets and compressed nearby prose, so the always-loaded skill remains **113 lines**. Detailed reasoning moved to the on-demand rationale.
 
-### Added
-- Finding #54 records the remaining breakpoint gap and why the sample's “write the wished-for API” / “use dependency injection” prescriptions were not copied into CTDD.
-- Two prose regression guards cover blocked design pressure and evidence-direction-aware invalid substitutes. Suite **144 → 146 passing**, with one existing skip.
-
-## 0.21.2 — 2026-07-24
-
-### Changed
-- **`ctdd-tests` no longer makes xUnit the effective default through its worked example.** Finding #53 showed that a single “translate it” caveat could not outweigh a full copyable framework specimen. The always-loaded body now derives project conventions from applicable `CLAUDE.md` / `.claude/rules/`, verifies them against the target test project and adjacent tests, stops on conflict, and forbids introducing or defaulting a framework.
-- The worked section now teaches case derivation through a framework-neutral table covering representative positive, exact boundary, invalid, error, required-side-effect, and forbidden-side-effect cases. Framework syntax and artifact paths come only from the target repository.
-- No per-framework reference files were added. Ordinary xUnit/NUnit/MSTest/pytest/Jest syntax remains repository-owned; add a framework reference only for a CTDD-specific mechanism that adjacent tests cannot reveal.
-
-### Added
-- Finding #53 records the ownership boundary and the soft contradiction that triggered the change.
-- Two regression guards require repository-owned convention discovery and reject xUnit-specific tokens in the worked section. Suite **142 → 144 passing**, with one existing skip.
 
 ## 0.21.1 — 2026-07-24
 

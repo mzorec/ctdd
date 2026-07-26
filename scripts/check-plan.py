@@ -33,7 +33,9 @@ cross-checked against the spec surface (test/contract patterns shared with
 check-spec-surface.py and the spec-edit hook, env overrides included):
 touched test or contract surface contradicts "trivial" and fails, whatever
 the narration says. This is the deterministic counterweight the skills point
-at — an edit to an existing test or a contract file is never trivial.\nA diff that only *adds* a test is reported distinctly: that is the\ncompressed bug-fix lane (short plan), not the trivial lane.
+at — an edit to an existing test or a contract file is never trivial.
+A diff that only *adds* a test is reported distinctly: that is the
+compressed bug-fix lane (short plan), not the trivial lane.
 
 Exit 0 = plan OK (sections present, or a trivial claim that survived the check).
 Exit 1 = sections missing, or a trivial claim contradicted by the diff.
@@ -207,9 +209,11 @@ def main():
             return 2
         try:
             surface = _load_surface()
+            surface.ensure_patterns_loaded()
         except Exception as exc:
-            print(f"check-plan: WARNING — could not load check-spec-surface "
-                  f"({exc}); trivial claim NOT cross-checked.", file=sys.stderr)
+            print(f"check-plan: could not load the authoritative spec-surface "
+                  f"classifier ({exc}); trivial claim NOT cross-checked.",
+                  file=sys.stderr)
             print("check-plan: trivial-skip declaration found, but the "
                   "cross-check could not run — a trivial claim that was never "
                   "verified is not a passing claim.")

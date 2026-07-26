@@ -25,7 +25,7 @@
   },
   {
     "query": "review just the tests in this PR, not the rest",
-    "should_trigger": true
+    "should_trigger": false
   },
   {
     "query": "we're about to refactor the legacy XML export and there are almost no tests — pin the current behavior first",

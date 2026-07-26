@@ -170,6 +170,15 @@ class SpecEditGuardTests(unittest.TestCase):
     def test_malformed_stdin_silent_exit_zero(self):
         self.assert_silent(run_guard("not json"))
 
+    def test_invalid_regex_override_is_bounded_configuration_error(self):
+        r = run_guard(post("Edit", "tests/FooTests.cs"),
+                      {"CTDD_TEST_PATTERNS": "["})
+        self.assertEqual(r.returncode, 2)
+        self.assertEqual(r.stdout, "")
+        self.assertIn("invalid pattern configuration", r.stderr)
+        self.assertIn("CTDD_TEST_PATTERNS", r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+
     def test_env_override_replaces_defaults(self):
         env = {"CTDD_TEST_PATTERNS": r"(^|/)quality/;\.robot$"}
         self.assert_fires(run_guard(post("Edit", "quality/checks/foo.robot"), env),

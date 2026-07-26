@@ -301,7 +301,12 @@ def names_from_plan(path, want_pins=False):
 
 def main():
     args = sys.argv[1:]
-    if not args or args[0] in ("-h", "--help"):
+    if not args:
+        print("check-redstate: missing log argument. Pass a log path or '-' for stdin.",
+              file=sys.stderr)
+        print("Use --help for usage.", file=sys.stderr)
+        return 2
+    if args[0] in ("-h", "--help"):
         print(__doc__.strip())
         return 0
 
