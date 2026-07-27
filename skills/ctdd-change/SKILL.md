@@ -70,7 +70,7 @@ Execute steps 0–10 in ascending order. Until the step 6 Approval record exists
 5. **Write and validate the plan.** Enter: step 4 produced every draft. Emit: Implementation plan, Plan pointer. Stop: checker failure.
    1. Read `references/plan-format.md`.
    2. Leave plan mode before writing or updating the canonical plan. Treat every harness plan file as non-authoritative.
-   3. Write the Implementation plan to its exact path. For a bug fix, require a short complete plan whose `New-behavior tests` section names the regression test.
+   3. Write the Implementation plan to its exact path. Its tier is derived from what it declares, not chosen. For a bug fix, require a short complete plan whose `New-behavior tests` section names the regression test.
    4. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" "${CLAUDE_PROJECT_DIR}/docs/plans/<name>.md"`, fix every reported failure, and re-run until it exits `0`.
    5. Add the Plan pointer and commit the plan file when `docs/plans/` is tracked; paste the complete plan into the PR/MR description when `docs/plans/` is ignored and one exists.
 6. **Gate.** Enter: step 5 exited `0`. Emit: Approval record. Stop: mandatory, until 6.4 is satisfied.

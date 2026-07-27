@@ -397,7 +397,15 @@ class QuotedPathTests(unittest.TestCase):
 
 class CrossSkillAgreementTests(unittest.TestCase):
     MINIMUM_MARGIN_CHARS = 1500
-    MAX_PLAN_GATED_METHODOLOGY_CHARS = 37500
+    # Raised once, deliberately, for plan tiers (v0.24.0). This ratchet measures
+    # agent context — loaded once, cached, cheap. Tiering spends ~700 characters
+    # of it to take roughly 2,000 words off every small plan a human reads at the
+    # gate, on every change; the 2026-07-27 Flik plan ran to 3,166 words and ~14
+    # minutes. The proxy cannot see what is being bought, and refusing a good
+    # trade because a proxy says no is the wrong use of a guard. Two blocks of
+    # rehearsed checker output were cut from worked-change.md first, so the raise
+    # is 500 rather than 1,200. Lower it again if worked-change.md is retired.
+    MAX_PLAN_GATED_METHODOLOGY_CHARS = 38000
     """ctdd-tests keeps craft work (de-flaking, altitude, renaming) out of the
     plan gate, while every consumer of the diff — this script, the hook, and
     ctdd-review — reads any modified test as a changed requirement. Both are
@@ -588,6 +596,31 @@ class CrossSkillAgreementTests(unittest.TestCase):
                         line[:m.start()].endswith("${CLAUDE_PLUGIN_ROOT}/scripts/"),
                         f"{path.parent.name}/SKILL.md:{i} names {m.group(0)} without "
                         f"the ${{CLAUDE_PLUGIN_ROOT}}/scripts/ anchor")
+
+    def test_review_discriminators_are_in_the_body_not_the_unloaded_rationale(self):
+        """ctdd-review marks `references/rationale.md` do-not-load, and the v0.23.0
+        rewrite left four operative discriminators there: proportionality, ADR
+        decision-vs-description, test-and-code agreeing on the wrong thing, and
+        silent fixes erasing the record. The checklist survived; the judgment that
+        makes each item decidable did not. `additive is compatible` was in neither
+        file. A rule shelved behind a do-not-load pointer is deleted with a filing
+        cabinet attached."""
+        t = (self._skills() / "ctdd-review" / "SKILL.md").read_text(encoding="utf-8")
+        for phrase in ("three-line fix gets a three-line review",
+                       "records the decision **and its tradeoffs**",
+                       "agree on the wrong thing",
+                       "Additive changes are compatible",
+                       "silent fix erases the review record"):
+            self.assertIn(phrase, t,
+                          f"ctdd-review lost the discriminator: {phrase!r}")
+
+    def test_review_verification_step_is_marked_re_enterable(self):
+        """Step 5 runs verification; steps 6 and 7 produce the candidates. Stated
+        as a strict precondition chain, `reproduced` — the top evidence class —
+        depended on a run that preceded the thing it verifies."""
+        t = (self._skills() / "ctdd-review" / "SKILL.md").read_text(encoding="utf-8")
+        step5 = t.split("\n5. **Run relevant verification.", 1)[1].split("\n6. ", 1)[0]
+        self.assertIn("Re-enterable", step5)
 
     def test_every_shown_invocation_carries_its_required_arguments(self):
         """A compression pass anchored the paths and dropped the arguments, so

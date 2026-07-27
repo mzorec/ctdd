@@ -17,6 +17,7 @@ Intended behavior:
 
 BLOCKING - I will not guess
 Proceeding unless you object
+Decisions confirmed in session (conditional: include only when a BLOCKING question was answered before approval)
 Risk level: <normal | high-risk> - <one-line reason>
 Existing behavior
 Known gaps
@@ -39,6 +40,12 @@ Files likely to change
 Residual risk
 ```
 
+## Plan tiers
+
+`check-plan.py` requires a different section set depending on what the plan declares, and names the tier and count it applied on every run. The tier is **derived, never written**: `small` needs `contract: none`, `risk: normal`, `hold-out: not required`, and `New-behavior tests: none`; any contract delta, `high-risk`, or a required hold-out is `large`; everything else is `medium`. So `small` cannot be claimed over a contract delta the way `trivial` was once claimed over an absent diff.
+
+Tiers shrink **documentation**, never **evidence**. Both test headings, the risk line, the verification commands, and the approval gate are required at every tier — a tier that could drop one would rebuild the triviality hole under a friendlier name.
+
 ## Field rules
 
 The complete example below is the operative instruction: anything it demonstrates is not restated here. These are the rules an example cannot carry — prohibitions, decisions with more than one branch, and transitions that leave no trace in a finished plan.
@@ -52,7 +59,7 @@ The complete example below is the operative instruction: anything it demonstrate
 7. Use `result: pending` until the required hold-out runs. Before the packet, replace it with `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; unavailability is never a decline.
 8. When the human declines a required hold-out, list the load-bearing expected values the human must verify independently, and do not label that fallback a hold-out result.
 9. Use exact file paths; never write wildcards, directories, `(+ tests)`, `TBD`, or unnamed future files.
-10. Replace every resolved BLOCKING question with its decision before approval. Re-run the checker after every plan edit; re-present when the answer changes any other presented decision.
+10. Record every resolved BLOCKING answer under `Decisions confirmed in session` and remove the question it answered before approval; an approved plan must not still be asking, and the answer must be findable without the chat. Re-run the checker after every plan edit; re-present when the answer changes any other presented decision.
 
 `ctdd-tests` owns test naming, altitude, assertion form, and what may not be asserted. Do not restate them here: two copies of a test rule drift, and the one in this file is the copy nobody checks.
 

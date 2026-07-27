@@ -95,6 +95,63 @@ REQUIRED = [
 # "Risk: trivial —\n" would let the next section masquerade as the reason.
 TRIVIAL = re.compile(r"risk\s*(level)?\s*[:—-]\s*trivial\b[^\n]{3,}", re.I)
 
+# --- Plan tiers -------------------------------------------------------------
+# The 2026-07-27 Flik change produced a 31,448-character plan: 3,166 words, ~14
+# minutes to read at the gate, 5.8x the canonical example. The format had one
+# gear, and closing the "no diff exists" triviality hole in v0.23.0 routed every
+# fresh change into it. A gate a human skims is a gate that does not gate
+# (finding #30 is the standing evidence for what gets skipped when it is
+# expensive).
+#
+# The tier is DERIVED, never self-declared: it is a function of the categorical
+# line and the new-behavior heading the plan already writes, both of which this
+# checker already reads. Declaring `small` while carrying a contract delta is
+# not possible, because nothing is declared.
+_CONTRACT_NONE = re.compile(r"contract\s*[:=]\s*none\b", re.I)
+_HIGH_RISK = re.compile(r"risk\s*(level)?\s*[:—-]\s*high-risk\b", re.I)
+_HOLDOUT_FIELD = re.compile(r"hold.?out\s*[:=]\s*([^\n·|]*)", re.I)
+
+
+def _holdout_required(text):
+    r"""The categorical line reads `hold-out: <not required | required: ...>`.
+
+    A regex looking for the word `required` matches `not required` too, and a
+    negative lookahead does not help because `\s*` backtracks to zero width and
+    steps over it. Read the field and look at what it starts with.
+    """
+    m = _HOLDOUT_FIELD.search(text)
+    return bool(m) and m.group(1).strip().lower().startswith("required")
+_NEW_BEHAVIOUR_NONE = re.compile(
+    r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*new[- ]behavio(?:u)?r\s+tests?\b[^\n]*?"
+    r":\s*none\b", re.I | re.MULTILINE)
+
+SMALL_SECTIONS = {
+    "decision summary: BLOCKING", "decision summary: proceeding", "risk level",
+    "existing behavior", "proposed tests: new-behavior heading",
+    "proposed tests: preservation-pin heading", "verification", "files to change",
+}
+MEDIUM_SECTIONS = SMALL_SECTIONS | {
+    "assumptions", "uncovered/ambiguous", "implementation slices",
+    "hold-out decision", "residual risk",
+}
+
+
+def plan_tier(text):
+    """large | medium | small — derived, so it cannot be claimed."""
+    if (not _CONTRACT_NONE.search(text)) or _HIGH_RISK.search(text) \
+            or _holdout_required(text):
+        return "large"
+    if _NEW_BEHAVIOUR_NONE.search(text):
+        return "small"
+    return "medium"
+
+
+def required_for(tier):
+    if tier == "large":
+        return REQUIRED
+    allowed = SMALL_SECTIONS if tier == "small" else MEDIUM_SECTIONS
+    return [(n, rx) for n, rx in REQUIRED if n in allowed]
+
 
 def _load_surface():
     """Import the sibling classifier so 'spec surface' has one definition."""
@@ -270,14 +327,17 @@ def main():
               "test/contract surface.")
         return 0
 
-    missing = [name for name, pat in REQUIRED
+    tier = plan_tier(text)
+    required = required_for(tier)
+    missing = [name for name, pat in required
                if not re.search(pat, text, re.IGNORECASE | re.MULTILINE)]
     if missing:
-        print("check-plan: MISSING sections — " + ", ".join(missing))
+        print(f"check-plan: MISSING sections for a {tier} plan — " + ", ".join(missing))
         print("A plan that omits a section hasn't decided it; it has skipped it.")
         return 1
-    print("check-plan: all mandatory sections present "
-          "(presence, not quality — the review still owns quality).")
+    print(f"check-plan: all mandatory sections present for a {tier} plan "
+          f"({len(required)} of {len(REQUIRED)}; presence, not quality — the "
+          f"review still owns quality).")
     return 0
 
 

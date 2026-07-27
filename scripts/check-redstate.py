@@ -169,26 +169,56 @@ def looks_like_pass(line):
     return True
 
 
-def observed_passing(log, name):
-    """(seen, passed) — the mirror of observed_failing, for pin evidence."""
-    seen = False
+def _verdicts(log, name):
+    """Every verdict the log carries for this name, in order.
+
+    A name can appear in more than one test project — the 2026-07-27 Flik change
+    had two preservation pins sharing a name across the V1 and V2 handler test
+    files. The previous implementation returned on the *first* line matching the
+    direction it wanted, so a name that failed in one project and passed in the
+    other was verified either way depending on which lane asked. That is the
+    eleventh defect of this shape: verify the subset you can read, report success.
+    """
+    out = []
     for line in log.splitlines():
         if _match_span(line, name) is not None:
-            seen = True
-            if looks_like_pass(_verdict_text(line, name)):
-                return True, True
-    return seen, False
+            text = _verdict_text(line, name)
+            if looks_like_pass(text):
+                out.append(True)
+            elif looks_like_failure(text):
+                out.append(False)
+            else:
+                out.append(None)
+    return out
+
+
+def observed_passing(log, name):
+    """(seen, passed) — the mirror of observed_failing, for pin evidence.
+
+    Every occurrence must pass. A mixed result is not a pin baseline.
+    """
+    v = _verdicts(log, name)
+    if not v:
+        return False, False
+    return True, all(x is True for x in v)
 
 
 def observed_failing(log, name):
-    """(seen, failed) — was the test mentioned at all, and on a failing line?"""
-    seen = False
-    for line in log.splitlines():
-        if _match_span(line, name) is not None:
-            seen = True
-            if looks_like_failure(_verdict_text(line, name)):
-                return True, True
-    return seen, False
+    """(seen, failed) — was the test mentioned, and did every occurrence fail?"""
+    v = _verdicts(log, name)
+    if not v:
+        return False, False
+    return True, all(x is False for x in v)
+
+
+def ambiguous_names(log, names):
+    """Names whose occurrences disagree — reported so a mixed run cannot pass silently."""
+    out = []
+    for n in names:
+        v = _verdicts(log, n)
+        if len(v) > 1 and len(set(v)) > 1:
+            out.append((n, len(v)))
+    return out
 
 
 # Headings that introduce tests whose evidence runs the OTHER way: a pin /
@@ -360,6 +390,7 @@ def main():
     if expect_pass:
         # Pin / characterization evidence: the named tests assert behavior that
         # ALREADY exists, so the proof is green-against-the-old-implementation.
+        amb = ambiguous_names(log, names)
         ok, red, unclear, missing = [], [], [], []
         for name in names:
             seen, passed = observed_passing(log, name)
@@ -371,13 +402,19 @@ def main():
                 red.append(name)
             else:
                 unclear.append(name)
-        if not red and not missing and not unclear:
+        if not red and not missing and not unclear and not amb:
             print(f"check-redstate: {', '.join(ok)}")
             print(f"check-redstate: all {len(ok)} pin test(s) observed PASSING against the "
                   f"current implementation — preservation baseline captured. Re-run the same "
                   f"tests after the change; they must still pass.")
             return 0
         print("check-redstate: PIN BASELINE NOT VERIFIED.")
+        if amb:
+            print(f"  occurrences disagree ({len(amb)}): " +
+                  ", ".join(f"{n} ({c} occurrences)" for n, c in amb))
+            print("    The name runs in more than one test project and the results "
+                  "differ. Rename so each pin identifies one test, or verify each "
+                  "project's log separately — a mixed run is not a baseline.")
         if red:
             print(f"  failed against the current implementation ({len(red)}): {', '.join(red)}")
             print("    A pin that fails before the change does not describe what the code "
@@ -412,6 +449,11 @@ def main():
         return 0
 
     print("check-redstate: RED STATE NOT VERIFIED.")
+    if ambiguous_names(log, names):
+        print(f"  occurrences disagree: " + ", ".join(
+            f"{n} ({c} occurrences)" for n, c in ambiguous_names(log, names)))
+        print("    The same name runs in more than one test project with differing "
+              "results. Red state is not verified by whichever copy failed first.")
     if passing:
         print(f"  passed before implementation ({len(passing)}): {', '.join(passing)}")
         print("    A new test that passes before the implementation exists is a finding: "
