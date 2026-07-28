@@ -31,8 +31,10 @@ Do not infer an order among these condition-triggered rules.
 |---|---|---|
 | Pre-plan statements | `stdout` | Baseline: `Baseline: branch=<name>; target=<name>; diff-base=<commit>; staged=<summary>; unstaged=<summary>; untracked=<summary>.` Intent: `Business requirement: <one or two sentences>.` Current-behavior reading: `Current behavior:` plus exact path/test bullets, or the one bullet `greenfield; no existing contract or tests found`, ending `Correct this reading before I plan.` |
 | Trivial-risk declaration | `stdout` and PR/MR description | `Risk: trivial — <reason>. Skipping the plan gate.` Emit only through step 3.6. |
-| Implementation plan | `${CLAUDE_PROJECT_DIR}/docs/plans/<name>.md`, `stdout`, and PR/MR description when `docs/plans/` is ignored | Every section and field rule of `references/plan-format.md`, in the order that file displays. Name `<name>` as `<TICKET>-<kebab-slug>`, or `<YYYY-MM-DD>-<kebab-slug>` without a ticket. |
+| Implementation plan | `${CLAUDE_PROJECT_DIR}/docs/plans/<name>.md`, and PR/MR description when `docs/plans/` is ignored | Every section and field rule of `references/plan-format.md`, in the order that file displays. |
 | Plan pointer | PR/MR description when `docs/plans/` is tracked | `CTDD-Plan: docs/plans/<name>.md` |
+| Decision prompt | interactive question when offered, else `stdout` | 2–4 exclusive options, one recommended with a one-line reason, free text always accepted. A selection is a message from the human and counts as an answer; a harness accepting a plan is not. |
+| Gate presentation | `stdout` | `Plan: <path> (<tier>)`, the categorical `Risk:` line and the decision summary verbatim, then every section `plan-format.md` marks **gate-visible**, in full. Then anything the human must act on. Omit none: nobody can approve what they were not shown. |
 | Approval record | `stdout` | `Approved by: <human message quoted>; plan: docs/plans/<name>.md.` |
 | ADR | `${CLAUDE_PROJECT_DIR}/docs/adr/NNNN-<kebab-slug>.md` | `references/adr-template.md` rendered with Context, Decision, and Consequences. |
 | Contract change | Exact repo-relative contract path listed in the plan | Valid OpenAPI, JSON Schema, protobuf, AsyncAPI, Pact, or repository-native contract syntax. |
@@ -48,7 +50,7 @@ Execute steps 0–10 in ascending order. Until the step 6 Approval record exists
    3. Stop and ask which base to use when the target branch is absent, disputed, or has no merge-base.
    4. Treat an intentional review diff as input, and stop and report unrelated target-file edits as contamination.
 1. **Confirm intent.** Enter: step 0 printed the Baseline statement. Emit: Intent statement. Stop: ambiguity.
-   1. Stop for an answer when the business requirement is ambiguous, and never proceed on an assumed answer.
+   1. Stop for an answer as a Decision prompt when the business requirement is ambiguous, and never proceed on an assumed answer.
 2. **Read the existing slice.** Enter: step 1 has an unambiguous requirement. Emit: Current-behavior reading. Continue: always.
    1. Read the relevant contract, tests, changed files, routes, messages, and domain terms.
    2. Derive current behavior from the contract and tests; use the implementation only for behavior neither states.
@@ -70,14 +72,14 @@ Execute steps 0–10 in ascending order. Until the step 6 Approval record exists
 5. **Write and validate the plan.** Enter: step 4 produced every draft. Emit: Implementation plan, Plan pointer. Stop: checker failure.
    1. Read `references/plan-format.md`.
    2. Leave plan mode before writing or updating the canonical plan. Treat every harness plan file as non-authoritative.
-   3. Write the Implementation plan to its exact path. For a bug fix, require a short complete plan whose `New-behavior tests` section names the regression test.
+   3. Write the Implementation plan to its exact path. Its tier is derived from what it declares, not chosen. For a bug fix, require a short complete plan whose `New-behavior tests` section names the regression test.
    4. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" "${CLAUDE_PROJECT_DIR}/docs/plans/<name>.md"`, fix every reported failure, and re-run until it exits `0`.
    5. Add the Plan pointer and commit the plan file when `docs/plans/` is tracked; paste the complete plan into the PR/MR description when `docs/plans/` is ignored and one exists.
-6. **Gate.** Enter: step 5 exited `0`. Emit: Approval record. Stop: mandatory, until 6.4 is satisfied.
-   1. Print the complete plan verbatim followed by its path outside a plan-mode approval surface.
-   2. Copy the canonical decision summary verbatim and append its path inside a plan-mode approval surface.
-   3. Stop for explicit approval. Write no contract, test, ADR, or production file, and execute no later step, until 6.4 is satisfied.
-   4. Require an affirmative message from the human approving this plan. Your own restatement, silence, a subagent verdict, a passing checker, and harness acceptance of a plan-mode surface are not approval.
+6. **Gate.** Enter: step 5 exited `0`. Emit: Gate presentation, Approval record. Stop: mandatory, until 6.4 is satisfied.
+   1. Print the Gate presentation outside a plan-mode approval surface. The plan file stays the complete artifact.
+   2. Copy the canonical decision summary verbatim into any plan-mode surface, with its path.
+   3. Stop for explicit approval. Ask it as a Decision prompt: approve, approve with changes, reject. Write no contract, test, ADR, or production file, and execute no later step, until 6.4 is satisfied.
+   4. Require an affirmative message from the human approving this plan. Your own restatement, silence, a subagent verdict, and a passing checker are not approval.
    5. Treat approval as authorization to execute the plan file.
 7. **Apply approved artifacts and create test evidence.** Enter: step 6 printed the Approval record. Emit: contract, ADR, tests, pin-state logs, red-state log. Stop: 7.2, 7.8, 7.12.
    1. Re-check the working tree against step 0.
@@ -98,9 +100,9 @@ Execute steps 0–10 in ascending order. Until the step 6 Approval record exists
    3. Run the contract validator, the focused tests, the broader suite, and the build in the current turn; re-run every preservation pin named in the plan to the pin-state-after path; record `NOT RUN — <reason>` for anything absent, and never reuse an earlier turn's output.
    4. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <diff-base>`.
    5. Compare its inventory with `Files likely to change`.
-   6. Stop and reopen the gate when the approved specification is wrong, when 8.5 exceeds the plan, or when requested feedback falls outside approved scope: amend the plan file with the old and new form, re-run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" <plan-path>`, return to step 6, and resume at the lowest invalidated step after re-approval.
+   6. Stop and reopen the gate when the approved specification is wrong, when 8.5 exceeds the plan, or when requested review feedback falls outside approved scope (feedback inside scope re-enters at the lowest invalidated step, no new plan): amend the plan file with the old and new form, re-run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" <plan-path>`, return to step 6, and resume at the lowest invalidated step after re-approval.
 9. **Produce the review packet.** Enter: step 8 produced current-turn results. Emit: Review packet. Stop: 9.1.
-   1. Stop for the required sealed hold-out result from the named runner. Resolve it to `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; only the human declines, an unavailable runner is `NOT RUN`, and `failed` blocks.
+   1. Stop for the required sealed hold-out result from the named runner, asking write / decline / defer as a Decision prompt. Resolve it to `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; only the human declines, an unavailable runner is `NOT RUN`, and `failed` blocks.
    2. Set Back-translation to one sentence derived from the changed tests, or to `n/a — no test diff`.
    3. Read `references/execution.md` now even if read earlier; re-run its checkers and assemble its exact packet.
    4. Invoke `ctdd-review` on the final diff for an independent verdict, and never state that verdict yourself.
@@ -109,4 +111,4 @@ Execute steps 0–10 in ascending order. Until the step 6 Approval record exists
    1. Write no note for behavior already expressed by a test or contract.
    2. When the change leaves one universal rule, deliberate gap, or durable external fact not expressed by a test or contract, read `references/colocated-notes.md` and write one Colocated note.
 ## Evidence and break points
-Before implementing, classify the run as **pin pass**, **intended red**, **compile red**, **wrong red**, **premature green**, **pin fail**, or **weakened green**. Only pin pass and intended red authorize step 8; compile red and wrong red require a re-run to intended red; premature green, pin fail, and weakened green stop and reopen the gate. A checker that cannot run, cannot read its input, or exits `2` leaves its claim unverified. `references/execution.md` carries the required action for every state and break point, the packet assembly, and the standalone-ADR procedure.
+Before implementing, classify the run as **pin pass**, **intended red**, **compile red**, **wrong red**, **premature green**, **pin fail**, or **weakened green**. Only pin pass and intended red authorize step 8. A checker that cannot run, cannot read its input, or exits `2` leaves its claim unverified. `references/execution.md` carries the required action for every state and break point, the packet assembly, and the standalone-ADR procedure.

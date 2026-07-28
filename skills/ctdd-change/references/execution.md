@@ -10,7 +10,8 @@ the required action for each.
 |---|---|
 | Pin pass: a named pin passes before the change | Proceed; re-run after the change and require the same pass. |
 | Intended red: a named new test fails on its planned assertion | Proceed to step 8. |
-| Compile red: the test cannot compile because the planned type or member is absent | Add the smallest compile-only stub that fails as not-implemented, re-run, and require intended red. Implement nothing else. |
+| Compile red: the test cannot compile because the planned production type or member is absent | Add the smallest compile-only stub that fails as not-implemented, re-run, and require intended red. Implement nothing else. |
+| Compile red: the test cannot compile for its own reasons — a wrong `using`, a missing test-project reference, a typo | Fix the test support and re-run. Add no production code and no stub: the production API is not what is missing. |
 | Wrong red: the failure comes from setup, environment, a typo, or an unrelated defect | Fix that cause, re-run, and require intended red. A wrong red never unlocks step 8. |
 | Premature green: a named new test passes before implementation | Stop. Report whether the behavior already exists or the assertion fails to constrain it, and return to step 6. |
 | Pin fail: a named pin fails before the change | Stop. The pin describes behavior the code never had; return to step 6. |

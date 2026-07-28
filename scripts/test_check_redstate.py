@@ -624,5 +624,40 @@ class ExtractionHardeningTests(unittest.TestCase):
 
 
 
+class DuplicateNameTests(unittest.TestCase):
+    """Found by the 2026-07-27 Flik change: two preservation pins shared a name
+    across the V1 and V2 handler test files. Both matchers returned on the first
+    line matching the direction asked, so a name failing in one project and
+    passing in the other was verified either way — the eleventh defect of the
+    shape 'verify the subset you can read, report success'."""
+
+    MIXED = "  Failed Dup [1 ms]\n  Passed Dup [1 ms]\n"
+
+    def test_a_mixed_result_is_not_red_state(self):
+        r = run(write(self.MIXED), "--test", "Dup")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("occurrences disagree", r.stdout)
+        self.assertIn("Dup (2 occurrences)", r.stdout)
+
+    def test_a_mixed_result_is_not_a_pin_baseline(self):
+        r = run(write(self.MIXED), "--test", "Dup", "--expect-pass")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("occurrences disagree", r.stdout)
+
+    def test_every_occurrence_agreeing_still_verifies_red(self):
+        r = run(write("  Failed X [1 ms]\n  Failed X [2 ms]\n"), "--test", "X")
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_every_occurrence_agreeing_still_verifies_pins(self):
+        r = run(write("  Passed X [1 ms]\n  Passed X [2 ms]\n"),
+                "--test", "X", "--expect-pass")
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_a_single_occurrence_is_never_reported_as_ambiguous(self):
+        r = run(write("  Failed Solo [1 ms]\n"), "--test", "Solo")
+        self.assertEqual(r.returncode, 0)
+        self.assertNotIn("occurrences disagree", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

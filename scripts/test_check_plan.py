@@ -168,6 +168,53 @@ class CheckPlanTests(unittest.TestCase):
                 f"plan-format.md makes {h.split(':')[0].strip()!r} mandatory and no "
                 f"REQUIRED pattern detects it; the gate would pass a plan without it")
 
+    def test_the_tier_is_derived_from_declarations_not_claimed(self):
+        """The 2026-07-27 Flik plan ran to 31,448 chars — ~14 minutes to read at
+        the gate, 5.8x the canonical example — because the format had one gear
+        and v0.23.0's triviality fix routed every fresh change into it. Tiers
+        shrink documentation, never evidence: both test headings, the gate, and
+        verification stay required at every tier. And the tier is a function of
+        the categorical line, so `small` cannot be asserted over a contract
+        delta the way `trivial` once could be asserted over an absent diff."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("cp_tier", SCRIPT)
+        cp = importlib.util.module_from_spec(spec); spec.loader.exec_module(cp)
+
+        base = ("Risk: normal · contract: none · ADR: none · hold-out: not required\n"
+                "New-behavior tests — must be observed failing:\n- t\n")
+        preserving = base.replace("failing:\n- t\n", "failing: none — unchanged\n")
+        self.assertEqual(cp.plan_tier(preserving), "small")
+        self.assertEqual(cp.plan_tier(base), "medium")
+        self.assertEqual(cp.plan_tier(base.replace("contract: none", "contract: additive")), "large")
+        self.assertEqual(cp.plan_tier(base.replace("Risk: normal", "Risk: high-risk")), "large")
+        self.assertEqual(
+            cp.plan_tier(base.replace("hold-out: not required", "hold-out: required: 2 sealed")),
+            "large")
+
+    def test_not_required_is_not_read_as_required(self):
+        """`hold-out: not required` contains the word `required`. The first
+        pattern matched it and made every plan large; a negative lookahead did
+        not help because `\\s*` backtracks to zero width and steps over it."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("cp_ho", SCRIPT)
+        cp = importlib.util.module_from_spec(spec); spec.loader.exec_module(cp)
+        self.assertFalse(cp._holdout_required("hold-out: not required"))
+        self.assertTrue(cp._holdout_required("hold-out: required: 2 sealed tests"))
+
+    def test_every_tier_keeps_both_test_headings_and_verification(self):
+        """Tiers shrink documentation, never evidence. If a tier could drop a
+        test heading or the verification commands, it would rebuild the
+        triviality hole under a friendlier name."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("cp_sec", SCRIPT)
+        cp = importlib.util.module_from_spec(spec); spec.loader.exec_module(cp)
+        for tier in ("small", "medium", "large"):
+            names = {n for n, _ in cp.required_for(tier)}
+            for must in ("proposed tests: new-behavior heading",
+                         "proposed tests: preservation-pin heading",
+                         "verification", "risk level", "files to change"):
+                self.assertIn(must, names, f"{tier} dropped {must}")
+
     def test_a_single_test_heading_fails_the_gate(self):
         """Both headings are mandatory, even when one is empty. A plan with only
         one has no correct lane at step 7 — the default check reads pins as new

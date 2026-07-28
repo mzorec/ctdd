@@ -17,6 +17,7 @@ Intended behavior:
 
 BLOCKING - I will not guess
 Proceeding unless you object
+Decisions confirmed in session (conditional: include only when a BLOCKING question was answered before approval)
 Risk level: <normal | high-risk> - <one-line reason>
 Existing behavior
 Known gaps
@@ -39,6 +40,20 @@ Files likely to change
 Residual risk
 ```
 
+Name the plan file `<TICKET>-<kebab-slug>.md`, or `<YYYY-MM-DD>-<kebab-slug>.md` without a ticket.
+
+## Gate-visible sections
+
+The plan file is the complete artifact; the terminal is where the human decides. These go to `stdout` in full at step 6.1 whatever the plan's length — each carries a judgement the human may disagree with, and a long plan loses them first:
+
+`Business requirement` · `Assumptions` · `Uncovered or ambiguous` · `Known gaps` · `NFR budgets` · `Residual risk` · `Hold-out` · `ADR draft` when one exists.
+
+## Plan tiers
+
+`check-plan.py` requires a different section set depending on what the plan declares, and names the tier and count it applied on every run. The tier is **derived, never written**: `small` needs `contract: none`, `risk: normal`, `hold-out: not required`, and `New-behavior tests: none`; any contract delta, `high-risk`, or a required hold-out is `large`; everything else is `medium`. So `small` cannot be claimed over a contract delta the way `trivial` was once claimed over an absent diff.
+
+Tiers shrink **documentation**, never **evidence**. Both test headings, the risk line, the verification commands, and the approval gate are required at every tier — a tier that could drop one would rebuild the triviality hole under a friendlier name.
+
 ## Field rules
 
 The complete example below is the operative instruction: anything it demonstrates is not restated here. These are the rules an example cannot carry — prohibitions, decisions with more than one branch, and transitions that leave no trace in a finished plan.
@@ -48,11 +63,11 @@ The complete example below is the operative instruction: anything it demonstrate
 3. Put each changed existing assertion in `Changed existing assertions` with its old and new forms.
 4. Cover every applicable row of **Required case coverage** below, and record every row the change does not reach under `Case coverage not reached` as `<case> — n/a — <reason>`; never leave a row unaddressed.
 5. Require a hold-out for money, authorization, state-machine, rounding, inclusivity, timezone, fee-treatment, or other load-bearing boundary semantics.
-6. Ask the human to write 1–3 hold-out tests directly from the business requirement and keep their contents outside the agent-readable working tree.
+6. Present a required hold-out as a decision, not a notice: name the 1–3 assertions to write, each an observable input and the expected output; give `write` and `decline` with their consequences; recommend one with a reason. "Write some sealed tests" has been declined six times; a named assertion with a number to compute is a five-minute task. Contents stay outside the agent-readable tree.
 7. Use `result: pending` until the required hold-out runs. Before the packet, replace it with `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; unavailability is never a decline.
 8. When the human declines a required hold-out, list the load-bearing expected values the human must verify independently, and do not label that fallback a hold-out result.
 9. Use exact file paths; never write wildcards, directories, `(+ tests)`, `TBD`, or unnamed future files.
-10. Replace every resolved BLOCKING question with its decision before approval. Re-run the checker after every plan edit; re-present when the answer changes any other presented decision.
+10. Record every resolved BLOCKING answer under `Decisions confirmed in session` and remove the question it answered before approval; an approved plan must not still be asking, and the answer must be findable without the chat. Re-run the checker after every plan edit; re-present when the answer changes any other presented decision.
 
 `ctdd-tests` owns test naming, altitude, assertion form, and what may not be asserted. Do not restate them here: two copies of a test rule drift, and the one in this file is the copy nobody checks.
 
@@ -145,9 +160,11 @@ Verification
 Hold-out
 - decision: required
 - reason: money-path amount and boundary semantics
-- request: 2 sealed tests written and withheld by the human
-- storage: separate hold-out repository unavailable to the agent session
-- runner: CI hold-out job, once after the visible suite is green
+- request: 2 sealed tests. (1) capture 33.33 against an authorization of 100.00, assert the remaining authorized amount you compute yourself. (2) capture the exact authorized amount, assert the resulting status. Your own words, not the names above.
+- options: `write` — 2 assertions, ~5 minutes; `decline` — recorded as `declined by human`, and this plan then lists the values you must verify independently.
+- recommended: `write` — the edge was derived from the same document the implementation reads, so nothing in the agent's suite is independent evidence it is right.
+- storage: separate repository, unavailable to this session
+- runner: CI hold-out job, once the visible suite is green
 - result: pending
 - human-verified expected values: n/a
 

@@ -32,10 +32,6 @@ The contract and the tests state the rule. `CaptureService.cs` is read only for 
 
 ## Step 3 — classification
 
-```
-$ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git a1b2c3d
-check-spec-surface: empty input — nothing was inspected, so no verdict is given. If the diff really is empty, pass --allow-empty.
-```
 
 No diff exists yet, so 3.2 fails and the change is plan-gated. No trivial declaration is emitted.
 
@@ -97,14 +93,6 @@ Two of the four did not reach that verdict on the first run, and each was resolv
 
 Implementation follows the `Implementation slices` order, one slice per named test.
 
-```
-$ dotnet test --filter CaptureTests   => 10 passed, 0 failed
-$ dotnet test                         => 412 passed, 0 failed
-$ dotnet build                        => exit 0
-$ spectral lint payments/contract/openapi.yaml => no errors
-$ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git a1b2c3d
-Verdict: SPEC SURFACE TOUCHED — changed tests are changed requirements, contract diffs are boundary changes, and this change is not trivial whatever the plan's risk line says. (exit 1 = attention, not error)
-```
 
 The inventory lists `payments/contract/openapi.yaml` and `tests/payments/CaptureTests.cs`, both in `Files likely to change`, so nothing is reopened.
 
@@ -130,15 +118,3 @@ Residual risk: The released remainder's expiry path is exercised only by the sea
 ```
 
 `ctdd-review` is then invoked on the final diff. Its verdict is not written here.
-
-## Lane variants
-
-| Lane | What differs |
-|---|---|
-| Bug fix | Same sections, kept to one line each. The regression test is a new-behavior test and must be observed red; the behavior it protects gets a pin. Never the trivial lane. |
-| Trivial | Only through 3.2–3.5: an existing diff, checker exit `0`, code-only, covered by named tests. Emit the declaration, go to step 8, and produce the packet with `Plan: n/a — trivial`. |
-| Structural decision | Step 4.3 fires: the ADR fields are drafted inside the plan and the ADR file is written at step 7.3, never before approval. |
-| Contract or event-schema change | `Contract changes` names compatibility, consumers, and rollout; the plan names a serialization case; the contract file is written at step 7.3 before the tests are run. |
-| Preservation-only refactor | `New-behavior tests: none — behavior is unchanged` on the heading line. Steps 7.10–7.12 are skipped, `Red state: n/a — plan declares none` in the packet, and the pins carry the whole proof. |
-| Review-feedback implementation | Enters at step 0 with the review as input. Feedback inside approved scope is implemented under the existing plan; feedback outside it fires 8.6. |
-| Standalone ADR | The change workflow does not run. `SKILL.md` **Standalone ADR procedure** only. |
