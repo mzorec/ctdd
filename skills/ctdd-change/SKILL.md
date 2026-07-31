@@ -9,7 +9,7 @@ description: >-
   Reject pipeline, Dockerfile, deployment, build-tooling, and visual-only work.
 ---
 # CTDD: drive a backend change
-Load a reference only where a step below names it. Never load `references/rationale.md` during a change.
+`python3` on PATH is a dead stub on many Windows installs; fall back to `py -3` or the full `python.exe` path. Load a reference only where a step below names it. Never load `references/rationale.md` during a change.
 ## Routing
 - Route a task whose deliverable is only tests, with observable behavior unchanged, to `ctdd-tests`.
 - Route judging an existing diff, branch, commit, PR, or MR to `ctdd-review`. Implementing its feedback stays here.
@@ -25,7 +25,7 @@ Do not infer an order among these condition-triggered rules.
 - Require property tests, boundary contract tests, and human review for retries, ordering, eventual consistency, async messaging, or partial failure.
 - Stop on incompatible claims about the same observable constraint.
 - Resolve an artifact conflict against the business requirement through an approved amendment.
-- Do not approve your own plan, and do not issue the `ctdd-review` verdict on your own diff.
+- Do not approve your own plan, and do not issue the `ctdd-review` verdict on your own diff — loading its procedure here is still you.
 ## Output contract
 | Output name | Exact path | Required shape |
 |---|---|---|
@@ -105,7 +105,7 @@ Execute steps 0–10 in ascending order. Until the step 6 Approval record exists
    1. Stop for the required sealed hold-out result from the named runner, asking write / decline / defer as a Decision prompt. Resolve it to `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; only the human declines, an unavailable runner is `NOT RUN`, and `failed` blocks.
    2. Set Back-translation to one sentence derived from the changed tests, or to `n/a — no test diff`.
    3. Read `references/execution.md` now even if read earlier; re-run its checkers and assemble its exact packet.
-   4. Invoke `ctdd-review` on the final diff for an independent verdict, and never state that verdict yourself.
+   4. Dispatch `ctdd-review` on the final diff to a separate context — a subagent, or the human — and relay its verdict verbatim. Never load `ctdd-review` into this context: the session that wrote the diff cannot review it.
 
 10. **Write a colocated note only when triggered.** Enter: step 9 printed the packet. Emit: Colocated note, or nothing.
    1. Write no note for behavior already expressed by a test or contract.
