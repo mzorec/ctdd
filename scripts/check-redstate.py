@@ -192,22 +192,37 @@ def _verdicts(log, name):
     return out
 
 
+def _marked(log, name):
+    """Only the occurrences that actually carry a verdict.
+
+    A .NET failure block mentions the name twice: `Failed <FQN> [4 ms]`, then a
+    stack-trace line `at <FQN>() in ...` with no marker at all. The first cut of
+    the duplicate-name fix required *every* occurrence to agree and counted the
+    unmarked stack line as disagreement, so ordinary red state stopped verifying
+    (2026-07-30 session, two RED STATE NOT VERIFIED before a workaround). An
+    unmarked mention is not a dissenting verdict; it is not a verdict.
+    """
+    return [x for x in _verdicts(log, name) if x is not None]
+
+
 def observed_passing(log, name):
     """(seen, passed) — the mirror of observed_failing, for pin evidence.
 
-    Every occurrence must pass. A mixed result is not a pin baseline.
+    Every *verdict* must pass. A mixed result is not a pin baseline.
     """
-    v = _verdicts(log, name)
+    seen = bool(_verdicts(log, name))
+    v = _marked(log, name)
     if not v:
-        return False, False
+        return seen, False
     return True, all(x is True for x in v)
 
 
 def observed_failing(log, name):
-    """(seen, failed) — was the test mentioned, and did every occurrence fail?"""
-    v = _verdicts(log, name)
+    """(seen, failed) — mentioned at all, and did every verdict say failed?"""
+    seen = bool(_verdicts(log, name))
+    v = _marked(log, name)
     if not v:
-        return False, False
+        return seen, False
     return True, all(x is False for x in v)
 
 
@@ -215,7 +230,7 @@ def ambiguous_names(log, names):
     """Names whose occurrences disagree — reported so a mixed run cannot pass silently."""
     out = []
     for n in names:
-        v = _verdicts(log, n)
+        v = _marked(log, n)
         if len(v) > 1 and len(set(v)) > 1:
             out.append((n, len(v)))
     return out

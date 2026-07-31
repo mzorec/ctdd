@@ -624,6 +624,40 @@ class ExtractionHardeningTests(unittest.TestCase):
 
 
 
+class StackTraceTests(unittest.TestCase):
+    """v0.24.0 regression, caught by the 2026-07-30 session. A .NET failure block
+    names the test twice — `Failed <FQN> [4 ms]`, then `at <FQN>() in ...` in the
+    stack trace, with no marker. The duplicate-name fix required every occurrence
+    to agree and read the unmarked line as dissent, so ordinary red state stopped
+    verifying: two RED STATE NOT VERIFIED before the agent worked around it. An
+    unmarked mention is not a dissenting verdict; it is not a verdict."""
+
+    FAIL_WITH_TRACE = ("  Failed Ns.Tests.T_Boundary [4 ms]\n"
+                       "  Error Message:\n   Assert.True() Failure\n"
+                       "  Stack Trace:\n     at Ns.Tests.T_Boundary() in D:\\src\\a.cs:line 42\n")
+
+    def test_a_stack_trace_repeating_the_name_still_verifies_red(self):
+        r = run(write(self.FAIL_WITH_TRACE), "--test", "T_Boundary")
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_a_stack_trace_is_not_reported_as_disagreement(self):
+        r = run(write(self.FAIL_WITH_TRACE), "--test", "T_Boundary")
+        self.assertNotIn("occurrences disagree", r.stdout)
+
+    def test_a_pin_log_with_a_trailing_unmarked_mention_still_verifies(self):
+        log = "  Passed Ns.T_Pin [1 ms]\n  (also referenced by Ns.T_Pin in the summary)\n"
+        r = run(write(log), "--test", "T_Pin", "--expect-pass")
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_genuine_disagreement_is_still_caught_alongside_a_stack_trace(self):
+        log = ("  Failed A.T_Dup [1 ms]\n     at A.T_Dup() in a.cs:line 1\n"
+               "  Passed B.T_Dup [1 ms]\n")
+        r = run(write(log), "--test", "T_Dup")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("occurrences disagree", r.stdout)
+        self.assertIn("T_Dup (2 occurrences)", r.stdout)
+
+
 class DuplicateNameTests(unittest.TestCase):
     """Found by the 2026-07-27 Flik change: two preservation pins shared a name
     across the V1 and V2 handler test files. Both matchers returned on the first
