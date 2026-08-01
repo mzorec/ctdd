@@ -105,6 +105,31 @@ def matches(path, pats):
     return any(pattern.search(path) for pattern in pats)
 
 
+# An ADR marker names a decision that governs this file. This hook is the only
+# component that fires when no skill triggered, so it is the only place the
+# reminder reaches an edit made outside the change workflow.
+ADR_MARKER = re.compile(r"\bADR-(\d{4})\b")
+ADR_MSG = ("A recorded decision governs {p}: {ids}. Read it before changing "
+           "behavior here. If this change contradicts it, amend or supersede "
+           "the ADR — a decision record that no longer matches the code is "
+           "worse than none, because the next reader trusts it.")
+
+
+def adr_markers(raw_path):
+    """ADR ids named inside the edited file. Silent on any read failure: this
+    hook must never break a session over a file it could not open."""
+    try:
+        with open(raw_path, "r", encoding="utf-8", errors="replace") as fh:
+            text = fh.read(200000)
+    except (OSError, ValueError):
+        return []
+    seen, out = set(), []
+    for m in ADR_MARKER.finditer(text):
+        if m.group(1) not in seen:
+            seen.add(m.group(1)); out.append(m.group(1))
+    return out
+
+
 def emit(event, message):
     print(json.dumps({
         "hookSpecificOutput": {"hookEventName": event, "additionalContext": message}
@@ -145,11 +170,22 @@ def main():
     if event != "PostToolUse" or tool not in ("Edit", "MultiEdit", "Write"):
         return
 
+    # One emit per event: two JSON objects on stdout is malformed output and the
+    # harness reads only the first, so a second message would silently discard
+    # whichever came second.
+    notes = []
+    ids = adr_markers(raw_path)
+    if ids:
+        notes.append(ADR_MSG.format(p=path, ids=", ".join("ADR-" + i for i in ids)))
+
     if matches(path, contract_rx):
-        emit("PostToolUse", CONTRACT_MSG.format(p=path))
+        notes.append(CONTRACT_MSG.format(p=path))
     elif tool in ("Edit", "MultiEdit") and matches(path, test_rx) \
             and (TESTS_DIR_RX.search(path) or not AMBIGUOUS_EXT.search(path)):
-        emit("PostToolUse", TEST_EDIT_MSG.format(p=path))
+        notes.append(TEST_EDIT_MSG.format(p=path))
+
+    if notes:
+        emit("PostToolUse", "\n\n".join(notes))
 
 
 if __name__ == "__main__":

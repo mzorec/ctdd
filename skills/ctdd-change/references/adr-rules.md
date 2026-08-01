@@ -18,3 +18,4 @@ Load this file only when `SKILL.md` step 4.3 fires or the Standalone ADR procedu
 14. Do not use an ADR to describe current behavior.
 15. Do not rewrite the Context, Decision, or Consequences of an accepted or superseded ADR.
 16. To reverse a decision, create a new ADR and change only the old ADR's `Status` to `Superseded by NNNN`.
+17. Mark the tests and contracts the decision governs with a comment naming it — `ADR-NNNN` and one line of what it decides — in each repository's own comment syntax. The marker moves with the file and is the only pointer between a decision and the code it constrains that cannot rot independently of what it points at. It reports relevance, not enforcement: a marked test usually exercises the area rather than asserting the decision.

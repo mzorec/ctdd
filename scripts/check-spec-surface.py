@@ -59,6 +59,42 @@ except Exception as exc:
 # ADRs are review surface too (a changed decision record is a changed "why"),
 # but they are not the hook's business, so the pattern lives here.
 ADR_PATTERNS = [re.compile(r"(^|/)adrs?/[^/]+\.md$", re.IGNORECASE)]
+
+# An ADR marker is a comment naming a decision that governs this file, e.g.
+#   // ADR-0017: Domain must not depend on frameworks
+# The marker lives with the code it governs, so it moves when the file moves and
+# anyone deleting the file sees the reference they are orphaning. That is the
+# only pointer between a decision and the code it constrains that does not rot
+# independently of what it points at.
+ADR_MARKER = re.compile(r"\bADR-(\d{4})\b")
+
+
+def markers_in(path, root="."):
+    """The ADR ids a changed file names, in first-seen order."""
+    f = os.path.join(root, path)
+    try:
+        with open(f, "r", encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except (OSError, ValueError):
+        return []
+    seen, out = set(), []
+    for m in ADR_MARKER.finditer(text):
+        if m.group(1) not in seen:
+            seen.add(m.group(1)); out.append(m.group(1))
+    return out
+
+
+def resolve_adr(adr_id, root="."):
+    """The ADR file for `NNNN`, or None. A marker naming no ADR is a broken
+    pointer, not an absent decision, and must be reported rather than skipped."""
+    for base in ("docs/adr", "docs/adrs", "adr", "adrs"):
+        d = os.path.join(root, base)
+        if not os.path.isdir(d):
+            continue
+        for name in sorted(os.listdir(d)):
+            if name.startswith(adr_id) and name.lower().endswith(".md"):
+                return os.path.join(base, name).replace(os.sep, "/")
+    return None
 PACT_HINT = re.compile(r"pact", re.IGNORECASE)
 
 
@@ -250,13 +286,38 @@ def main():
                 print(f"  - {f}")
     print(f"\nOther files touched: {other}")
 
+    # Governing ADRs, from the markers the changed files carry. This reports
+    # relevance, never absence: a decision with no marker anywhere is invisible
+    # here, so the wording must not let silence read as "no ADR applies".
+    changed = [new_p if status[:1] in ("R", "C") else old_p
+               for status, old_p, new_p in entries]
+    governing, broken = {}, {}
+    for path in changed:
+        for adr in markers_in(path):
+            target = resolve_adr(adr)
+            (governing if target else broken).setdefault(
+                target or adr, []).append(path)
+    if governing:
+        print(f"\nGoverning ADRs named by changed files ({len(governing)}):")
+        for target in sorted(governing):
+            print(f"  - {target}")
+            for src in sorted(set(governing[target])):
+                print(f"      marked in {src}")
+    if broken:
+        print(f"\nBROKEN ADR markers ({len(broken)}):")
+        for adr in sorted(broken):
+            print(f"  - ADR-{adr} is named by "
+                  f"{', '.join(sorted(set(broken[adr])))} but no such ADR file exists")
+        print("    A marker pointing at nothing is a lost decision, not an absent one.")
+
     if touched:
         print("\nVerdict: SPEC SURFACE TOUCHED — changed tests are changed "
               "requirements, contract diffs are boundary changes, and this "
               "change is not trivial whatever the plan's risk line says. "
               "(exit 1 = attention, not error)")
         return 1
-    print("\nVerdict: no test/contract/ADR surface touched.")
+    print("\nVerdict: no test/contract/ADR surface touched. ADR markers report "
+          "relevance only — no marker does not prove no decision applies.")
     return 0
 
 

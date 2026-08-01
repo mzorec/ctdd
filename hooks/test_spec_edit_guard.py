@@ -192,5 +192,43 @@ class SpecEditGuardTests(unittest.TestCase):
                           "PostToolUse", "boundary change")
 
 
+class AdrMarkerHookTests(unittest.TestCase):
+    """This hook is the only component that fires when no skill triggered, so it
+    is the only place an ADR reminder reaches an edit made outside the change
+    workflow — which was the whole reason for putting the marker in the code."""
+
+    def _file(self, body, name="Handler.cs"):
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, name)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(body)
+        return path
+
+    def test_editing_a_marked_file_reminds_about_the_decision(self):
+        path = self._file("// ADR-0017: domain independence\nclass H {}\n")
+        out = run_guard(post("Edit", path)).stdout
+        self.assertIn("ADR-0017", out)
+        self.assertIn("amend or supersede", out)
+
+    def test_an_unmarked_file_stays_silent(self):
+        path = self._file("class H {}\n")
+        out = run_guard(post("Edit", path)).stdout
+        self.assertNotIn("ADR-", out)
+
+    def test_output_is_one_json_object_even_with_two_notes(self):
+        """Two emits put two JSON objects on stdout; the harness reads the first
+        and silently drops the second."""
+        path = self._file("// ADR-0017\nclass H {}\n", name="HandlerTests.cs")
+        out = run_guard(post("Edit", path)).stdout
+        json.loads(out)  # raises on trailing data
+        self.assertIn("ADR-0017", out)
+
+    def test_an_unreadable_file_never_breaks_the_session(self):
+        r = run_guard(post("Edit", "/nonexistent/x.cs"))
+        out = r.stdout + r.stderr
+        self.assertNotIn("Traceback", out)
+
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
