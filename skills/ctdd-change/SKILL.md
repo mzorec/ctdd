@@ -52,9 +52,9 @@ Execute steps 0–10 in ascending order. Until the step 6 Approval record exists
 1. **Confirm intent.** Enter: step 0 printed the Baseline statement. Emit: Intent statement. Stop: ambiguity.
    1. Stop for an answer as a Decision prompt when the business requirement is ambiguous, and never proceed on an assumed answer.
 2. **Read the existing slice.** Enter: step 1 has an unambiguous requirement. Emit: Current-behavior reading. Continue: always.
-   1. Read the relevant contract, tests, changed files, routes, messages, and domain terms.
+   1. Read the relevant contract, tests, changed files, routes, messages, and domain terms, plus every ADR named by an `ADR-NNNN` marker in them.
    2. Derive current behavior from the contract and tests; use the implementation only for behavior neither states.
-   3. Use the greenfield bullet when nothing exists.
+   3. Use the greenfield bullet when nothing exists. Scan `docs/adr/` titles when the change adds contract surface: new surface carries no markers.
 3. **Classify the change.** Enter: step 2 printed the reading. Emit: Trivial-risk declaration, or nothing. Continue: to step 4 unless 3.6 fires.
    1. Treat the change as plan-gated unless every condition in 3.2–3.5 holds.
    2. Require a diff that already exists against `diff-base` and that contains the complete requested change; anything still to be written is plan-gated.

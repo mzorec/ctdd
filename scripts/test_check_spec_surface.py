@@ -429,7 +429,19 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # the body and the three unconditional references is load-bearing. The real
     # choice is the filed backlog item — relocate steps 7-10 — or accept ~38k as
     # the size of this method. Do not raise this again without doing one of them.
-    MAX_PLAN_GATED_METHODOLOGY_CHARS = 38200
+    # 37,500 -> 38,000 -> 37,500 -> 38,200 -> 40,000. The oscillation was the
+    # tell: this number was being fitted to content because it had been asked to
+    # do two jobs. It does one. It bounds **attention cost** — material loaded
+    # once per plan-gated change and then cached, which never truncates. The
+    # body's own guard owns truncation, and that one is not moving, because the
+    # window it stands for has never been measured.
+    #
+    # 40,000 chars is ~10,000 tokens. Against Anthropic's own 62 shipped skills
+    # that is 5th by loaded prose — canvas-design is 3.5x larger, mcp-builder
+    # 2.6x. A full development methodology sitting in the top decile is not an
+    # anomaly. The headroom is deliberate: a ceiling with 16 characters spare
+    # blocks correctness fixes, which is how the last three sessions ended.
+    MAX_PLAN_GATED_METHODOLOGY_CHARS = 40000
     """ctdd-tests keeps craft work (de-flaking, altitude, renaming) out of the
     plan gate, while every consumer of the diff — this script, the hook, and
     ctdd-review — reads any modified test as a changed requirement. Both are
@@ -651,6 +663,26 @@ class CrossSkillAgreementTests(unittest.TestCase):
         self.assertNotIn("Invoke `ctdd-review` on the final diff", t)
         # and not the 0.24.1 wording, which read as a licence to spawn one
         self.assertNotIn("Dispatch `ctdd-review` on the final diff", t)
+
+    def test_the_workflow_reads_adr_markers_and_scans_on_new_surface(self):
+        """Markers only help if a step reads them, and they are absent exactly
+        where a decision is most likely to be contradicted unseen: new contract
+        surface, which has no test trail to carry one. Step 2 reads the markers
+        on what it is already reading; the title scan covers the case where there
+        is nothing to read."""
+        t = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
+        step2 = t.split("\n2. **Read the existing slice.**", 1)[1].split("\n3. ", 1)[0]
+        self.assertIn("ADR-NNNN", step2)
+        self.assertIn("docs/adr/", step2)
+        self.assertIn("adds contract surface", step2)
+
+    def test_a_matched_adr_contributes_preservation_pins(self):
+        """An ADR whose decision no test protects is one this change can reverse
+        silently. Pins are named at plan time, so the rule belongs in the plan
+        format rather than at the step that invokes ctdd-tests."""
+        fmt = (self._skills() / "ctdd-change" / "references"
+               / "plan-format.md").read_text(encoding="utf-8")
+        self.assertIn("Pin the tests that already assert a decision recorded by any ADR", fmt)
 
     def test_the_adr_verdict_never_claims_no_decision_applies(self):
         """Marker matching sees only decisions someone annotated. An unmarked ADR

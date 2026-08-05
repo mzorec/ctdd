@@ -109,6 +109,10 @@ TRIVIAL = re.compile(r"risk\s*(level)?\s*[:—-]\s*trivial\b[^\n]{3,}", re.I)
 # not possible, because nothing is declared.
 _CONTRACT_NONE = re.compile(r"contract\s*[:=]\s*none\b", re.I)
 _HIGH_RISK = re.compile(r"risk\s*(level)?\s*[:—-]\s*high-risk\b", re.I)
+CATEGORICAL_LINE = re.compile(r"contract\s*:.*hold.?out\s*:", re.I)
+HOLDOUT_BLOCK = re.compile(
+    r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*hold.?out\b.*?(?=\n\s*\n|\Z)",
+    re.I | re.M | re.S)
 _HOLDOUT_FIELD = re.compile(r"hold.?out\s*[:=]\s*([^\n·|]*)", re.I)
 
 
@@ -329,12 +333,64 @@ def main():
 
     tier = plan_tier(text)
     required = required_for(tier)
+
+    # A section appearing twice is a corrupted plan, not a complete one. The
+    # 2026-08-03 session rewrote its plan 28 times with 16 silent-failing `sed`
+    # calls and spliced a duplicate section in; the agent found it by hand, and
+    # this checker passed the corrupt file 19/19 because it only ever asked
+    # whether each heading was present at least once.
+    # The categorical line (`Risk: ... · contract: ... · hold-out: ...`) is matched
+    # by the `risk level` pattern too, because that pattern makes `level` optional
+    # on purpose. It is one line by construction, so exclude it from the count
+    # rather than loosen the pattern that the gate depends on.
+    duplicated = []
+    for name, pat in required:
+        lines = [text[m.start():text.find("\n", m.start())]
+                 for m in re.finditer(pat, text, re.IGNORECASE | re.MULTILINE)]
+        real = [l for l in lines if not CATEGORICAL_LINE.search(l)]
+        if len(real) > 1:
+            duplicated.append((name, len(real)))
+    if duplicated:
+        print("check-plan: DUPLICATED sections — " +
+              ", ".join(f"{n} (x{c})" for n, c in duplicated))
+        print("A section written twice is a corrupted plan; the gate cannot tell "
+              "which copy the human approved.")
+        return 1
+
+    # A required hold-out has to name the work, or the human cannot start it.
+    # 2026-08-03 wrote `request: 2 sealed tests written and withheld by the
+    # human` — the unbounded phrasing plan-format rule 6 exists to replace — and
+    # the human had to ask "what is my task".
+    holdout = HOLDOUT_BLOCK.search(text)
+    if holdout and _holdout_required(text):
+        block = holdout.group(0)
+        absent = [f for f in ("options:", "recommended:") if f not in block]
+        if absent:
+            print("check-plan: HOLD-OUT NOT ACTIONABLE — missing " +
+                  ", ".join(absent))
+            print("A required hold-out states the assertions to write, gives "
+                  "`write` and `decline` with their consequences, and recommends "
+                  "one (plan-format rule 6). Without them the human is handed a "
+                  "label, not a task.")
+            return 1
+
     missing = [name for name, pat in required
                if not re.search(pat, text, re.IGNORECASE | re.MULTILINE)]
     if missing:
         print(f"check-plan: MISSING sections for a {tier} plan — " + ", ".join(missing))
         print("A plan that omits a section hasn't decided it; it has skipped it.")
         return 1
+    # Gate-reading cost, reported not enforced. Plans have run 5,432 (the canonical
+    # example), 17,801, 31,448 and 57,321 characters; the last is ~31 minutes of
+    # reading before a human can approve. Nobody chose that — it accrued over 28
+    # amendment rounds. A number on the screen at the moment of writing is the
+    # cheapest thing that makes the cost visible; the tier already sets the floor.
+    words = len(text.split())
+    if words > 1500:
+        print(f"check-plan: plan is {len(text):,} chars / {words:,} words "
+              f"(~{round(words/220)} min to read at the gate). The human has to "
+              f"read this before approving; consolidate if amendment rounds have "
+              f"left superseded material behind.")
     print(f"check-plan: all mandatory sections present for a {tier} plan "
           f"({len(required)} of {len(REQUIRED)}; presence, not quality — the "
           f"review still owns quality).")

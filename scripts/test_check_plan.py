@@ -215,6 +215,52 @@ class CheckPlanTests(unittest.TestCase):
                          "verification", "risk level", "files to change"):
                 self.assertIn(must, names, f"{tier} dropped {must}")
 
+    def test_a_duplicated_section_fails_the_gate(self):
+        """2026-08-03: the plan was rewritten 28 times with 16 silent-failing `sed`
+        calls, one of which spliced a duplicate section in. The agent caught it by
+        hand; this checker passed the corrupt file 19/19 because presence-at-least-
+        once was all it asked. The gate cannot tell which copy was approved."""
+        plan = FULL_PLAN.replace("Assumptions:\n- y\n", "Assumptions:\n- y\nAssumptions:\n- y\n")
+        r = run(plan)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("DUPLICATED sections", r.stdout)
+        self.assertIn("assumptions", r.stdout)
+
+    def test_the_categorical_line_is_not_counted_as_a_duplicate_risk_section(self):
+        """`Risk: ... · contract: ... · hold-out: ...` is matched by the `risk level`
+        pattern too, because that pattern makes `level` optional on purpose. Every
+        correct plan has both lines, so counting it would fail every plan."""
+        r = run(FULL_PLAN)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertNotIn("DUPLICATED", r.stdout)
+
+    def test_a_required_holdout_without_options_fails_the_gate(self):
+        """2026-08-03 wrote `request: 2 sealed tests written and withheld by the
+        human` — the unbounded phrasing plan-format rule 6 exists to replace — with
+        no options and no recommendation. The human had to ask "what is my task".
+        Seven declines and one deferral, and not once was the work named."""
+        plan = FULL_PLAN.replace(
+            "Hold-out: not required — read path",
+            "Hold-out: required: 2 sealed tests\n- request: 2 sealed tests from the human")
+        r = run(plan)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("HOLD-OUT NOT ACTIONABLE", r.stdout)
+
+    def test_a_required_holdout_with_options_and_a_recommendation_passes(self):
+        plan = FULL_PLAN.replace(
+            "Hold-out: not required — read path",
+            "Hold-out: required: 2 sealed tests\n"
+            "- request: assert the remaining authorized amount after capturing 33.33 of 100.00\n"
+            "- options: `write` ~5 minutes; `decline` recorded as declined by human\n"
+            "- recommended: `write` — the edge came from the same document the code reads")
+        r = run(plan)
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_a_holdout_that_is_not_required_needs_no_options(self):
+        r = run(FULL_PLAN)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertNotIn("HOLD-OUT", r.stdout)
+
     def test_a_single_test_heading_fails_the_gate(self):
         """Both headings are mandatory, even when one is empty. A plan with only
         one has no correct lane at step 7 — the default check reads pins as new

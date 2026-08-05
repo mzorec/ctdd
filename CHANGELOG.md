@@ -32,6 +32,22 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.26.0 — 2026-08-03
+
+### Fixed
+- **`check-plan.py` rejects a plan with a section written twice.** It asked whether each heading was present at least once, so a plan rewritten 28 times with 16 silent-failing `sed` calls passed 19/19 with a spliced duplicate section in it. The categorical `Risk: … · contract: …` line is excluded from the count, since the `risk level` pattern matches it by design.
+- **`check-plan.py` rejects a required hold-out that names no work.** A plan wrote `request: 2 sealed tests written and withheld by the human` — the unbounded phrasing plan-format rule 6 exists to replace — with no `options:` and no `recommended:`, and the human had to ask *"what is my task"*. Seven declines and one deferral, and the work had never once been named.
+
+### Added
+- **ADR markers are read by the workflow.** Step 2.1 reads every ADR named by an `ADR-NNNN` marker in the contracts and tests it already reads; step 2.3 scans `docs/adr/` titles when the change adds contract surface, because new surface carries no markers. Plan-format rule 10 pins the tests that already assert a matched ADR's decision — a decision no test protects is one the change can reverse silently.
+- **`check-plan.py` reports gate-reading cost** for plans over 1,500 words. Plans have run 5,432, 17,801, 31,448 and 57,321 characters; the last is ~31 minutes before a human can approve, and it accrued over 28 amendment rounds rather than being chosen. Reported, not enforced.
+
+### Changed
+- **Route ratchet 38,200 → 40,000, and it now bounds one thing.** It had moved four times in two sessions because it was doing two jobs; it bounds **attention cost** — loaded once per change, then cached, never truncated. The body's compaction guard owns truncation and is unchanged, because the window it stands for has never been measured. 40,000 chars is ~10,000 tokens, 5th of Anthropic's 62 shipped skills by loaded prose.
+
+### Validated
+- The 0.25.0 review-dispatch fix held in real use: *"Per step 9.4 I'm not dispatching ctdd-review: a review this session commissions isn't independent."* The 0.24.1 stack-trace fix held too — no log filtering, and all three evidence lanes re-verified against the session's own artifacts.
+
 ## 0.25.0 — 2026-07-30
 
 ### Added

@@ -67,7 +67,8 @@ The complete example below is the operative instruction: anything it demonstrate
 7. Use `result: pending` until the required hold-out runs. Before the packet, replace it with `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; unavailability is never a decline.
 8. When the human declines a required hold-out, list the load-bearing expected values the human must verify independently, and do not label that fallback a hold-out result.
 9. Use exact file paths; never write wildcards, directories, `(+ tests)`, `TBD`, or unnamed future files.
-10. Record every resolved BLOCKING answer under `Decisions confirmed in session` and remove the question it answered before approval; an approved plan must not still be asking, and the answer must be findable without the chat. Re-run the checker after every plan edit; re-present when the answer changes any other presented decision.
+10. Pin the tests that already assert a decision recorded by any ADR this change touches; a decision no test protects is a decision this change can silently reverse.
+11. Record every resolved BLOCKING answer under `Decisions confirmed in session` and remove the question it answered before approval; an approved plan must not still be asking, and the answer must be findable without the chat. Re-run the checker after every plan edit; re-present when the answer changes any other presented decision.
 
 `ctdd-tests` owns test naming, altitude, assertion form, and what may not be asserted. Do not restate them here: two copies of a test rule drift, and the one in this file is the copy nobody checks.
 
