@@ -5,8 +5,8 @@ Load this file only when `SKILL.md` step 4.3 fires or the Standalone ADR procedu
 1. Record one structural decision per ADR.
 2. During the change workflow, draft the template fields inside the implementation plan and write no ADR file before the step 6 Approval record exists; write it at step 7.3.
 3. During the standalone ADR procedure, write the ADR after gathering its fields.
-4. Write the approved or standalone ADR to `docs/adr/NNNN-<kebab-slug>.md`.
-5. Find `NNNN` by incrementing the highest existing four-digit ADR number.
+4. Resolve the ADR directory once with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --adr-dir` and write the approved or standalone ADR to `<that directory>/NNNN-<kebab-slug>.md`. Never assume a path: writing into a directory the repository does not use restarts the numbering beside an existing series.
+5. Find `NNNN` by incrementing the highest existing four-digit ADR number in that same directory.
 6. Render `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/adr-template.md`.
 7. Set `Status` to `Proposed` unless the user explicitly supplies another valid status.
 8. Set `Date` to the current date.

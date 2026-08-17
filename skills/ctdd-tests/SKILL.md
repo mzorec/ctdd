@@ -77,6 +77,7 @@ Do not start implementation from this skill.
 |---|---|
 | Expected behavior or public API is unclear | Stop; do not invent an API, result, or error contract. Report the unresolved decision to `ctdd-change`. |
 | A public-boundary test is hard, nearly every dependency needs a mock, or setup obscures the rule | Use an existing higher public boundary and test helpers. If blocked, report coupling/design pressure to `ctdd-change`; do not expose internals, substitute call counts, or change production design here. |
+| The assertion is about a pure transformation — a lexical form, encoding, ordering, or null shape — and the boundary reached needs a database, network, or broker | Also cover it at the smallest boundary that has a contract of its own, exhaustively. Keep the outer test: it proves the wiring, and it is the one that survives a refactor moving the work. |
 | The test cannot compile because a public type or member is absent | Do not count compilation failure as RED. Request a compile-only stub from `ctdd-change`; resume only after the test executes. |
 | The harness, fixture, clock, random source, ordering, or environment fails | Fix test support without changing the expectation, then rerun. |
 | A `must fail before implementation` test passes | Stop; verify whether behavior already exists or the assertion fails to constrain it. |

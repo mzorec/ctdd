@@ -409,7 +409,14 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # spare. The alternative was relocating steps 7-10, which converts four
     # guaranteed-present survival probes into conditionally-loaded ones; that
     # stays filed with a trigger rather than forced to fit a number.
-    MINIMUM_MARGIN_CHARS = 1000
+    # 1,500 -> 1,000 -> 500. This is an early-warning buffer, not a protection:
+    # the survival probes slice the body at COMPACTION_PROXY_CHARS itself, so
+    # lowering this does not weaken them by one character. It only shortens the
+    # runway before a probe would fail — and that failure is loud and names the
+    # rule that fell out, unlike the silent truncation this whole scheme exists
+    # to prevent. Measured 2026-08-03: the last probe sits at 10,585 with 4,415
+    # chars of slack to the proxy, so the runway is long even at 500.
+    MINIMUM_MARGIN_CHARS = 500
     # Raised once, deliberately, for plan tiers (v0.24.0). This ratchet measures
     # agent context — loaded once, cached, cheap. Tiering spends ~700 characters
     # of it to take roughly 2,000 words off every small plan a human reads at the
@@ -673,8 +680,12 @@ class CrossSkillAgreementTests(unittest.TestCase):
         t = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
         step2 = t.split("\n2. **Read the existing slice.**", 1)[1].split("\n3. ", 1)[0]
         self.assertIn("ADR-NNNN", step2)
-        self.assertIn("docs/adr/", step2)
         self.assertIn("adds contract surface", step2)
+        # `docs/adr/` is where this plugin *writes* a new ADR; it is not where
+        # every repository *keeps* them. Naming it here would send the scan to
+        # the wrong place in any repo using `adr/`, `doc/adr/` or its own layout,
+        # and silence there reads as "no decision applies".
+        self.assertNotIn("docs/adr/", step2)
 
     def test_a_matched_adr_contributes_preservation_pins(self):
         """An ADR whose decision no test protects is one this change can reverse
@@ -694,6 +705,23 @@ class CrossSkillAgreementTests(unittest.TestCase):
         self.assertIn("no marker does not prove no decision applies", src)
         self.assertNotIn("No relevant ADRs", src)
         self.assertIn("A marker pointing at nothing is a lost decision", src)
+
+    def test_altitude_pressure_runs_in_both_directions(self):
+        """The escalation rule only ever pointed up: a hard test moves to `an
+        existing higher public boundary`, and the altitude criterion — rewrite
+        when a behavior-preserving refactor breaks it — only detects a test that
+        is too *low*. A test asserting a lexical form through SQL passes that
+        check perfectly: it survives every refactor, costs a database wipe, and
+        can afford three values where thirty are cheap. 2026-08-03: 7 of 13
+        integration tests asserted pure-function properties, and two Infrastructure
+        unit-test projects sat empty. The agent followed the rule correctly; the
+        rule had one direction."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("Use an existing higher public boundary", t)
+        self.assertIn("smallest boundary that has a contract of its own", t)
+        # and it must not read as a replacement: the outer test is what survives
+        # the work moving between components.
+        self.assertIn("Keep the outer test", t)
 
     def test_the_gate_presentation_names_every_decision_bearing_section(self):
         """6.1 used to say `print the complete plan verbatim`. The 2026-07-27 plans
@@ -944,6 +972,134 @@ class AdrMarkerTests(unittest.TestCase):
         return subprocess.run(
             [sys.executable, str(Path(__file__).resolve().parent / "check-spec-surface.py")],
             input=diff, capture_output=True, text=True, cwd=self.root, timeout=20)
+
+    def test_no_skill_or_reference_hardcodes_an_adr_path(self):
+        """Read and write must resolve the same directory. When they disagree the
+        writer scans an empty `docs/adr/`, writes 0001 beside an `adr/` that
+        already holds 0001-0014, and the reader then finds two ADRs numbered the
+        same. The only place a literal may appear is the script's own fallback
+        for a repository that has no ADR directory at all."""
+        root = Path(__file__).resolve().parents[1] / "skills"
+        for f in sorted(root.glob("*/SKILL.md")) + sorted(root.glob("*/references/*.md")):
+            text = f.read_text(encoding="utf-8")
+            for lit in ("docs/adr/", "docs/adrs/"):
+                self.assertNotIn(
+                    lit, text,
+                    f"{f.relative_to(root)} hardcodes {lit!r}; resolve it with "
+                    f"`check-spec-surface.py --adr-dir` so read and write agree")
+
+    def test_the_decision_is_stored_in_the_repository_not_a_shell(self):
+        """An environment variable is not storage: it lives in one shell, is
+        absent on a fresh clone, on a teammate's machine and in CI, and nothing
+        records the choice. A repository with two ADR directories would stop on
+        every change until someone remembered to export it again."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "css4", str(Path(__file__).resolve().parent / "check-spec-surface.py"))
+        css = importlib.util.module_from_spec(spec); spec.loader.exec_module(css)
+        root = tempfile.mkdtemp()
+        os.makedirs(os.path.join(root, "adr")); os.makedirs(os.path.join(root, "docs", "adr"))
+        self.assertIsNone(css.adr_dir(root)[0], "two directories must not be guessed")
+        with open(os.path.join(root, ".ctdd.json"), "w", encoding="utf-8") as fh:
+            fh.write('{"adrDir": "adr"}')
+        path, why = css.adr_dir(root)
+        self.assertEqual(path, "adr")
+        self.assertIn(".ctdd.json", why)
+
+    def test_the_environment_still_wins_for_a_single_run(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "css5", str(Path(__file__).resolve().parent / "check-spec-surface.py"))
+        css = importlib.util.module_from_spec(spec); spec.loader.exec_module(css)
+        root = tempfile.mkdtemp()
+        os.makedirs(os.path.join(root, "adr")); os.makedirs(os.path.join(root, "docs", "adr"))
+        with open(os.path.join(root, ".ctdd.json"), "w", encoding="utf-8") as fh:
+            fh.write('{"adrDir": "docs/adr"}')
+        os.environ["CTDD_ADR_DIR"] = "adr"
+        try:
+            self.assertEqual(css.adr_dir(root)[0], "adr")
+        finally:
+            del os.environ["CTDD_ADR_DIR"]
+
+    def test_a_malformed_config_is_ignored_rather_than_fatal(self):
+        """This file is read on every hook invocation. A typo in it must not
+        break editing."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "css6", str(Path(__file__).resolve().parent / "check-spec-surface.py"))
+        css = importlib.util.module_from_spec(spec); spec.loader.exec_module(css)
+        root = tempfile.mkdtemp()
+        os.makedirs(os.path.join(root, "adr"))
+        with open(os.path.join(root, ".ctdd.json"), "w", encoding="utf-8") as fh:
+            fh.write("not json {{{")
+        self.assertEqual(css.adr_dir(root)[0], "adr")   # falls through to discovery
+
+    def test_the_resolution_is_single_and_refuses_to_guess(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "css3", str(Path(__file__).resolve().parent / "check-spec-surface.py"))
+        css = importlib.util.module_from_spec(spec); spec.loader.exec_module(css)
+        empty = tempfile.mkdtemp()
+        self.assertEqual(css.adr_dir(empty)[0], "docs/adr")          # nothing yet
+        one = tempfile.mkdtemp(); os.makedirs(os.path.join(one, "adr"))
+        self.assertEqual(css.adr_dir(one)[0], "adr")                 # adopt it
+        two = tempfile.mkdtemp()
+        os.makedirs(os.path.join(two, "adr")); os.makedirs(os.path.join(two, "docs", "adr"))
+        path, why = css.adr_dir(two)
+        self.assertIsNone(path, "two ADR directories must not be silently picked")
+        self.assertIn("ambiguous", why)
+        os.environ["CTDD_ADR_DIR"] = "adr"
+        try:
+            self.assertEqual(css.adr_dir(two)[0], "adr")             # human decides
+        finally:
+            del os.environ["CTDD_ADR_DIR"]
+
+    def test_adr_directories_are_discovered_not_assumed(self):
+        """A fixed path list makes a correctly-marked test in a repo that
+        organises differently resolve to nothing — reported as a broken pointer,
+        which is a false alarm on a healthy repo."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "css", str(Path(__file__).resolve().parent / "check-spec-surface.py"))
+        css = importlib.util.module_from_spec(spec); spec.loader.exec_module(css)
+        for layout in ("adr", "doc/adr", "docs/adrs"):
+            root = tempfile.mkdtemp()
+            os.makedirs(os.path.join(root, layout))
+            with open(os.path.join(root, layout, "0017-x.md"), "w") as fh:
+                fh.write("# 17\n")
+            self.assertEqual(css.resolve_adr("0017", root=root),
+                             f"{layout}/0017-x.md", f"failed for {layout}")
+
+    def test_an_unconventional_layout_is_reachable_by_override(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "css2", str(Path(__file__).resolve().parent / "check-spec-surface.py"))
+        css = importlib.util.module_from_spec(spec); spec.loader.exec_module(css)
+        root = tempfile.mkdtemp()
+        os.makedirs(os.path.join(root, "architecture", "decisions"))
+        with open(os.path.join(root, "architecture", "decisions", "0017-x.md"), "w") as fh:
+            fh.write("# 17\n")
+        self.assertIsNone(css.resolve_adr("0017", root=root))
+        os.environ["CTDD_ADR_DIR"] = "architecture/decisions"
+        try:
+            self.assertEqual(css.resolve_adr("0017", root=root),
+                             "architecture/decisions/0017-x.md")
+        finally:
+            del os.environ["CTDD_ADR_DIR"]
+
+    def test_no_adr_directory_is_reported_as_unresolvable_not_as_broken(self):
+        """With no ADR directory anywhere, a marker cannot be resolved at all.
+        Saying "lost decision" there blames the repository for the checker's
+        inability to look."""
+        root = tempfile.mkdtemp()
+        os.makedirs(os.path.join(root, "src"))
+        with open(os.path.join(root, "src", "T.cs"), "w") as fh:
+            fh.write("// ADR-0017\n")
+        r = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve().parent / "check-spec-surface.py")],
+            input="M\tsrc/T.cs\n", capture_output=True, text=True, cwd=root, timeout=20)
+        self.assertIn("No ADR directory was found", r.stdout)
+        self.assertNotIn("lost decision", r.stdout)
 
     def test_a_marked_changed_file_names_its_governing_adr(self):
         self._write("HandlerTests.cs", "// ADR-0017: domain independence\nclass T {}\n")

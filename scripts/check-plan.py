@@ -175,6 +175,34 @@ def _read(src):
 POINTER = re.compile(r"^\s*CTDD-Plan:\s*(\S+)\s*$", re.I | re.M)
 
 
+PLAN_DIR_DEFAULT = "docs/plans"
+
+
+def plan_dir(root=None):
+    """Where this repository keeps plans — `planDir` in `.ctdd.json`, else the
+    default. `docs/plans/` used to be not a default but a rejection: a repo
+    keeping plans elsewhere could not use the CTDD-Plan pointer at all.
+
+    The configured value is validated exactly as strictly as the pointer it
+    gates. This runs in CI over untrusted MR descriptions, and a settings file
+    permitted to name an absolute or traversing directory would hand that back.
+    """
+    value = ""
+    try:
+        guard = Path(__file__).resolve().parents[1] / "hooks" / "spec-edit-guard.py"
+        spec = importlib.util.spec_from_file_location("seg_cfg", guard)
+        mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+        value = mod.setting("CTDD_PLAN_DIR", "planDir", root)
+    except Exception:
+        value = ""
+    # Validate the raw value, then normalise. Stripping first turns "/etc" into
+    # "etc" and lets an absolute path through the check meant to reject it.
+    raw = (value or PLAN_DIR_DEFAULT).strip()
+    if not raw or ".." in raw or raw.startswith("/") or "\\" in raw or ":" in raw:
+        return PLAN_DIR_DEFAULT
+    return raw.strip("/") or PLAN_DIR_DEFAULT
+
+
 def _resolve_pointer(description):
     """(path_or_None, error_or_None) — find and sanity-check a CTDD-Plan pointer.
 
@@ -189,10 +217,11 @@ def _resolve_pointer(description):
     if ".." in path or path.startswith("/") or "\\" in path:
         return None, (f"check-plan: refusing the CTDD-Plan pointer {path!r} — a path "
                       f"from an MR description must not traverse or be absolute.")
-    if not (path.startswith("docs/plans/") and path.endswith(".md")):
+    pdir = plan_dir()
+    if not (path.startswith(pdir + "/") and path.endswith(".md")):
         return None, (f"check-plan: CTDD-Plan pointer {path!r} is not under "
-                      f"docs/plans/ with a .md suffix — that is the canonical "
-                      f"location the skill writes to.")
+                      f"{pdir}/ with a .md suffix — that is where this "
+                      f"repository keeps plans.")
     return path, None
 
 

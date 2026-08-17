@@ -87,8 +87,50 @@ CONTRACT_MSG = (
 )
 
 
-def patterns(env_var, default):
+CONFIG_NAME = ".ctdd.json"
+
+
+def repo_config(root=None):
+    """The repository's own CTDD settings, from `.ctdd.json` at its root.
+
+    An environment variable is not storage. It lives in one shell, is absent on a
+    fresh clone, on a teammate's machine and in CI, and nothing in the repository
+    records the decision — so a choice made once has to be remade every session,
+    and the plugin silently falls back in between. These settings describe the
+    repository, so they belong in it.
+
+    Malformed or unreadable config is ignored rather than fatal: this file is
+    read on every hook invocation, and a typo in it must not break editing.
+    """
+    # Not cached. The file is a few bytes, each process reads it at most a
+    # handful of times, and a cache keyed on the path alone remembers an empty
+    # read from before the file existed — which is a stale-config bug in
+    # exchange for nothing.
+    root = root or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    data = {}
+    try:
+        with open(os.path.join(root, CONFIG_NAME), "r", encoding="utf-8") as fh:
+            loaded = json.load(fh)
+        if isinstance(loaded, dict):
+            data = loaded
+    except (OSError, ValueError):
+        data = {}
+    return data
+
+
+def setting(env_var, config_key, root=None):
+    """Environment first (a deliberate act for one run), then the repository
+    file (the durable decision), then nothing."""
     raw = os.environ.get(env_var, "").strip()
+    if raw:
+        return raw
+    value = repo_config(root).get(config_key)
+    return value.strip() if isinstance(value, str) and value.strip() else ""
+
+
+def patterns(env_var, default):
+    raw = setting(env_var, {"CTDD_TEST_PATTERNS": "testPatterns",
+                            "CTDD_CONTRACT_PATTERNS": "contractPatterns"}.get(env_var, ""))
     values = default if not raw else [p.strip() for p in raw.split(";") if p.strip()]
     compiled = []
     for value in values:
@@ -108,7 +150,11 @@ def matches(path, pats):
 # An ADR marker names a decision that governs this file. This hook is the only
 # component that fires when no skill triggered, so it is the only place the
 # reminder reaches an edit made outside the change workflow.
-ADR_MARKER = re.compile(r"\bADR-(\d{4})\b")
+# Four digits is adr-tools' and MADR's convention, not a rule: teams number
+# ADR-001 and ADR-12 too. A width-locked pattern did not merely fail on those
+# — it saw nothing, so the report said nothing, and silence reads as "no
+# decision applies". Match any width and compare by value.
+ADR_MARKER = re.compile(r"\bADR-(\d{1,4})\b")
 ADR_MSG = ("A recorded decision governs {p}: {ids}. Read it before changing "
            "behavior here. If this change contradicts it, amend or supersede "
            "the ADR — a decision record that no longer matches the code is "

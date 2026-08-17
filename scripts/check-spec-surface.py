@@ -66,7 +66,11 @@ ADR_PATTERNS = [re.compile(r"(^|/)adrs?/[^/]+\.md$", re.IGNORECASE)]
 # anyone deleting the file sees the reference they are orphaning. That is the
 # only pointer between a decision and the code it constrains that does not rot
 # independently of what it points at.
-ADR_MARKER = re.compile(r"\bADR-(\d{4})\b")
+# Four digits is adr-tools' and MADR's convention, not a rule: teams number
+# ADR-001 and ADR-12 too. A width-locked pattern did not merely fail on those
+# — it saw nothing, so the report said nothing, and silence reads as "no
+# decision applies". Match any width and compare by value.
+ADR_MARKER = re.compile(r"\bADR-(\d{1,4})\b")
 
 
 def markers_in(path, root="."):
@@ -84,16 +88,93 @@ def markers_in(path, root="."):
     return out
 
 
-def resolve_adr(adr_id, root="."):
-    """The ADR file for `NNNN`, or None. A marker naming no ADR is a broken
-    pointer, not an absent decision, and must be reported rather than skipped."""
-    for base in ("docs/adr", "docs/adrs", "adr", "adrs"):
+def _setting(env_var, config_key, root="."):
+    """Delegates to the hook, which owns configuration for the whole plugin, so
+    the scripts and the hook can never resolve a setting differently."""
+    try:
+        return _guard.setting(env_var, config_key, root)
+    except Exception:
+        return os.environ.get(env_var, "").strip()
+
+
+def _setting_with_source(env_var, config_key, root="."):
+    if os.environ.get(env_var, "").strip():
+        return os.environ[env_var].strip(), env_var
+    value = _setting(env_var, config_key, root)
+    return value, f"{CONFIG_NAME} ({config_key})" if value else ""
+
+
+CONFIG_NAME = ".ctdd.json"
+
+_SKIP_DIRS = {".git", "node_modules", "bin", "obj", "dist", "build",
+              "packages", "target", "vendor", ".venv", "__pycache__"}
+
+
+def adr_dirs(root="."):
+    """Directories this repository keeps ADRs in — discovered, never assumed.
+
+    `docs/adr/` is where *this* plugin writes a new ADR. It is not where every
+    repository keeps them: `adr/`, `doc/adr/`, `architecture/adrs/` are all in
+    the wild. Guessing a fixed list means a correctly-marked test in a repo that
+    organises differently resolves to nothing and gets reported as a broken
+    pointer — a false alarm on a healthy repo, which is worse than silence.
+    Set CTDD_ADR_DIR (os.pathsep-separated, repo-relative) for a layout the
+    `adrs?` convention does not cover.
+    """
+    override = _setting("CTDD_ADR_DIR", "adrDir", root)
+    if override:
+        return [d for d in (x.strip() for x in override.split(os.pathsep))
+                if d and os.path.isdir(os.path.join(root, d))]
+    found = []
+    for dirpath, dirnames, _ in os.walk(root):
+        dirnames[:] = [d for d in dirnames
+                       if d not in _SKIP_DIRS and not d.startswith(".")]
+        if os.path.basename(dirpath).lower() in ("adr", "adrs"):
+            rel = os.path.relpath(dirpath, root).replace(os.sep, "/")
+            found.append(rel)
+    return sorted(found)
+
+
+def adr_dir(root="."):
+    """The one directory this repository keeps ADRs in — (path, reason).
+
+    Read and write must agree. When they disagree the numbering breaks: the
+    writer scans an empty `docs/adr/`, writes 0001 beside an `adr/` that already
+    has 0001-0014, and the reader then finds two ADRs with the same number.
+    Resolution is therefore single and explicit:
+
+      1. CTDD_ADR_DIR when set — the human's decision, and it wins.
+      2. The one existing ADR directory, when exactly one exists.
+      3. Ambiguous when several exist: stop and ask rather than pick.
+      4. `docs/adr` when the repository has none yet — a new convention, and
+         the only case where this plugin gets to choose.
+    """
+    override, source = _setting_with_source("CTDD_ADR_DIR", "adrDir", root)
+    if override:
+        first = [x.strip() for x in override.split(os.pathsep) if x.strip()][:1]
+        return (first[0] if first else None), source
+    found = adr_dirs(root)
+    if len(found) == 1:
+        return found[0], "the repository's existing ADR directory"
+    if len(found) > 1:
+        return None, "ambiguous: " + ", ".join(found)
+    return "docs/adr", "no existing ADR directory; this would create one"
+
+
+def resolve_adr(adr_id, root=".", dirs=None):
+    """The ADR file for `NNNN`, or None."""
+    for base in (adr_dirs(root) if dirs is None else dirs):
         d = os.path.join(root, base)
-        if not os.path.isdir(d):
+        try:
+            names = sorted(os.listdir(d))
+        except OSError:
             continue
-        for name in sorted(os.listdir(d)):
-            if name.startswith(adr_id) and name.lower().endswith(".md"):
-                return os.path.join(base, name).replace(os.sep, "/")
+        for name in names:
+            if not name.lower().endswith(".md"):
+                continue
+            lead = re.match(r"0*(\d{1,4})", name)
+            if lead and int(lead.group(1)) == int(adr_id):
+                return f"{base}/{name}" if base != "." else name
     return None
 PACT_HINT = re.compile(r"pact", re.IGNORECASE)
 
@@ -185,6 +266,20 @@ def main():
     args = sys.argv[1:]
     if args and args[0] in ("-h", "--help"):
         print(__doc__.strip())
+        return 0
+
+    if "--adr-dir" in args:
+        # One answer for every step that reads or writes an ADR, so the two
+        # cannot drift apart and split the numbering.
+        path, why = adr_dir()
+        if path is None:
+            print(f"check-spec-surface: ADR directory {why}.")
+            print("  Set CTDD_ADR_DIR to the one this repository uses. Writing "
+                  "into the wrong one restarts the numbering beside an existing "
+                  "series.")
+            return 1
+        print(path)
+        print(f"  ({why})", file=sys.stderr)
         return 0
 
     try:
@@ -291,10 +386,11 @@ def main():
     # here, so the wording must not let silence read as "no ADR applies".
     changed = [new_p if status[:1] in ("R", "C") else old_p
                for status, old_p, new_p in entries]
+    dirs = adr_dirs()
     governing, broken = {}, {}
     for path in changed:
         for adr in markers_in(path):
-            target = resolve_adr(adr)
+            target = resolve_adr(adr, dirs=dirs)
             (governing if target else broken).setdefault(
                 target or adr, []).append(path)
     if governing:
@@ -308,7 +404,13 @@ def main():
         for adr in sorted(broken):
             print(f"  - ADR-{adr} is named by "
                   f"{', '.join(sorted(set(broken[adr])))} but no such ADR file exists")
-        print("    A marker pointing at nothing is a lost decision, not an absent one.")
+        if dirs:
+            print("    A marker pointing at nothing is a lost decision, not an absent one.")
+        else:
+            print("    No ADR directory was found in this repository, so these could "
+                  "not be resolved at all. Set CTDD_ADR_DIR if the decisions live "
+                  "somewhere the `adr`/`adrs` convention does not cover — this is "
+                  "not evidence that the ADRs are missing.")
 
     if touched:
         print("\nVerdict: SPEC SURFACE TOUCHED — changed tests are changed "

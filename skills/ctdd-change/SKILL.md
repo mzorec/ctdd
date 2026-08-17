@@ -36,7 +36,7 @@ Do not infer an order among these condition-triggered rules.
 | Decision prompt | interactive question when offered, else `stdout` | 2–4 exclusive options, one recommended with a one-line reason, free text always accepted. A selection is a message from the human and counts as an answer; a harness accepting a plan is not. |
 | Gate presentation | `stdout` | `Plan: <path> (<tier>)`, the categorical `Risk:` line and the decision summary verbatim, then every section `plan-format.md` marks **gate-visible**, in full. Then anything the human must act on. Omit none: nobody can approve what they were not shown. |
 | Approval record | `stdout` | `Approved by: <human message quoted>; plan: docs/plans/<name>.md.` |
-| ADR | `${CLAUDE_PROJECT_DIR}/docs/adr/NNNN-<kebab-slug>.md` | `references/adr-template.md` rendered with Context, Decision, and Consequences. |
+| ADR | `<resolved ADR directory>/NNNN-<kebab-slug>.md` | `references/adr-template.md` rendered with Context, Decision, and Consequences. |
 | Contract change | Exact repo-relative contract path listed in the plan | Valid OpenAPI, JSON Schema, protobuf, AsyncAPI, Pact, or repository-native contract syntax. |
 | Test change | Exact repo-relative test path listed in the plan | Behavior-level test names and assertions produced under `ctdd-tests`. |
 | Test evidence logs | Red state: `${CLAUDE_PROJECT_DIR}/docs/plans/<name>.redstate.log`; pin state before: `${CLAUDE_PROJECT_DIR}/docs/plans/<name>.pinstate.log`; pin state after: `${CLAUDE_PROJECT_DIR}/docs/plans/<name>.pinstate-after.log` | Complete raw output from the named run. |
@@ -54,7 +54,7 @@ Execute steps 0–10 in ascending order. Until the step 6 Approval record exists
 2. **Read the existing slice.** Enter: step 1 has an unambiguous requirement. Emit: Current-behavior reading. Continue: always.
    1. Read the relevant contract, tests, changed files, routes, messages, and domain terms, plus every ADR named by an `ADR-NNNN` marker in them.
    2. Derive current behavior from the contract and tests; use the implementation only for behavior neither states.
-   3. Use the greenfield bullet when nothing exists. Scan `docs/adr/` titles when the change adds contract surface: new surface carries no markers.
+   3. Use the greenfield bullet when nothing exists. Scan this repository's ADR titles when the change adds contract surface: new surface carries no markers.
 3. **Classify the change.** Enter: step 2 printed the reading. Emit: Trivial-risk declaration, or nothing. Continue: to step 4 unless 3.6 fires.
    1. Treat the change as plan-gated unless every condition in 3.2–3.5 holds.
    2. Require a diff that already exists against `diff-base` and that contains the complete requested change; anything still to be written is plan-gated.

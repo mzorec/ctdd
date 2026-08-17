@@ -27,9 +27,9 @@ the required action for each.
 ## Standalone ADR procedure
 1. Read `references/adr-rules.md`.
 2. Gather Context, Decision, and Consequences.
-3. Find the next ADR number under `${CLAUDE_PROJECT_DIR}/docs/adr/`.
+3. Resolve the ADR directory with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --adr-dir`; stop and ask when it reports ambiguity. Find the next number in it.
 4. Render `references/adr-template.md`.
-5. Write `${CLAUDE_PROJECT_DIR}/docs/adr/NNNN-<kebab-slug>.md`.
+5. Write `<resolved directory>/NNNN-<kebab-slug>.md`.
 
 ## Review packet assembly — SKILL.md step 9.3
 1. Re-run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" <plan-path>` when a plan exists.

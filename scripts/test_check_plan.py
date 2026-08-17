@@ -215,6 +215,27 @@ class CheckPlanTests(unittest.TestCase):
                          "verification", "risk level", "files to change"):
                 self.assertIn(must, names, f"{tier} dropped {must}")
 
+    def test_the_plan_directory_is_configurable_but_cannot_escape(self):
+        """`docs/plans/` was a rejection, not a default: a repo keeping plans
+        anywhere else could not use the CTDD-Plan pointer at all. It is now
+        `planDir` in `.ctdd.json` — validated exactly as strictly as the pointer
+        it gates, because this runs in CI over untrusted MR descriptions. The
+        first cut stripped before validating, which turned `/etc` into `etc` and
+        walked it straight through the check meant to stop it."""
+        import importlib.util, json as _json
+        spec = importlib.util.spec_from_file_location("cp_pd", SCRIPT)
+        cp = importlib.util.module_from_spec(spec); spec.loader.exec_module(cp)
+        root = tempfile.mkdtemp()
+        def cfg(v):
+            with open(os.path.join(root, ".ctdd.json"), "w", encoding="utf-8") as fh:
+                _json.dump({"planDir": v}, fh)
+            return cp.plan_dir(root)
+        self.assertEqual(cfg(".plans"), ".plans")
+        self.assertEqual(cfg("plans/"), "plans")
+        for hostile in ("../etc", "/etc", "C:/x", "a\\b", ""):
+            self.assertEqual(cfg(hostile), cp.PLAN_DIR_DEFAULT,
+                             f"{hostile!r} must not be accepted")
+
     def test_a_duplicated_section_fails_the_gate(self):
         """2026-08-03: the plan was rewritten 28 times with 16 silent-failing `sed`
         calls, one of which spliced a duplicate section in. The agent caught it by
@@ -333,7 +354,7 @@ class CheckPlanTests(unittest.TestCase):
     def test_from_description_rejects_path_outside_docs_plans(self):
         r = run("CTDD-Plan: notes/myplan.md\n", ["--from-description"])
         self.assertEqual(r.returncode, 1)
-        self.assertIn("canonical location", r.stdout)
+        self.assertIn("where this\nrepository keeps plans".replace("\n", " "), r.stdout)
 
     def test_from_description_falls_back_with_a_nudge_when_no_pointer(self):
         r = run(FULL_PLAN, ["--from-description"])

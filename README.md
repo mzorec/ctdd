@@ -143,6 +143,23 @@ CTDD_CONTRACT_PATTERNS="(^|/)api-specs/"
 
 An override *replaces* the defaults, so include the originals if you want both. SOAP shops will want `CTDD_CONTRACT_PATTERNS="\.wsdl$;\.xsd$"`.
 
+### Settings that should outlive a shell
+
+An environment variable is set in one shell. It is absent on a fresh clone, on a teammate's machine, and in CI — so a decision made once has to be remade every session, and the plugin quietly falls back in between. Put settings that describe the *repository* in a `.ctdd.json` at its root and commit it:
+
+```json
+{
+  "adrDir": "adr",
+  "planDir": "docs/plans",
+  "testPatterns": "(^|/)quality/;\\.robot$",
+  "contractPatterns": "(^|/)api-specs/"
+}
+```
+
+Environment variables still win when set, for a single deliberate run. Everything else reads the file. A malformed or missing file is ignored rather than fatal — it is read on every hook invocation, and a typo in it must not break editing.
+
+`adrDir` matters most. The plugin finds ADR directories by the `adr`/`adrs` convention, and both **reads** markers from and **writes** new ADRs into the one it resolves. A repository holding both `adr/` and `docs/adr/` is ambiguous: rather than guess, `check-spec-surface.py --adr-dir` stops and asks you to declare it, because writing into the wrong one restarts the numbering beside an existing series.
+
 Two limits worth knowing. Edits made through Bash (`sed -i`, heredocs, `patch`, `git apply`) never reach the hook: it covers the Edit/Write lane only, deliberately, because scanning Bash command strings would false-fire on every test *run*. And a plugin update may replace the plugin directory, so re-check that your copied `hooks.json` survived after an upgrade.
 
 To turn it back off, delete `hooks/hooks.json` (the `.example` stays) and `/reload-plugins`.
