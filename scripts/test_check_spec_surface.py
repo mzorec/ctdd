@@ -719,9 +719,17 @@ class CrossSkillAgreementTests(unittest.TestCase):
         t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("Use an existing higher public boundary", t)
         self.assertIn("smallest boundary that has a contract of its own", t)
-        # and it must not read as a replacement: the outer test is what survives
-        # the work moving between components.
-        self.assertIn("Keep the outer test", t)
+        # The outer test stays, but scoped. Every other rule in this skill pushes
+        # toward more coverage — step 3 demands *every* boundary and *each* error
+        # path, dimension 3 hunts for *missing* assertions, and dimension 4 makes
+        # deleting one a spec amendment. Downward pressure without a scope on the
+        # outer tier is a ratchet: both tiers exhaustive, forever.
+        self.assertIn("Keep one representative case at the outer boundary", t)
+        self.assertIn("Two exhaustive tiers is one tier of waste", t)
+        # and relocation must not be readable as deletion, or the correct action
+        # is also the one that reopens the gate.
+        self.assertIn("moved to a smaller boundary is not weakened", t)
+        self.assertIn("without a named destination is a deletion", t)
 
     def test_the_gate_presentation_names_every_decision_bearing_section(self):
         """6.1 used to say `print the complete plan verbatim`. The 2026-07-27 plans

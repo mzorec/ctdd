@@ -77,7 +77,7 @@ Do not start implementation from this skill.
 |---|---|
 | Expected behavior or public API is unclear | Stop; do not invent an API, result, or error contract. Report the unresolved decision to `ctdd-change`. |
 | A public-boundary test is hard, nearly every dependency needs a mock, or setup obscures the rule | Use an existing higher public boundary and test helpers. If blocked, report coupling/design pressure to `ctdd-change`; do not expose internals, substitute call counts, or change production design here. |
-| The assertion is about a pure transformation — a lexical form, encoding, ordering, or null shape — and the boundary reached needs a database, network, or broker | Also cover it at the smallest boundary that has a contract of its own, exhaustively. Keep the outer test: it proves the wiring, and it is the one that survives a refactor moving the work. |
+| The assertion is about a pure transformation — a lexical form, encoding, ordering, or null shape — and the boundary reached needs a database, network, or broker | Cover the matrix exhaustively at the smallest boundary that has a contract of its own. Keep one representative case at the outer boundary, plus anything only reachable there; it proves the wiring and survives a refactor moving the work. Two exhaustive tiers is one tier of waste. |
 | The test cannot compile because a public type or member is absent | Do not count compilation failure as RED. Request a compile-only stub from `ctdd-change`; resume only after the test executes. |
 | The harness, fixture, clock, random source, ordering, or environment fails | Fix test support without changing the expectation, then rerun. |
 | A `must fail before implementation` test passes | Stop; verify whether behavior already exists or the assertion fails to constrain it. |
@@ -102,8 +102,8 @@ Render with step 2 conventions and path. Keep positive and upper-boundary rules 
 Entered from the review lane above, or from `ctdd-review` for the test portion of a diff. For each test, report:
 1. **Altitude:** rewrite when a behavior-preserving refactor breaks it.
 2. **Name:** rename mechanisms into observable intent.
-3. **Pinning power:** identify missing positive, negative, boundary, error, and forbidden-side-effect assertions.
-4. **No weakening:** flag any relaxed, deleted, skipped, or reclassified expectation as a spec amendment.
+3. **Pinning power:** identify missing positive, negative, boundary, error, and forbidden-side-effect assertions, and cases asserted exhaustively at two boundaries at once.
+4. **No weakening:** flag any relaxed, deleted, skipped, or reclassified expectation as a spec amendment. An assertion moved to a smaller boundary is not weakened — but only when the destination test is named and observed passing; "I moved it" without a named destination is a deletion.
 5. **Interaction coupling:** replace internal interaction verdicts with observable outcomes; retain interactions that are themselves contractual; state **what determines the verdict**.
 6. **Determinism:** **Name the uncontrolled input**: clock, timezone, ID, random value, sleep, retry, shared fixture, external dependency, or order dependency.
 7. **Contract alignment:** stop on disagreement between test, API/consumer contract, and approved intent.
