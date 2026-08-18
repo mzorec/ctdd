@@ -58,7 +58,7 @@ Do not start implementation from this skill.
    - For every case, state setup, action, observable result, and forbidden side effects.
    - Keep separate tests for distinct rules. Merge cases only when setup, action, observable rule, and side-effect assertions are identical; retain named boundary and error inputs as data rows.
 4. **Choose evidence direction. Precondition:** step 3 has no unresolved intent conflict.
-   - Mark new behavior and bug regressions `must fail before implementation`.
+   - Mark new behavior and bug regressions `must fail before implementation`. A bug-fix regression test is the spec of the fix and stays as long as that behavior is required; deleting it later removes the spec.
    - Mark confirmed preservation pins and `currently_*` characterization observations `must pass before refactor`.
 5. **Write tests only. Precondition:** step 4 assigned every test one evidence direction.
    - Write each test at the public boundary in the discovered framework and exact target path.
@@ -105,7 +105,7 @@ Entered from the review lane above, or from `ctdd-review` for the test portion o
 3. **Pinning power:** identify missing positive, negative, boundary, error, and forbidden-side-effect assertions, and cases asserted exhaustively at two boundaries at once.
 4. **No weakening:** flag any relaxed, deleted, skipped, or reclassified expectation as a spec amendment. An assertion moved to a smaller boundary is not weakened — but only when the destination test is named and observed passing; "I moved it" without a named destination is a deletion.
 5. **Interaction coupling:** replace internal interaction verdicts with observable outcomes; retain interactions that are themselves contractual; state **what determines the verdict**.
-6. **Determinism:** **Name the uncontrolled input**: clock, timezone, ID, random value, sleep, retry, shared fixture, external dependency, or order dependency.
+6. **Determinism:** a flaky spec reads as an unreliable spec, to the agent and the human, so retrying around it is never the fix. **Name the uncontrolled input**: clock, timezone, ID, random value, sleep, retry, shared fixture, external dependency, or order dependency.
 7. **Contract alignment:** stop on disagreement between test, API/consumer contract, and approved intent.
 8. **Artifact fit:** verify exact path, framework, naming, fixture, and assertion conventions.
 Summarize each as keep / rename / rewrite-altitude / de-flake / add-coverage / contract-mismatch / spec-amendment.

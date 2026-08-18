@@ -409,13 +409,16 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # spare. The alternative was relocating steps 7-10, which converts four
     # guaranteed-present survival probes into conditionally-loaded ones; that
     # stays filed with a trigger rather than forced to fit a number.
-    # 1,500 -> 1,000 -> 500. This is an early-warning buffer, not a protection:
-    # the survival probes slice the body at COMPACTION_PROXY_CHARS itself, so
-    # lowering this does not weaken them by one character. It only shortens the
-    # runway before a probe would fail — and that failure is loud and names the
-    # rule that fell out, unlike the silent truncation this whole scheme exists
-    # to prevent. Measured 2026-08-03: the last probe sits at 10,585 with 4,415
-    # chars of slack to the proxy, so the runway is long even at 500.
+    # EARLY WARNING, NOT PROTECTION. The survival probes slice the body at
+    # COMPACTION_PROXY_CHARS itself, so this reserve does not guard them by one
+    # character — it only shortens the runway before one would fail, and that
+    # failure is loud and names the rule that fell out.
+    #
+    # Keep it small. At 14,500 the limit is already stricter than Anthropic's
+    # ~5,000-token guidance (14,500 chars is ~3,600 tokens, 72% of it), so a body
+    # under this ceiling is not large by any external measure. Treating this number
+    # as a hard constraint produced four rounds of shaving sentences to fit it, and
+    # broke three survival probes doing so. The probes are the constraint.
     MINIMUM_MARGIN_CHARS = 500
     # Raised once, deliberately, for plan tiers (v0.24.0). This ratchet measures
     # agent context — loaded once, cached, cheap. Tiering spends ~700 characters
@@ -429,26 +432,32 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # table came out of worked-change.md: six of its seven lanes were already in
     # the body, and the one real-use run copied the walkthrough prose, not the
     # table. A ratchet that only goes up is a budget with extra steps.
-    # 37,500 -> 38,000 (plan tiers) -> 37,500 (lane-variants table removed) ->
-    # 38,200 (gate presentation + the hold-out as a bounded decision). Three
-    # moves in one session is itself the finding: the number is being fitted to
-    # the content rather than constraining it, and every remaining section of
-    # the body and the three unconditional references is load-bearing. The real
-    # choice is the filed backlog item — relocate steps 7-10 — or accept ~38k as
-    # the size of this method. Do not raise this again without doing one of them.
-    # 37,500 -> 38,000 -> 37,500 -> 38,200 -> 40,000. The oscillation was the
-    # tell: this number was being fitted to content because it had been asked to
-    # do two jobs. It does one. It bounds **attention cost** — material loaded
-    # once per plan-gated change and then cached, which never truncates. The
-    # body's own guard owns truncation, and that one is not moving, because the
-    # window it stands for has never been measured.
+    # A RATCHET, NOT A BUDGET. No published guidance bounds per-change reference
+    # load; this number was set to wherever the content happened to be, and it has
+    # moved five times. That is not a defect in the number — its only job is to make
+    # growth a *decision* instead of a drift, and it has done that four times in one
+    # session, three of which produced real displacement.
     #
-    # 40,000 chars is ~10,000 tokens. Against Anthropic's own 62 shipped skills
-    # that is 5th by loaded prose — canvas-design is 3.5x larger, mcp-builder
-    # 2.6x. A full development methodology sitting in the top decile is not an
-    # anomaly. The headroom is deliberate: a ceiling with 16 characters spare
-    # blocks correctness fixes, which is how the last three sessions ended.
-    MAX_PLAN_GATED_METHODOLOGY_CHARS = 40000
+    # What it must not do is settle the decision. Hitting it means: displace, or
+    # raise it and record why. It was once used to silently drop an addition the
+    # human had asked for, which is the failure mode to avoid — surface the conflict
+    # rather than resolving it by deleting the cheapest thing.
+    #
+    # For scale: ~10,000 tokens per plan-gated change puts this 5th of Anthropic's
+    # 62 shipped skills by loaded prose; canvas-design is 3.5x larger.
+    # 40,400 -> 41,000, raised on request after the v0.11-v0.20 audit. Every
+    # rule-shaped and prose line that has existed in skills/ since v0.11.3 has now
+    # been read individually — 267 of them — and fourteen purpose sentences were
+    # found lost to the rewrites that turned guidance into contracts. Most were
+    # covered or marginal; the ones restored are criteria a step applies, not
+    # explanation, and two of the three landed in ctdd-tests where no increase was
+    # needed at all.
+    #
+    # 41,000 chars is ~10,250 tokens: 5th of Anthropic's 62 shipped skills by
+    # loaded prose, with canvas-design 3.5x larger. The headroom is deliberate —
+    # a ceiling with 48 characters spare blocks correctness work, which is how the
+    # consumer-driven pin came to be dropped and reported as a displacement.
+    MAX_PLAN_GATED_METHODOLOGY_CHARS = 41000
     """ctdd-tests keeps craft work (de-flaking, altitude, renaming) out of the
     plan gate, while every consumer of the diff — this script, the hook, and
     ctdd-review — reads any modified test as a changed requirement. Both are
@@ -706,6 +715,61 @@ class CrossSkillAgreementTests(unittest.TestCase):
         self.assertNotIn("No relevant ADRs", src)
         self.assertIn("A marker pointing at nothing is a lost decision", src)
 
+    def test_the_last_three_audit_losses_are_restored(self):
+        """Closing out the v0.11.3-v0.20.1 audit. A flaky spec reads as an
+        unreliable spec — the determinism dimension names the uncontrolled input
+        but never said why retrying is not an option, and that argument decides
+        cases the dimension does not enumerate. A bug-fix regression test is the
+        spec of the fix — dimension 4 covers deleting it as a spec amendment, but
+        not why it persists. And step 0 recorded the branch without ever remarking
+        that the change was landing on the branch it would be reviewed from."""
+        tests = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("a flaky spec reads as an unreliable spec", tests)
+        self.assertIn("is the spec of the fix", tests)
+        change = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("when the current branch is the target branch", change)
+
+    def test_the_packet_states_its_purpose_and_the_back_translation_is_independent(self):
+        """Both were lost in the 0.21.0-0.23.0 rewrites, which converted guidance
+        into contracts. A contract holds structure and prohibitions and has nowhere
+        to put purpose, so every rule with a checker survived and every sentence
+        saying *why* did not — twelve of them across four files.
+
+        `changed tests are changed requirements` is the method's thesis and the
+        reason check-spec-surface exists; step 9 had been left saying `assemble its
+        exact packet`, a shape with no reason. The back-translation had lost `from
+        the tests alone`, which is the clause that makes it independent evidence
+        rather than a summary of the diff, and `beside the business requirement`,
+        which is the comparison that makes it usable."""
+        t = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("Changed tests are changed requirements", t)
+        self.assertIn("contract diffs are boundary changes", t)
+        self.assertIn("from the changed tests alone", t)
+        self.assertIn("beside the business requirement", t)
+
+    def test_the_holdout_decline_path_keeps_what_makes_it_independent(self):
+        """These three fell out across 0.21.3 and 0.23.0 in compression passes —
+        one changelog claimed "every rule intact", another never got an entry.
+        None was decided against. They went unnoticed because the hold-out has
+        zero executions in seven changes, so nothing ever exercised them, and
+        the `must_survive` probes never covered them.
+
+        They are a chain. Without the arithmetic clause the fallback is not an
+        independent reading: verifying by opening the implementation and
+        agreeing inherits the very misunderstanding the hold-out exists to
+        break. Without "never the equivalent" the cheap path silently becomes
+        the guard — which already happened. Without "waiver" a decline is one of
+        four neutral enum values, indistinguishable in the packet from a decline
+        on a rename."""
+        fmt = (self._skills() / "ctdd-change" / "references"
+               / "plan-format.md").read_text(encoding="utf-8")
+        self.assertIn("recompute each value by hand", fmt)
+        self.assertIn("rather than read the code that produced it", fmt)
+        self.assertIn("never as the equivalent", fmt)
+        self.assertIn("is a waiver, not a neutral outcome", fmt)
+        rev = (self._skills() / "ctdd-review" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("hold-out as a finding on a high-risk", rev)
+
     def test_altitude_pressure_runs_in_both_directions(self):
         """The escalation rule only ever pointed up: a hard test moves to `an
         existing higher public boundary`, and the altitude criterion — rewrite
@@ -731,27 +795,33 @@ class CrossSkillAgreementTests(unittest.TestCase):
         self.assertIn("moved to a smaller boundary is not weakened", t)
         self.assertIn("without a named destination is a deletion", t)
 
-    def test_the_gate_presentation_names_every_decision_bearing_section(self):
-        """6.1 used to say `print the complete plan verbatim`. The 2026-07-27 plans
-        ran 31,448 and 27,976 characters — roughly 14 and 12 minutes — so agents
-        compressed, and what survived was whatever they chose to volunteer. Across
-        two runs the terminal carried the summary and the risk line; assumptions,
-        known gaps, residual risk, NFR budgets and the ADR draft did not appear,
-        and the hold-out appeared only when the agent happened to add it. A human
-        cannot approve a decision they were not shown, and the hold-out — the one
-        item asking them to go and do something — has been skipped six times."""
+    def test_the_gate_shows_the_summary_and_the_holdout_in_full(self):
+        """The plan has two readers, and one file serves both: a summary the human
+        approves from alone, and detail the agent implements from with no ceiling.
+        6.1 once said `print the complete plan verbatim` — unfollowable at 31,448
+        chars, so agents compressed and the hold-out was the first thing lost. The
+        fix then printed eight sections in full, which made the gate scale with the
+        plan and stop being a few-minute read. Now: summary plus the hold-out in
+        full, everything else named in one line and printed on request.
+
+        The hold-out keeps its exemption because it is the one item asking the human
+        to leave the terminal and do something, and it has been declined or deferred
+        on seven consecutive changes."""
         skill = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("Gate presentation", skill)
-        self.assertIn("gate-visible", skill)
+        self.assertIn("`Hold-out` block in full", skill)
+        self.assertNotIn("every section `plan-format.md` marks **gate-visible**, in full", skill)
         fmt = (self._skills() / "ctdd-change" / "references"
                / "plan-format.md").read_text(encoding="utf-8")
-        section = fmt.split("## Gate-visible sections", 1)
-        self.assertEqual(len(section), 2, "plan-format.md lost the gate-visible list")
-        listed = section[1].split("##", 1)[0]
-        for name in ("Business requirement", "Assumptions", "Uncovered or ambiguous",
-                     "Known gaps", "NFR budgets", "Residual risk", "Hold-out",
-                     "ADR draft"):
-            self.assertIn(name, listed, f"gate-visible list dropped {name!r}")
+        sec = fmt.split("## Gate-visible sections", 1)
+        self.assertEqual(len(sec), 2, "plan-format.md lost the gate-visible section")
+        listed = sec[1].split("##", 1)[0]
+        for name in ("Assumptions", "Uncovered or ambiguous", "Known gaps",
+                     "NFR budgets", "Residual risk", "ADR draft"):
+            self.assertIn(name, listed, f"the summary is no longer required to name {name!r}")
+        self.assertIn("two readers", fmt)
+        self.assertIn("approves from it alone", fmt)
+        self.assertIn("no ceiling on how much of that a change needs", fmt)
 
     def test_review_discriminators_are_in_the_body_not_the_unloaded_rationale(self):
         """ctdd-review marks `references/rationale.md` do-not-load, and the v0.23.0

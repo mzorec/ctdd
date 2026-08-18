@@ -34,7 +34,7 @@ Do not infer an order among these condition-triggered rules.
 | Implementation plan | `${CLAUDE_PROJECT_DIR}/docs/plans/<name>.md`, and PR/MR description when `docs/plans/` is ignored | Every section and field rule of `references/plan-format.md`, in the order that file displays. |
 | Plan pointer | PR/MR description when `docs/plans/` is tracked | `CTDD-Plan: docs/plans/<name>.md` |
 | Decision prompt | interactive question when offered, else `stdout` | 2–4 exclusive options, one recommended with a one-line reason, free text always accepted. A selection is a message from the human and counts as an answer; a harness accepting a plan is not. |
-| Gate presentation | `stdout` | `Plan: <path> (<tier>)`, the categorical `Risk:` line and the decision summary verbatim, then every section `plan-format.md` marks **gate-visible**, in full. Then anything the human must act on. Omit none: nobody can approve what they were not shown. |
+| Gate presentation | `stdout` | `Plan: <path> (<tier>)`, the decision summary verbatim, the categorical `Risk:` line, then the `Hold-out` block in full. The summary names every other decision the human may refuse, one line each; offer those sections and print them on request. Then anything the human must act on. |
 | Approval record | `stdout` | `Approved by: <human message quoted>; plan: docs/plans/<name>.md.` |
 | ADR | `<resolved ADR directory>/NNNN-<kebab-slug>.md` | `references/adr-template.md` rendered with Context, Decision, and Consequences. |
 | Contract change | Exact repo-relative contract path listed in the plan | Valid OpenAPI, JSON Schema, protobuf, AsyncAPI, Pact, or repository-native contract syntax. |
@@ -45,7 +45,7 @@ Do not infer an order among these condition-triggered rules.
 ## Ordered change workflow
 Execute steps 0–10 in ascending order. Until the step 6 Approval record exists, the only file you write is the step 5 plan file. An amendment re-enters at the lowest invalidated step.
 0. **Establish the baseline.** Enter: a change request exists. Emit: Baseline statement. Stop: unresolvable base, contamination.
-   1. Record the current branch, target branch, and staged, unstaged, and untracked files.
+   1. Record the current branch, target branch, and staged, unstaged, and untracked files. Report it when the current branch is the target branch: the change is landing where it would be reviewed from.
    2. Set `diff-base` to `HEAD` for uncommitted work and to the target-branch merge-base for branch, PR, or MR work.
    3. Stop and ask which base to use when the target branch is absent, disputed, or has no merge-base.
    4. Treat an intentional review diff as input, and stop and report unrelated target-file edits as contamination.
@@ -53,7 +53,7 @@ Execute steps 0–10 in ascending order. Until the step 6 Approval record exists
    1. Stop for an answer as a Decision prompt when the business requirement is ambiguous, and never proceed on an assumed answer.
 2. **Read the existing slice.** Enter: step 1 has an unambiguous requirement. Emit: Current-behavior reading. Continue: always.
    1. Read the relevant contract, tests, changed files, routes, messages, and domain terms, plus every ADR named by an `ADR-NNNN` marker in them.
-   2. Derive current behavior from the contract and tests; use the implementation only for behavior neither states.
+   2. Derive current behavior from the contract and tests; use the implementation only for behavior neither states. Offer the reading for correction, never as ground truth.
    3. Use the greenfield bullet when nothing exists. Scan this repository's ADR titles when the change adds contract surface: new surface carries no markers.
 3. **Classify the change.** Enter: step 2 printed the reading. Emit: Trivial-risk declaration, or nothing. Continue: to step 4 unless 3.6 fires.
    1. Treat the change as plan-gated unless every condition in 3.2–3.5 holds.
@@ -101,9 +101,9 @@ Execute steps 0–10 in ascending order. Until the step 6 Approval record exists
    4. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <diff-base>`.
    5. Compare its inventory with `Files likely to change`.
    6. Stop and reopen the gate when the approved specification is wrong, when 8.5 exceeds the plan, or when requested review feedback falls outside approved scope (feedback inside scope re-enters at the lowest invalidated step, no new plan): amend the plan file with the old and new form, re-run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" <plan-path>`, return to step 6, and resume at the lowest invalidated step after re-approval.
-9. **Produce the review packet.** Enter: step 8 produced current-turn results. Emit: Review packet. Stop: 9.1.
+9. **Produce the review packet.** Enter: step 8 produced current-turn results. Emit: Review packet. Stop: 9.1. Changed tests are changed requirements and contract diffs are boundary changes: the packet presents them as the spec, not as code.
    1. Stop for the required sealed hold-out result from the named runner, asking write / decline / defer as a Decision prompt. Resolve it to `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; only the human declines, an unavailable runner is `NOT RUN`, and `failed` blocks.
-   2. Set Back-translation to one sentence derived from the changed tests, or to `n/a — no test diff`.
+   2. Set Back-translation to one sentence derived from the changed tests alone, beside the business requirement so the human compares prose to prose, or to `n/a — no test diff`.
    3. Read `references/execution.md` now even if read earlier; re-run its checkers and assemble its exact packet.
    4. Stop and hand the `ctdd-review` verdict to the human: name the final diff and wait. Never load `ctdd-review` here, and never dispatch it yourself unless asked — a review this session commissions and frames is not independent, whichever context runs it.
 

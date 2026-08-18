@@ -32,6 +32,65 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.28.0 — 2026-08-03
+
+### Restored
+- **"A flaky spec reads as an unreliable spec, to the agent and the human, so retrying around it is never the fix."** The determinism dimension names the uncontrolled input; it never said why. The argument decides cases the dimension does not enumerate.
+- **"A bug-fix regression test is the spec of the fix and stays as long as that behavior is required; deleting it later removes the spec."** Dimension 4 covers deleting it as a spec amendment, but not why it persists.
+- **Step 0 reports when the current branch is the target branch** — the change is landing where it would be reviewed from. Step 0 recorded `branch=<n>` and never remarked on it; the 2026-08-03 baseline read `branch=main` in silence. Phrased against the declared target rather than a hardcoded `main`, so it holds for any trunk name.
+
+### Changed
+- **Route ratchet 40,400 → 41,000.** ~10,250 tokens, 5th of Anthropic's 62 shipped skills by loaded prose. Two of the three restorations landed in `ctdd-tests`, which needed no increase at all; only the branch check touched the constrained budgets. The headroom is deliberate — a ceiling with 48 characters spare is what caused a requested addition to be dropped and reported as a displacement.
+
+### Audit closed
+- Every rule-shaped and prose line that has existed in `skills/` since v0.11.3 — **267 in total** — has now been read individually rather than matched. Fourteen losses, all purpose sentences attached to surviving structures. Five restored, four covered by successors, three marginal, two were the hold-out clauses restored in 0.26.2. `ctdd-tests` and `ctdd-review` prose lost nothing, which is the confirmation: only the two files rewritten from prose into contracts lost their *why*.
+
+## 0.27.2 — 2026-08-03
+
+### Restored
+- **"Changed tests are changed requirements and contract diffs are boundary changes: the packet presents them as the spec, not as code."** Step 9 had been left saying *assemble its exact packet* — a shape with no reason. This is the method's thesis and the reason `check-spec-surface` exists.
+- **The back-translation is derived from the changed tests alone, and placed beside the business requirement so the human compares prose to prose.** Without the first clause it is a summary of the diff rather than independent evidence; without the second there is nothing to compare it against. It is the cheapest wrong-encoding detector in the method and the only one that runs on every change.
+
+### Added
+- A guard on both, and finding #58: all 102 rules from v0.20.1 read one at a time, twelve losses, every one a purpose sentence attached to a surviving structure. Two automated passes missed all twelve because a purpose sentence is built from the same words as the structure it explains.
+
+## 0.27.1 — 2026-08-03
+
+### Added
+- **`consumer pin` in the contract-changes field.** `consumers: <names>` is a list; a pin is a test. The field asks whether anything actually fails in CI when this change breaks a consumer, and `none — <reason>` is a legitimate answer that makes the gap visible at the gate instead of in production. Restored from v0.11.3, where the rule required a consumer-driven contract update; the field form asks the question without requiring the consumer to publish one.
+
+### Changed
+- **Both budget guards now state what they are and what they are not.** The compaction reserve is early warning: the survival probes slice at the proxy itself, so the reserve guards them by nothing — and at 14,500 the body limit is already stricter than Anthropic's ~5,000-token guidance (~3,600 tokens, 72%). The route ratchet is a ratchet, not a budget: no published guidance bounds per-change reference load, the number was set to wherever the content happened to be, and its only job is to make growth a decision.
+- **`CLAUDE.md` rule 9 gains its missing half.** It said *displace or decide, never shave*. It now also says check what the number is before treating it as a constraint, and never resolve a budget conflict alone — the guard once caused an addition the human had asked for to be dropped silently, which is the failure to avoid.
+
+### Noted, not fixed
+- `plan-format.md` (14,591 ch) is larger than the skill it serves (14,032). 42% of it is the complete example, which this project's own evidence says is the operative instruction — so the proportion is defensible, but it is the one place a reference outweighs its skill.
+
+## 0.27.0 — 2026-08-03
+
+### Changed
+- **The plan is stated as having two readers, and the gate follows from it.** The summary is for the human: a few minutes, and a reader who agrees with every recommendation approves from it alone. Everything below is for the agent implementing it and for the reader who disagrees — exact names, values and paths, with **no ceiling on how much of that a change needs**. Length below the summary was never the fault; a summary that does not stand alone is.
+- **The gate prints the summary and the `Hold-out` block in full**, not eight sections. Printing all eight made the gate scale with the plan and stop being a few-minute read. The summary now names every other refusable decision — `Assumptions`, `Uncovered or ambiguous`, `Known gaps`, `NFR budgets`, `Residual risk`, `ADR draft` — one line each, with the sections offered and printed on request. The hold-out keeps its exemption: it is the one item asking the human to leave the terminal and do something.
+- **The categorical `Risk:` line closes the summary** rather than opening it. It is form-like and it is what `check-plan.py` parses to derive the tier — the other reader's input, at the summary's foot.
+
+### Restored
+- **Length below the summary is not a fault; a summary that does not stand alone is.** Folded into the two-reader sentence rather than added as its own line — the conclusion of the reframing, and it had been trimmed for 80 characters.
+- **Capture the human's stated direction, not a competing one; a decision handed back unresolved returns to `BLOCKING` with their version as the default.** Lost at v0.21.0. Observed three times: the agent correcting the human wrongly on a load-bearing claim, re-raising settled decisions, and resolving the `≥50` semantics itself after the human bounced the question back. Worded to the shape that actually failed rather than the v0.11.3 original.
+- **The current-behavior reading is offered for correction, never as ground truth.** The `Correct this reading` line survived; the prohibition behind it did not.
+- **Not restored: the consumer-driven contract pin.** Added, then dropped when the route ratchet fired — it is the one item with no observed instance and a dependency on a consumer publishing a contract. Dropping an unevidenced addition is the right displacement; shaving evidenced prose to fund it is not.
+
+- The success test from v0.20.1, lost when `plan-format.md` became a field list in v0.21.0: *a reader who agrees with every recommendation approves from the summary alone.* Nineteen sections said what must be **present**; nothing said what **good** meant, so 6,735 words read as thoroughness. Not restored: *"under a minute"* and *"thirty seconds of their attention"* — `check-plan.py` already reports reading time, and a stopwatch is the wrong target for the agent's half of the file.
+
+## 0.26.2 — 2026-08-03
+
+### Fixed
+- **The hold-out decline path gets back what made it independent.** The human recomputes each value by hand from the business requirement rather than reading the code that produced it — verifying by opening the implementation and agreeing inherits the misunderstanding the hold-out exists to break. Lost in `1d84b78`, a commit with no changelog entry.
+- **The fallback is offered as the fallback, never as the equivalent.** A guard that quietly replaces the hold-out makes circularity worse while feeling like progress. Seven declines, zero hold-outs.
+- **`declined by human` is a waiver, not a neutral outcome,** and `ctdd-review` reports a declined or `NOT RUN` hold-out as a finding on a high-risk or contract-touching change. It had become one of four enum values, indistinguishable in the packet from a decline on a rename.
+
+### Added
+- A guard covering each restored clause individually, all three confirmed to fail when their clause is deleted. None had ever been on the `must_survive` list, which is why a compression pass removed them while its changelog claimed every rule intact (finding #57).
+
 ## 0.26.1 — 2026-08-03
 
 ### Fixed

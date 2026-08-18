@@ -430,6 +430,45 @@ Worse, **four heading vocabularies coexisted** in the loaded surface: the format
 **No framework reference files were added.** `references/xunit.md`, `nunit.md`, and similar files would duplicate project facts and create another stale convention source. A framework reference is justified only by a CTDD-specific operational requirement that adjacent tests cannot reveal — for example, a required marker, runner filter, lifecycle trap, or evidence-capture format.
 **Regression guard added:** one test requires the repository-instruction/project/adjacent-test ownership rule; another isolates the worked section and rejects `xUnit`, `[Fact]`, `[Theory]`, and `Assert.Equal` while requiring positive, boundary, negative, and forbidden-side-effect rows. This is a prompted rule guarded against textual regression, not mechanical proof that a generated test follows the repository.
 
+### Finding #58 — the rewrites kept every rule a checker enforces and lost every sentence saying why
+
+**Audited 2026-08-03.** All 102 rule-shaped lines from v0.20.1 — the last version before the v0.21.0 procedural rewrite — read one at a time against the current surface, across `ctdd-change`, `ctdd-tests`, `ctdd-review`, `plan-format.md` and `adr-rules.md`.
+
+**Ninety survived. Twelve did not, and every one of the twelve is a purpose sentence attached to a structure that is still there.**
+
+- `ctdd-change`: *changed tests are changed requirements, contract diffs are boundary changes* · the back-translation's *from the tests in this diff alone* and *next to the business requirement, prose to prose* · *an unstated budget is not a free one* · *stated so silence becomes reviewable*
+- `ctdd-tests`: *a flaky spec reads as an unreliable spec* · *for a bug fix, that regression test is the spec of the fix* · *writing them is writing the spec* · *an intent test is the spec* · *a characterization test may encode a bug*
+- `ctdd-review`: *call it out even when it's correct — visibility is the point*
+- `adr-rules`: *the moment it narrates what the code does, it has drifted into spec territory*
+
+**The mechanism.** The rewrites converted guidance into contracts, which was the right instinct — a checker enforcing a section beats prose asking for it. But a contract holds structure and prohibitions and has nowhere to put purpose. So `NFR budgets` kept its heading and lost why writing `none` matters; `Back-translation` kept its field and lost the two clauses that made it work. Nothing was decided against; the sentences simply had nothing to attach to.
+
+**Why this was hard to detect, and it matters for the next audit.** Two automated passes missed all twelve. Both matched key terms, and a purpose sentence is built from the same vocabulary as the structure it explains — `spec`, `test`, `budget`, `summary` all still appear, so term-presence reported the rule intact. The human noticed it twice by reading, before any tooling did. **Term-presence is not rule-presence**, and no cheap check distinguishes them.
+
+**Restored here:** the thesis sentence, into step 9, because the packet had been left with a shape and no stated purpose; and the back-translation's two clauses, because without *from the tests alone* it is a summary of the diff rather than independent evidence — the cheapest wrong-encoding detector in the method, and the only one that runs on every change.
+
+**Not restored:** the other nine. Four are genuinely covered by surviving rules (`flag any … as a spec amendment`, `do not use an ADR to describe current behavior`, and the thesis itself subsumes two). Three are marginal — they explain a mandatory section that `check-plan` already enforces. Two are operational and were held only for budget: *a flaky spec reads as an unreliable spec* decides cases the determinism dimension does not enumerate, and *the regression test is the spec of the fix* licenses refusing a later deletion. Those two remain available at ~160 characters whenever the route has room.
+
+### Finding #57 — unexercised prose is what a compression pass loses, and nothing accounts for removal
+
+**Traced 2026-08-03 across every commit from v0.11.3 to v0.26.1.** Of 801 distinctive rule sentences ever present in `skills/`, 186 no longer appear anywhere; 58 were introduced *after* v0.11.3 and then dropped. Most are rewordings with equal-or-stronger successors — `size is not the test` became `check-spec-surface`'s verdict, `the repo plan file is the authority` became step 5.2, `a pin that fails beforehand describes something the code never did` became the **pin fail** evidence state. Prose replaced by a checker is the trade this project wants.
+
+**Six had no successor. Four of the six were hold-out content.**
+- v0.12.2: *the human checks the number by doing the arithmetic rather than reading the code that produced it* — the clause that made the decline fallback an independent reading at all.
+- v0.12.2: *offer it as the fallback, never as the equivalent — a guard that quietly replaces the hold-out makes circularity worse while feeling like progress.*
+- v0.12.2: *it cannot break a shared misunderstanding.*
+- v0.13.0: *`declined by human` is an explicit waiver, reported at review as a deviation on a load-bearing change, never a neutral success.*
+
+**None was decided against.** Two went out in `613b5b6` (v0.21.0), whose changelog says the rewrite landed *"with every rule intact"* — while documenting the removal of a worked example, with a reason, in the same entry. Two went out in `1d84b78`, which has **no changelog entry at all** and is the commit that left the golden tests red. One went out in `3e2cc4e`, whose entry enumerates the four hold-out outcome values while dropping the sentence saying what a decline *means*.
+
+**Why this cluster and not another.** `CLAUDE.md` rule 3 requires anything **additive** to name what it displaces. There is no inverse for **removal**, so a compression pass has explicit accounting for growth and none for loss. A rule survived only if someone had previously thought to add it to `must_survive`; none of these six was on that list. And the hold-out has **zero executions across seven changes**, so nothing ever exercised these rules and no session failed for their absence. Unexercised prose is the first thing a compression pass loses and the last thing anyone notices — and it compounds, because each loss made the next decline cheaper.
+
+**Restored in v0.26.2** with a guard covering each clause individually, each confirmed to fail when its clause is deleted. Two further losses were **not** restored: *consumer-driven contract updates* (v0.11.3) has no observed instance and depends on a consumer publishing a contract, so it is filed rather than built; *capture the developer's direction rather than inventing a competing one* (v0.11.3) has three observed instances, but the observed shape is narrower than the original wording — a decision the human bounced back being closed by agreement rather than returned to `BLOCKING`.
+
+**The generalisable lesson is not "review harder".** A guard list assembled from past failures cannot protect a rule that has never failed, and a compression pass can measure what a sentence costs but not what it does.
+
+**Also noted, not fixed here:** two distinct findings are both numbered #56 (lines 433 and 487).
+
 ### Finding #56 — the first complete real-use run: what held, what the format cost, and the hold-out at zero for six
 
 **2026-07-27, `payment-gateway-api`, Flik alias normalization + Bankart 2007 → `FlikNotFound`.** Steps 0 through 9 executed end to end for the first time. 172 user turns, 299 assistant, 150 tool calls, 3 advisor passes. This is the project's first change where the method ran to completion on real work rather than being reviewed.

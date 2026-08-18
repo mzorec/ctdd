@@ -17,7 +17,7 @@ A skills-based plugin that brings Contract- and Test-Driven Development to backe
 
 ## Non-negotiable rules for changing this repo
 
-**1. Behavior changes ship with tests in the same commit.** This is a hard-learned rule: a `check-plan.py` regex fix once broke a fixture silently because the change had no test. Any edit to a script's behavior updates or adds cases in its `test_*.py`. Run `python3 -m pytest scripts/ hooks/ -q` — it must stay green (currently **218 passing, 1 skipped**; count with pytest, not by grepping `def test_`).
+**1. Behavior changes ship with tests in the same commit.** This is a hard-learned rule: a `check-plan.py` regex fix once broke a fixture silently because the change had no test. Any edit to a script's behavior updates or adds cases in its `test_*.py`. Run `python3 -m pytest scripts/ hooks/ -q` — it must stay green (currently **221 passing, 1 skipped**; count with pytest, not by grepping `def test_`).
 
 **2. One definition of "spec surface."** `check-spec-surface.py` holds the test/contract/ADR patterns. `check-plan.py` and the hook import or mirror that one definition (env overrides included) — never fork a second copy. If you touch the patterns, touch them there.
 
@@ -33,7 +33,7 @@ A skills-based plugin that brings Contract- and Test-Driven Development to backe
 
 **8. A guard can pass without guarding.** Three in this repo did: a loop over lines containing a term that no longer appeared anywhere, a path pattern that matched zero references once the paths were normalised, and a substring assertion that stayed true while the sentence it checked inverted its meaning. After writing or changing a guard, delete the rule it covers and confirm it fails. If it doesn't, it is documentation with a `test_` prefix.
 
-**9. When a budget guard fires, displace or decide — never shave.** Trimming sentences until the number passes breaks the rules the survival probes protect, and hides the decision. Move something out, or move the limit and record the reason in the guard beside the number.
+**9. When a budget guard fires, displace or decide — never shave, and never resolve it alone.** Trimming sentences until the number passes breaks the rules the survival probes protect and hides the decision. Move something out, or move the limit and record the reason in the guard beside the number. **Check what the number is first:** the compaction reserve is early warning — the survival probes are the real constraint — and the route ratchet was set to wherever the content happened to be, not derived from anything. If the fire forces dropping something the human asked for, say so and let them choose; deleting the cheapest item is not a resolution.
 
 **10. A repair pass is where the next defects come from.** Several defects in recent releases were introduced by the fixes for the previous review, and two by the budget work that followed them. Re-run and re-read after a repair; don't trust a pass because it was corrective.
 

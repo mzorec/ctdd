@@ -1,13 +1,15 @@
 # Implementation plan format
 
+**This plan has two readers.** The summary is for the human at the gate: a few minutes, and a reader who agrees with every recommendation approves from it alone — so it names every decision they might refuse, including the hold-out and anything they must act on. Everything below is for the agent implementing it and for the reader who disagrees: exact names, exact values, exact paths, and no ceiling on how much of that a change needs — length below the summary is not a fault; a summary that does not stand alone is. 
+Close the summary with the categorical `Risk:` line: it is form-like, and it is what `check-plan.py` parses to derive the tier.
+
 Load this file only at `SKILL.md` step 5.1.
 
 1. Write the sections below in the displayed order.
 2. Replace every placeholder.
-3. Use exact repository-relative paths.
-4. Use exact test names.
-5. Write an empty mandatory section as `<Section name>: none — <reason>` on the heading line itself, with no bullet under it. A bullet reading `none` is extracted by `check-redstate.py` as a test name and fails the run.
-6. Omit only the sections marked conditional.
+3. Use exact repository-relative paths and exact test names.
+4. Write an empty mandatory section as `<Section name>: none — <reason>` on the heading line itself, with no bullet under it. A bullet reading `none` is extracted by `check-redstate.py` as a test name and fails the run.
+5. Omit only the sections marked conditional.
 
 ```markdown
 <Decision summary: one to three sentences naming the proposed direction, the highest risk, and every unresolved decision.>
@@ -44,13 +46,15 @@ Name the plan file `<TICKET>-<kebab-slug>.md`, or `<YYYY-MM-DD>-<kebab-slug>.md`
 
 ## Gate-visible sections
 
-The plan file is the complete artifact; the terminal is where the human decides. These go to `stdout` in full at step 6.1 whatever the plan's length — each carries a judgement the human may disagree with, and a long plan loses them first:
+The plan file is the complete artifact; the terminal is where the human decides. The summary and the `Hold-out` block go to `stdout` in full at step 6.1.
 
-`Business requirement` · `Assumptions` · `Uncovered or ambiguous` · `Known gaps` · `NFR budgets` · `Residual risk` · `Hold-out` · `ADR draft` when one exists.
+The hold-out is printed in full because it is the one item asking the human to leave the terminal and do something.
+
+The summary names — one line each, not the sections — every other decision the human may refuse: `Assumptions`, `Uncovered or ambiguous`, `Known gaps`, `NFR budgets`, `Residual risk`, and an `ADR draft` when one exists. Offer those sections; print them when asked.
 
 ## Plan tiers
 
-`check-plan.py` requires a different section set depending on what the plan declares, and names the tier and count it applied on every run. The tier is **derived, never written**: `small` needs `contract: none`, `risk: normal`, `hold-out: not required`, and `New-behavior tests: none`; any contract delta, `high-risk`, or a required hold-out is `large`; everything else is `medium`. So `small` cannot be claimed over a contract delta the way `trivial` was once claimed over an absent diff.
+`check-plan.py` requires a different section set per tier and names the tier it applied on every run. The tier is **derived, never written**: `small` needs `contract: none`, `risk: normal`, `hold-out: not required`, and `New-behavior tests: none`; any contract delta, `high-risk`, or a required hold-out is `large`; everything else is `medium`. So `small` cannot be claimed over a contract delta the way `trivial` was once claimed over an absent diff.
 
 Tiers shrink **documentation**, never **evidence**. Both test headings, the risk line, the verification commands, and the approval gate are required at every tier — a tier that could drop one would rebuild the triviality hole under a friendlier name.
 
@@ -64,11 +68,11 @@ The complete example below is the operative instruction: anything it demonstrate
 4. Cover every applicable row of **Required case coverage** below, and record every row the change does not reach under `Case coverage not reached` as `<case> — n/a — <reason>`; never leave a row unaddressed.
 5. Require a hold-out for money, authorization, state-machine, rounding, inclusivity, timezone, fee-treatment, or other load-bearing boundary semantics.
 6. Present a required hold-out as a decision, not a notice: name the 1–3 assertions to write, each an observable input and the expected output; give `write` and `decline` with their consequences; recommend one with a reason. "Write some sealed tests" has been declined six times; a named assertion with a number to compute is a five-minute task. Contents stay outside the agent-readable tree.
-7. Use `result: pending` until the required hold-out runs. Before the packet, replace it with `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; unavailability is never a decline.
-8. When the human declines a required hold-out, list the load-bearing expected values the human must verify independently, and do not label that fallback a hold-out result.
+7. Use `result: pending` until the required hold-out runs. Before the packet, replace it with `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; `declined by human` is a waiver, not a neutral outcome — record it as one and expect the review to report it; unavailability is never a decline.
+8. When the human declines a required hold-out, list the load-bearing expected values the human must verify independently, and do not label that fallback a hold-out result. Ask them to recompute each value by hand from the business requirement rather than read the code that produced it: reading the implementation and agreeing inherits the misunderstanding the hold-out exists to break. Offer it as the fallback, never as the equivalent — a guard that quietly replaces the hold-out makes circularity worse while feeling like progress.
 9. Use exact file paths; never write wildcards, directories, `(+ tests)`, `TBD`, or unnamed future files.
 10. Pin the tests that already assert a decision recorded by any ADR this change touches; a decision no test protects is a decision this change can silently reverse.
-11. Record every resolved BLOCKING answer under `Decisions confirmed in session` and remove the question it answered before approval; an approved plan must not still be asking, and the answer must be findable without the chat. Re-run the checker after every plan edit; re-present when the answer changes any other presented decision.
+11. Capture the human's stated direction, not a competing one; a decision handed back unresolved returns to `BLOCKING` with their version as the default. Record every resolved BLOCKING answer under `Decisions confirmed in session` and remove the question it answered; an approved plan must not still be asking, and the answer must be findable without the chat. Re-run the checker after every plan edit; re-present when the answer changes any other presented decision.
 
 `ctdd-tests` owns test naming, altitude, assertion form, and what may not be asserted. Do not restate them here: two copies of a test rule drift, and the one in this file is the copy nobody checks.
 
@@ -138,7 +142,7 @@ Preservation pins
 - `capture_fails_when_amount_exceeds_authorized_amount` — path: `tests/payments/CaptureTests.cs`; case: boundary; over-capture remains rejected before and after.
 
 Contract changes
-- `payments/contract/openapi.yaml` — change the amount constraint to `0 < amount <= authorizedAmount`; compatibility: backward-compatible; consumers: checkout-web, settlement-batch; rollout: single deploy.
+- `payments/contract/openapi.yaml` — change the amount constraint to `0 < amount <= authorizedAmount`; compatibility: backward-compatible; consumers: checkout-web, settlement-batch; consumer pin: `pacts/checkout-web-payments.json` runs in CI — a break fails the build, not production; rollout: single deploy.
 
 NFR budgets
 - latency/throughput: unchanged — no new external call or loop.
