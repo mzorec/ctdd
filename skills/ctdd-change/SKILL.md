@@ -43,7 +43,7 @@ Do not infer an order among these condition-triggered rules.
 | Review packet | `stdout` | The exact field list in `references/execution.md`, assembled at step 9. |
 | Colocated note | Exact repo-relative source or contract path listed in the plan | One sentence stating one universal rule, deliberate gap, or durable external fact. |
 ## Ordered change workflow
-Execute steps 0–10 in ascending order. Until the step 6 Approval record exists, the only file you write is the step 5 plan file. An amendment re-enters at the lowest invalidated step.
+Execute steps 0–10 in ascending order. Until an Approval record exists for the current plan revision, the only file you write is the step 5 plan file; an amendment voids the previous one. An amendment re-enters at the lowest invalidated step.
 0. **Establish the baseline.** Enter: a change request exists. Emit: Baseline statement. Stop: unresolvable base, contamination.
    1. Record the current branch, target branch, and staged, unstaged, and untracked files. Report it when the current branch is the target branch: the change is landing where it would be reviewed from.
    2. Set `diff-base` to `HEAD` for uncommitted work and to the target-branch merge-base for branch, PR, or MR work.
@@ -62,8 +62,8 @@ Execute steps 0–10 in ascending order. Until the step 6 Approval record exists
    4. Require a code-only, behavior-preserving diff: rename, comment, formatting, or mechanical extraction only. A changed limit, validation rule, generated file, or file of unknown type is plan-gated.
    5. Require named existing tests that already cover every touched behavior, and no colocated note.
    6. Print the Trivial-risk declaration, add it to the PR/MR description, and go to step 8.
-   7. Return to 3.1 as plan-gated when any later step contradicts 3.4 or 3.5.
-4. **Draft the decision inputs.** Enter: step 3 did not fire 3.6. Emit: draft content held for step 5. Continue: after 4.5.
+   7. Retract the declaration from stdout and the PR/MR description, then return to 3.1 as plan-gated, when any later step contradicts 3.4 or 3.5.
+4. **Draft the decision inputs.** Enter: step 3 did not fire 3.6, or 3.7 retracted it. Emit: draft content held for step 5. Continue: after 4.5.
    1. Read `references/worked-change.md` and copy its artifact shapes.
    2. Draft the approach, scope boundary, and highest risk inside the future plan.
    3. When the change decides a service boundary, data ownership, cross-service protocol, or persistence structure, read `references/adr-rules.md` and draft the structural ADR inside the future plan.
@@ -78,8 +78,8 @@ Execute steps 0–10 in ascending order. Until the step 6 Approval record exists
 6. **Gate.** Enter: step 5 exited `0`. Emit: Gate presentation, Approval record. Stop: mandatory, until 6.4 is satisfied.
    1. Print the Gate presentation outside a plan-mode approval surface. The plan file stays the complete artifact.
    2. Copy the canonical decision summary verbatim into any plan-mode surface, with its path.
-   3. Stop for explicit approval. Ask it as a Decision prompt: approve, approve with changes, reject. Write no contract, test, ADR, or production file, and execute no later step, until 6.4 is satisfied.
-   4. Require an affirmative message from the human approving this plan. Your own restatement, silence, a subagent verdict, and a passing checker are not approval.
+   3. Stop for explicit approval. Ask it as a Decision prompt: approve, approve with changes, reject. Amend the plan, re-run the checker and re-present on changes; stop on reject. Write no contract, test, ADR, or production file, and execute no later step, until 6.4 is satisfied.
+   4. Require an affirmative message from the human approving this plan. Your own restatement, silence, a subagent verdict, a passing checker, and harness acceptance of a plan-mode surface are not approval.
    5. Treat approval as authorization to execute the plan file.
 7. **Apply approved artifacts and create test evidence.** Enter: step 6 printed the Approval record. Emit: contract, ADR, tests, pin-state logs, red-state log. Stop: 7.2, 7.8, 7.12.
    1. Re-check the working tree against step 0.
@@ -88,7 +88,7 @@ Execute steps 0–10 in ascending order. Until the step 6 Approval record exists
    4. Skip 7.5–7.8 when the plan's `Preservation pins` names no test.
    5. Invoke `ctdd-tests` to write the preservation pins against the current implementation.
    6. Run the pins before replacing preserved behavior, save the complete run to the pin-state path. Verify pins with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" <pin-log> --tests-from <plan-path> --expect-pass`.
-   7. Apply the preservation-only conversion when the plan contains one; re-run the same pins to the pin-state-after path and verify them the same way.
+   7. Re-run the same pins to the pin-state-after path and verify them the same way.
    8. Stop on any state other than pin pass; read `references/execution.md`.
    9. Skip 7.10–7.12 when the plan's `New-behavior tests` names no test.
    10. Invoke `ctdd-tests` to write the new-behavior tests.
@@ -99,7 +99,7 @@ Execute steps 0–10 in ascending order. Until the step 6 Approval record exists
    2. Do not weaken, delete, skip, or retarget an assertion to obtain green.
    3. Run the contract validator, the focused tests, the broader suite, and the build in the current turn; re-run every preservation pin named in the plan to the pin-state-after path; record `NOT RUN — <reason>` for anything absent, and never reuse an earlier turn's output.
    4. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <diff-base>`.
-   5. Compare its inventory with `Files likely to change`.
+   5. Compare its inventory with `Files likely to change`; in the trivial lane compare it with the declared diff instead, and treat 8.3 and 8.6 as `n/a`.
    6. Stop and reopen the gate when the approved specification is wrong, when 8.5 exceeds the plan, or when requested review feedback falls outside approved scope (feedback inside scope re-enters at the lowest invalidated step, no new plan): amend the plan file with the old and new form, re-run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" <plan-path>`, return to step 6, and resume at the lowest invalidated step after re-approval.
 9. **Produce the review packet.** Enter: step 8 produced current-turn results. Emit: Review packet. Stop: 9.1. Changed test expectations are changed requirements and contract diffs are boundary changes: the packet presents them as the spec, not as code.
    1. Stop for the required sealed hold-out result from the named runner, asking write / decline / defer as a Decision prompt. Resolve it to `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; only the human declines, an unavailable runner is `NOT RUN`, and `failed` blocks.

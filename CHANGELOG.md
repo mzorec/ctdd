@@ -32,6 +32,35 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.31.0 — 2026-08-03
+
+Six workflow transitions that could not be executed as written. None is new guidance; one is a deletion.
+
+### Fixed
+- **6.4 excludes harness acceptance again.** The v0.21.x prose-to-contract rewrite left four exclusions where the changelog records five; the harness clause survived only in the Output contract's `Decision prompt` row. It is least redundant exactly where it was dropped, because 6.2 still writes the summary into the plan-mode surface — the one case where a plan-mode approval genuinely responds to the CTDD summary.
+- **The trivial lane can be unwound.** 3.7 said *return to 3.1 as plan-gated*, but step 4's Enter was *step 3 did not fire 3.6* — permanently false once it had. The only executable path was to continue down a lane the agent had just been told it did not qualify for, with a trivial declaration already in the PR description. 3.7 now retracts the declaration, and step 4 admits a retraction.
+- **`approve with changes` and `reject` are consumed.** 6.3 mandated a three-option prompt; 6.4 defined satisfaction only as an affirmative message, so *"approve, but use 409 not 422"* satisfied the gate and 6.5 authorised executing a plan file that still said 422. Changes now amend, re-check and re-present; reject stops.
+- **The pre-approval write freeze re-arms.** It was keyed on *the step 6 Approval record exists* — existence, not currency — so it discharged permanently at the first approval and imposed nothing while an 8.6 amendment waited for re-approval. Now keyed on the current plan revision, which an amendment voids.
+- **Step 8 admits the trivial lane without assuming a plan.** Its body re-runs pins *named in the plan* and compares against `Files likely to change`, neither of which exists in that lane — leaving 8.5 to compare the diff against itself. 8.5 now compares against the declared diff there, and 8.3 and 8.6 are `n/a`.
+- **7.7's unevaluable trigger removed.** `preservation-only conversion` occurred once in the entire skills tree — in the clause requiring it — and `plan-format.md` declares no section by that or any equivalent name, so nothing in a plan could signal one. The pin re-run it was bundled with is kept.
+
+### Changed
+- **The compaction proxy uses a measured ratio: 5,000 × 3 → 5,000 × 3.5.** The token budget never changed; the characters-per-token used to express it was a worst case of 3, while these bodies measure **4.00**. So the limit sat at 72% of Anthropic's ~5,000-token guidance while presenting itself as the ceiling, and blocked correctness work on that basis. Still below measured density, so the survival probes keep a margin. This does not validate the 5,000 itself — compaction behaviour here has never been measured, and one long session run to a compaction is the experiment that would settle it.
+- Route ratchet 41,000 → 41,500 for the six repairs above.
+
+## 0.30.0 — 2026-08-03
+
+Four defects from a second adversarial review, both measurable ones reproduced first. Six further findings need skill-body edits and are held for approval per rule 3.
+
+### Fixed
+- **A plan naming no test in either lane could be `small`.** The tier was derived from `New-behavior tests: none` alone, so declaring `none` in *both* lanes passed at 8 of 19 — no red-state log, no pin log, no `ctdd-tests` invocation, and step 8's *satisfied every applicable evidence lane* met vacuously. Weaker than the trivial lane the tier system was built to close, which at least demands named existing tests. Both lanes declaring `none` now derives `large`. Read from the heading line, because scanning the block below matched the shell commands under `Verification`.
+- **A `currently_`-prefixed name under the new-behaviour heading is now reported.** Extraction drops it — correctly, since the prefix marks a characterization observation that must not be demanded to fail (findings #29, #36) — but silently, so a plan naming four tests produced *"all 3 new test(s) observed failing — red state verified"* with nothing to show one had left the red set. The reclassification is printed and the rest still verifies; exit code unchanged.
+- **`plan-format.md` rule 6 no longer licenses the agent to supply the expected value.** It said each hold-out assertion names *an observable input and the expected output*, while rule 8 requires the human to recompute every value by hand — so followed literally, the sealed test encoded the agent's own arithmetic and could not contradict an implementation from the same reading. Now: *which* output to assert, never the value.
+- **`worked-change.md` regenerated against the current skill.** It still described printing the complete plan verbatim, quoted a `check-plan` string the script has not emitted since tiers landed, and told the agent to replace a BLOCKING question in place rather than move the answer to `Decisions confirmed in session`.
+
+### Added
+- A guard comparing every `check-plan:` / `check-redstate:` / `check-spec-surface:` line quoted in a reference against the scripts' actual literals, with numbers normalised so counts may differ. The example taught a verdict string for four releases after the script stopped printing it, and nothing compared them.
+
 ## 0.29.1 — 2026-08-03
 
 ### Changed

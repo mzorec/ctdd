@@ -195,7 +195,12 @@ class CheckRedstateTests(unittest.TestCase):
         try:
             r = run(log, "--tests-from", plan.name)
             self.assertEqual(r.returncode, 0, r.stdout)
-            self.assertNotIn("currently_", r.stdout)
+            # It must not be demanded to fail (findings #29, #36) — but it must
+            # be *reported* as reclassified. Silence let a verdict say "all 3
+            # observed failing" over a plan naming four, with nothing to show a
+            # named test had left the red set.
+            self.assertIn("characterization observations", r.stdout)
+            self.assertIn("currently_returns_200_for_unknown_id", r.stdout)
         finally:
             os.unlink(plan.name); os.unlink(log)
 
@@ -553,7 +558,15 @@ class ExtractionHardeningTests(unittest.TestCase):
             r = run(log, "--tests-from", plan)
             self.assertEqual(r.returncode, 0, f"only the unmarked test is new behaviour:\n{r.stdout}")
             for marked in ("CurrentlyReturns200ForUnknownId", "Currently_returns_200"):
-                self.assertNotIn(marked, r.stdout, f"{marked} is an observation, not new behaviour")
+                # It must not appear in the verified red-state list; it must
+                # appear in the reclassification report, so a name leaving the
+                # red set is visible rather than silent.
+                verified = r.stdout.split("observed failing", 1)[0].split(
+                    "characterization observations", 1)[-1]
+                self.assertNotIn(marked, verified.split("check-redstate:")[-1],
+                                 f"{marked} is an observation, not new behaviour")
+                self.assertIn(marked, r.stdout,
+                              f"{marked} was reclassified without being reported")
         finally:
             os.unlink(plan); os.unlink(log)
 

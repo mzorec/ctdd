@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import re
+import re as _re_mod
 import tempfile
 import unittest
 from pathlib import Path
@@ -24,6 +25,12 @@ def run(text, env_extra=None):
     return subprocess.run([sys.executable, SCRIPT, "-"],
                           input=text, capture_output=True, text=True,
                           timeout=15, env=env)
+
+
+def _norm(s):
+    """Numbers and f-string interpolations collapse to a placeholder."""
+    s = _re_mod.sub(r"\{[^}]*\}", "#", s)
+    return _re_mod.sub(r"\d+", "#", s)
 
 
 class SpecSurfaceTests(unittest.TestCase):
@@ -319,7 +326,21 @@ class ChangeSkillStructureTests(unittest.TestCase):
     # tokenizes worse than prose. The property being asserted is therefore MARGIN —
     # these rules sit comfortably inside the surviving window — not a simulation of
     # the real boundary. Keep required rules well ahead of it, never near it.
-    COMPACTION_PROXY_CHARS = 5000 * 3
+    # 5,000 tokens expressed in characters. The ratio was 3, chosen as a
+    # worst case; measured across these three bodies it is 4.00, so the proxy
+    # was understating the same token budget by a quarter and the body limit
+    # sat at 72% of Anthropic's ~5,000-token guidance while presenting itself
+    # as the ceiling. Raised to 3.5: still below measured density, so the
+    # survival probes keep a margin, but no longer a limit that blocks
+    # correctness work while claiming to enforce a guidance number it is well
+    # inside.
+    #
+    # What this does NOT do is validate the 5,000 itself. Compaction behaviour
+    # here has never been measured — one long session run to a compaction, then
+    # checking whether a step-8 rule is still followed, is the experiment that
+    # would settle it. Until then this is a conservative guess expressed with a
+    # less conservative ratio, not a measurement.
+    COMPACTION_PROXY_CHARS = int(5000 * 3.5)
 
     def _surviving_head(self):
         return re.sub(r"^---\n.*?\n---\n", "", self.skill,
@@ -457,7 +478,13 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # loaded prose, with canvas-design 3.5x larger. The headroom is deliberate —
     # a ceiling with 48 characters spare blocks correctness work, which is how the
     # consumer-driven pin came to be dropped and reported as a displacement.
-    MAX_PLAN_GATED_METHODOLOGY_CHARS = 41000
+    # 41,000 -> 41,500, for the six workflow-correctness findings of v0.31.0:
+    # a restored approval exclusion, a trivial lane with no unwind path, two
+    # prompt options nothing consumed, a write freeze that never re-armed, and a
+    # step 8 body that assumed a plan the trivial lane never wrote. One of the
+    # six was a deletion. None is new guidance; all are repairs to instructions
+    # that could not be executed as written.
+    MAX_PLAN_GATED_METHODOLOGY_CHARS = 41500
     """ctdd-tests keeps craft work (de-flaking, altitude, renaming) out of the
     plan gate, while every consumer of the diff — this script, the hook, and
     ctdd-review — reads any modified test as a changed requirement. Both are
@@ -714,6 +741,69 @@ class CrossSkillAgreementTests(unittest.TestCase):
         self.assertIn("no marker does not prove no decision applies", src)
         self.assertNotIn("No relevant ADRs", src)
         self.assertIn("A marker pointing at nothing is a lost decision", src)
+
+    @staticmethod
+    def _normalise_checker_text(s):
+        return _norm(s)
+
+    def test_the_workflow_has_no_unexecutable_transitions(self):
+        """Six findings, all of them instructions that could not be followed as
+        written rather than missing guidance.
+
+        6.4 lost the harness exclusion to a prose-to-contract rewrite while 6.2
+        still tells the agent to write into the plan-mode surface. 3.7 said return
+        to 3.1 as plan-gated, but step 4's Enter was `step 3 did not fire 3.6` —
+        permanently false once it had, so the only executable path was to continue
+        down a lane the agent had just been told it did not qualify for. 6.3 asked
+        for three options and nothing consumed two of them. The write freeze was
+        keyed on an Approval record existing at all, so it discharged permanently
+        at the first approval and imposed nothing during an 8.6 re-approval wait.
+        Step 8 admitted the trivial lane into a body that re-runs pins named in the
+        plan and compares against `Files likely to change`. And 7.7's trigger,
+        `preservation-only conversion`, occurred once in the whole tree — in the
+        clause requiring it — so nothing in a plan could signal one."""
+        t = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("harness acceptance of a plan-mode surface are not approval", t)
+        self.assertIn("Approval record exists for the current plan revision", t)
+        self.assertIn("re-present on changes; stop on reject", t)
+        self.assertIn("Retract the declaration", t)
+        self.assertIn("or 3.7 retracted it", t)
+        self.assertIn("in the trivial lane compare it with the declared diff", t)
+        self.assertNotIn("preservation-only conversion", t)
+        # the obligation the deleted clause was bundled with must survive
+        self.assertIn("pin-state-after path", t)
+
+    def test_quoted_checker_output_in_references_matches_the_scripts(self):
+        """worked-change.md quoted `check-plan: all mandatory sections present (`
+        for four releases after tiers changed the string to carry the tier and an
+        N-of-M count — so the example gave no worked instance of a field the gate
+        requires. An example that teaches a string the script never prints is
+        worse than no example, and nothing noticed because nothing compared them."""
+        scripts = Path(__file__).resolve().parent
+        literals = []
+        for name in ("check-plan.py", "check-redstate.py", "check-spec-surface.py"):
+            src = (scripts / name).read_text(encoding="utf-8")
+            literals.append(src)
+        blob = "\n".join(literals)
+        refs = (self._skills() / "ctdd-change" / "references")
+        for f in sorted(refs.glob("*.md")):
+            text = f.read_text(encoding="utf-8")
+            for line in text.split("\n"):
+                s = line.strip()
+                for prefix in ("check-plan:", "check-redstate:", "check-spec-surface:"):
+                    if not s.startswith(prefix):
+                        continue
+                    # Compare the first few words after the prefix: enough to catch a
+                    # renamed verdict, loose enough to allow the example's own values.
+                    # Normalise both sides: numbers and f-string holes become a
+                    # placeholder, so `all 4 pin test(s)` matches `all {n} pin
+                    # test(s)` while a renamed verdict still fails.
+                    stem = _norm(" ".join(s[len(prefix):].strip().split()[:5]))
+                    if len(stem.split()) < 3:
+                        continue
+                    self.assertIn(
+                        stem, _norm(blob),
+                        f"{f.name} quotes {prefix} ... {stem!r}, which no script emits")
 
     def test_the_last_three_audit_losses_are_restored(self):
         """Closing out the v0.11.3-v0.20.1 audit. A flaky spec reads as an

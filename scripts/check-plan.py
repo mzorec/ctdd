@@ -175,6 +175,31 @@ MEDIUM_SECTIONS = SMALL_SECTIONS | {
 }
 
 
+_LANE_NONE = {
+    "new-behavior": re.compile(
+        r"^\s*[`*_]*new[- ]behavio(?:u)?r\s+tests?\b[^\n]*?:\s*none\b", re.I | re.M),
+    "preservation": re.compile(
+        r"^\s*[`*_]*preservation\s+pins?\b[^\n]*?:\s*none\b", re.I | re.M),
+}
+
+
+def _names_a_test(text):
+    """True unless *both* evidence lanes declare `none` on their heading line.
+
+    `small` was derived from the new-behavior lane alone, so an agent chose the
+    tier by choosing what to declare — and a plan declaring `none` in both lanes
+    passed at 8 of 19 with no red-state log, no pin log and no ctdd-tests
+    invocation, meeting step 8's `satisfied every applicable evidence lane`
+    vacuously. That is weaker than the trivial lane it was built to close, which
+    at least demands named existing tests covering every touched behavior.
+
+    Read from the heading line only: plan-format requires an empty mandatory
+    section to be written `<Section>: none — <reason>` there, and scanning the
+    block below matched the shell commands under `Verification`.
+    """
+    return not all(rx.search(text) for rx in _LANE_NONE.values())
+
+
 def plan_tier(text):
     """large | medium | small — derived, so it cannot be claimed.
 
@@ -186,6 +211,9 @@ def plan_tier(text):
     cat = categorical_line(text) or text
     if (not _CONTRACT_NONE.search(cat)) or _HIGH_RISK.search(cat) \
             or _holdout_required(text):
+        return "large"
+    if not _names_a_test(text):
+        # No evidence in either lane: this cannot be the lightest tier.
         return "large"
     if _NEW_BEHAVIOUR_NONE.search(text):
         return "small"

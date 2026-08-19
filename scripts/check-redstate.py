@@ -334,7 +334,7 @@ def names_from_plan(path, want_pins=False):
     """
     text = _read_text(path)
     want = "pin" if want_pins else "new"
-    found, section = [], "other"
+    found, skipped, section = [], [], "other"
     for line in text.splitlines():
         label = _section_label(line)
         if label is not None and _is_heading(line, label):
@@ -353,9 +353,18 @@ def names_from_plan(path, want_pins=False):
         # PascalCase at finding #29 and this *classification* filter did not, so a
         # PascalCase observation read as a new-behaviour test — the same
         # fix-one-call-site shape as finding #36.
-        if m and (want_pins or not re.match(r"currently", m.group(1), re.I)):
+        if not m:
+            continue
+        if want_pins or not re.match(r"currently", m.group(1), re.I):
             found.append(m.group(1))
-    return list(dict.fromkeys(found))
+        else:
+            # A `currently_`-prefixed name under the new-behaviour heading is
+            # dropped here, and nothing told the author the prefix controls
+            # extraction. Four planned tests silently became three, and the
+            # red-state verdict then certified "all 3 observed failing" while a
+            # named test had no evidence at all. Report it instead of losing it.
+            skipped.append(m.group(1))
+    return list(dict.fromkeys(found)), skipped
 
 
 def main():
@@ -381,7 +390,20 @@ def main():
         elif flag == "--tests-from" and rest:
             try:
                 _plan = rest.pop(0)
-                _found = names_from_plan(_plan, want_pins=expect_pass)
+                _found, _skipped = names_from_plan(_plan, want_pins=expect_pass)
+                if _skipped:
+                    # Not an error: the `currently_` prefix marks a characterization
+                    # observation, which must *not* be demanded to fail (findings #29
+                    # and #36). The defect was silence — the verdict said "all 3
+                    # observed failing" over a plan naming four, and nothing said one
+                    # had been reclassified. Report the reclassification, then verify
+                    # the rest.
+                    print(f"check-redstate: treated {len(_skipped)} `currently_`-"
+                          f"prefixed name(s) as characterization observations, not "
+                          f"new-behaviour tests: {', '.join(_skipped)}. They are not "
+                          f"in the red-state set below. If any was meant as new "
+                          f"behaviour, rename it; if it pins existing behaviour, move "
+                          f"it under `Preservation pins`.")
                 if expect_pass and not _found:
                     print(f"check-redstate: no preservation-pin names found in "
                           f"{_plan}. Write the `Preservation pins — must pass before "

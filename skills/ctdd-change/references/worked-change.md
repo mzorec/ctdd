@@ -41,7 +41,7 @@ The plan is written to `docs/plans/PAY-123-partial-capture.md` using `plan-forma
 
 ```
 $ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" "${CLAUDE_PROJECT_DIR}/docs/plans/PAY-123-partial-capture.md"
-check-plan: all mandatory sections present (presence, not quality — the review still owns quality).
+check-plan: all mandatory sections present for a large plan (19 of 19; presence, not quality — the review still owns quality).
 ```
 
 `docs/plans/` is tracked here, so the plan file is committed and the MR description carries one line:
@@ -52,7 +52,7 @@ CTDD-Plan: docs/plans/PAY-123-partial-capture.md
 
 ## Step 6 — gate
 
-The complete plan is printed verbatim, followed by its path. Nothing else is written. The BLOCKING question is answered by the human in the same turn as the approval:
+The summary, the categorical `Risk:` line and the `Hold-out` block go to stdout, followed by the plan path and its tier. Nothing else is written. The BLOCKING question is answered by the human in the same turn as the approval:
 
 ```
 Human: release the remainder when the authorization expires. Approved.
@@ -62,7 +62,7 @@ Human: release the remainder when the authorization expires. Approved.
 Approved by: "release the remainder when the authorization expires. Approved."; plan: docs/plans/PAY-123-partial-capture.md.
 ```
 
-Every plan edit invalidates its checker result. Replace the BLOCKING question with the answer, re-run `check-plan.py` to exit `0`, then print approval. The same message approves because no other presented decision changed; otherwise re-present the amended plan.
+Every plan edit invalidates its checker result. Move the answer to `Decisions confirmed in session` and remove the question, re-run `check-plan.py` to exit `0`, then print approval. The same message approves because no other presented decision changed; otherwise re-present the amended plan.
 
 ## Step 7 — artifacts and evidence
 
