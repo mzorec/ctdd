@@ -52,7 +52,7 @@ It is not part of the execution procedure.
 - Property runs sample generated inputs and search for counterexamples; they do not prove a universal mathematically.
 - Authorization-matrix generation is finite conformance enumeration rather than property testing.
 - An operation with no allow row can look exhaustively covered while omitting every authorized path.
-- Mutation survivors expose assertions that do not protect required behavior, while equivalent mutants cannot be killed without coupling tests to implementation.
+- Mutation survivors expose assertions that do not protect required behavior, while equivalent mutants cannot be killed by any test, and chasing one produces an implementation-detail assertion.
 - An executable SLO check needs metric, percentile, workload, environment, and threshold to define a reproducible constraint.
 - Project-approved tools avoid introducing an unvetted generator, runner, or platform dependency.
 

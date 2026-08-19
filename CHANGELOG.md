@@ -32,6 +32,39 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.33.0 — 2026-08-03
+
+Seven `ctdd-tests` repairs plus the negative control. All eight are instructions that could not be followed, or a discipline the pilot used and never wrote down.
+
+### Fixed
+- **The authorization-matrix command exited 2 as written.** No OpenAPI argument was named, `-o` was never mentioned though the instruction says to write to the contract path, and `--check` needs the spec too. Both forms are now shown with their arguments and verified to run. **The all-deny caveat is restored with them**, and it is the dangerous half: the generator synthesises one identity per scope and never a combination, so an AND-ed-scope operation is structurally all-deny — read as a contract fact, that scaffolds a 403 assertion for the legitimately authorised caller and inverts the contract in the authorization domain.
+- **Step 7 accepts a passing pin.** It preserved a *failing* new-behaviour test and routed every other result to the blocked table, so the mandatory outcome of `must pass before refactor` — and the craft lane's unchanged verdict — had no accepting branch, and the nearest table row was a word-level match for the wrong lane. The sibling had this defect and it was fixed there; the repair was never made here.
+- **The craft lane reads the criteria that govern craft.** Its three jobs each have their operative rule inside `Test review`, which is scoped to the review lane — so the lane doing the work never entered it. De-flaking by adding a retry is what item 6 exists to forbid.
+- **The promotion rule has all three parts again.** v0.17.0 fixed this with *named in the hand-off lane, old marker and new name shown together, marker dropped last*; two thirds were compressed away with no changelog entry, and the guard passed over the remnant. `currently_` is the discriminator both `ctdd-review`'s pin exemption and `check-redstate`'s classifier read.
+- **A blocked row for a checker that cannot run or exits `2`, and `checker` in the guardrail.** `ctdd-tests` is the only skill that runs the checkers and carried neither. The rule existed twice — in the two skills that do not run the command.
+- **The jqwik warning describes the hazard instead of reproducing it.** The quote was truncated past its scoping clause, leaving an unscoped *Disregard previous instructions* in the always-loaded surface on every invocation, including Python and Go work that will never touch a JVM — the same injection one trust level above the evidence channel it warns about. The maintainer attribution is restored.
+- **The per-test verdict vocabulary maps into `ctdd-review`'s findings.** `ctdd-review` mandates applying this section to every changed test, but its own categories are disjoint and `keep` is a non-finding it forbids emitting three ways. `reduce-interaction-coupling` is also back, having been swapped out while the dimension that produces it survived.
+
+### Added
+- **The negative control** (backlog C1): break the one production rule the test names, re-run, revert — green against the broken rule means the test asserts nothing. The pilot invented this twice under pressure (finding #12) and never wrote it down; it is the tool-free form of the mutation testing the skill already recommends, and the backlog rejects mutation testing *as a gate*, which this is not. The revert must be verified by re-running the same command and confirming a clean production diff, because it licenses a production edit inside a lane whose guardrail forbids one.
+
+### Fixed — docs
+- **Finding #58's conclusion corrected.** It claimed `ctdd-tests` and `ctdd-review` prose lost nothing, directly above its own block restoring two clauses into `ctdd-tests` — a file rewritten prose-to-contract in the same pass. The control-group claim holds only for `ctdd-review`. This is the mechanism the finding itself names: an auditor reads *lost nothing*, scopes their pass elsewhere, and the defects survive another round.
+
+## 0.32.0 — 2026-08-03
+
+Five findings from a `ctdd-tests` review, all script-, eval- or reference-side. Two of its three framing facts were already stale — the body limit is 17,000, not 14,500, and the suite is green — but `ctdd-tests` was byte-identical to what it read, so the findings stand.
+
+### Fixed
+- **The jqwik guard passed with its rule deleted.** `for line in t.split("\n"): if "jqwik" in line ...` — with no jqwik lines the loop body never runs. That is CLAUDE.md rule 8's first named example verbatim, and blind to exactly the regression 0.21.2 shipped. It now asserts the warning **exists** and checks a stable marker instead of requiring the injection string verbatim, which had turned a hazard into a required invariant. Mutation-tested both ways.
+- **The enforcement-claim guard was case-sensitive and frontmatter-only.** `assertNotIn("Enforces", desc)` let *"it enforces behaviour-level naming"* through — and that sentence had already shipped, in **two** places the widened guard immediately found: `docs/ctdd-in-depth.md` and `README.md`. `ctdd-tests` invokes no checker, so both now say *derives*. Rejection claims are ruled out too: a skill can never reject, only route.
+- **Approval and snapshot baselines are test surface.** `.verified.*`, `.approved.*`, `.snap` and `__snapshots__/` were in no pattern, so re-recording a baseline (`verify --accept`, `jest -u`) made an implementation pass with **no test file edited** — evading the guardrail's verb list entirely and landing as `other` in every deterministic consumer. A spec amendment with no artifact.
+- **The equivalent-mutant claim was false as written.** *"cannot be killed without coupling tests to implementation"* implies a white-box test could; an equivalent mutant is semantically identical and no test kills it. Restored to the changelog's own corrected wording — *by any test* — because the reading it licensed was to write the implementation-coupled assertion the guardrail forbids, on money and authorization cores.
+- **Two eval cases asserted `should_trigger: true` for phrasings the description rejects** — *"update them to match the new code"* and *"just sync them with what the code returns now"* — while `ctdd-change-triggers.json` marks the same shape true, so both sets claimed the same request. Flipped, with the routing reason recorded on each case.
+
+### Added
+- Guards for the approval-baseline patterns and for eval/description agreement. The evals have never been executed, so nothing else would have caught the repeat of a defect the changelog already records fixing once.
+
 ## 0.31.0 — 2026-08-03
 
 Six workflow transitions that could not be executed as written. None is new guidance; one is a deletion.
@@ -113,7 +146,7 @@ Fourteen defects from an external adversarial review, every one reproduced befor
 - **Route ratchet 40,400 → 41,000.** ~10,250 tokens, 5th of Anthropic's 62 shipped skills by loaded prose. Two of the three restorations landed in `ctdd-tests`, which needed no increase at all; only the branch check touched the constrained budgets. The headroom is deliberate — a ceiling with 48 characters spare is what caused a requested addition to be dropped and reported as a displacement.
 
 ### Audit closed
-- Every rule-shaped and prose line that has existed in `skills/` since v0.11.3 — **267 in total** — has now been read individually rather than matched. Fourteen losses, all purpose sentences attached to surviving structures. Five restored, four covered by successors, three marginal, two were the hold-out clauses restored in 0.26.2. `ctdd-tests` and `ctdd-review` prose lost nothing, which is the confirmation: only the two files rewritten from prose into contracts lost their *why*.
+- Every rule-shaped and prose line that has existed in `skills/` since v0.11.3 — **267 in total** — has now been read individually rather than matched. Fourteen losses, all purpose sentences attached to surviving structures. Five restored, four covered by successors, three marginal, two were the hold-out clauses restored in 0.26.2. `ctdd-review` prose lost nothing. **This entry originally said `ctdd-tests` lost nothing too, directly above its own `Restored` block restoring two clauses into that file** — and `ctdd-tests` was rewritten prose-to-contract in the same pass as `ctdd-change`. The v0.32.0 review then found seven further losses there, exactly the way finding #58 predicts: an auditor reads *lost nothing*, scopes their pass elsewhere, and the defects survive another round.
 
 ## 0.27.2 — 2026-08-03
 

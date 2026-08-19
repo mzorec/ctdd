@@ -465,6 +465,8 @@ Worse, **four heading vocabularies coexisted** in the loaded surface: the format
 
 **Restored in v0.26.2** with a guard covering each clause individually, each confirmed to fail when its clause is deleted. Two further losses were **not** restored: *consumer-driven contract updates* (v0.11.3) has no observed instance and depends on a consumer publishing a contract, so it is filed rather than built; *capture the developer's direction rather than inventing a competing one* (v0.11.3) has three observed instances, but the observed shape is narrower than the original wording — a decision the human bounced back being closed by agreement rather than returned to `BLOCKING`.
 
+**Correction, 2026-08-03.** This finding's own conclusion — that `ctdd-tests` and `ctdd-review` prose lost nothing — was wrong for `ctdd-tests`, and wrong in the way the finding itself describes. It was written directly above a block restoring two clauses into that file. A later review found seven more, including an authorization command that exits 2, a promotion rule missing two of three parts, and a verdict vocabulary `ctdd-review` cannot render. The control-group claim holds only for `ctdd-review`.
+
 **The generalisable lesson is not "review harder".** A guard list assembled from past failures cannot protect a rule that has never failed, and a compression pass can measure what a sentence costs but not what it does.
 
 **Also noted, not fixed here:** two distinct findings are both numbered #56 (lines 433 and 487).

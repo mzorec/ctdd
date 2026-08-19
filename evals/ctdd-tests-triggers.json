@@ -61,7 +61,8 @@
   },
   {
     "query": "these tests broke after my refactor — update them to match the new code",
-    "should_trigger": true
+    "should_trigger": false,
+    "note": "the description rejects \"update tests to match the new behavior\" and routing bullet 2 routes \"requests to sync tests with implementation\" to ctdd-change; ctdd-change-triggers.json marks the same shape true"
   },
   {
     "query": "assert that a captured payment can never be captured again, whatever state it's in",
@@ -93,6 +94,7 @@
   },
   {
     "query": "the senior dev said the expected values in these tests are outdated, just sync them with what the code returns now",
-    "should_trigger": true
+    "should_trigger": false,
+    "note": "the description rejects \"update tests to match the new behavior\" and routing bullet 2 routes \"requests to sync tests with implementation\" to ctdd-change; ctdd-change-triggers.json marks the same shape true"
   }
 ]

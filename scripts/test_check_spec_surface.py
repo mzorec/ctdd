@@ -531,10 +531,21 @@ class CrossSkillAgreementTests(unittest.TestCase):
         prints agent-directed instructions on every run puts them in the artifact
         the deterministic layer reads."""
         t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
-        for line in t.split("\n"):
-            if "jqwik" in line and "do not reach" not in line and "not hidden" not in line:
-                self.assertIn("must not use this library", line,
-                              "jqwik may only appear as a warning, never a recommendation")
+        lines = [l for l in t.split("\n") if "jqwik" in l]
+        # Assert positively. The loop-over-matching-lines form passed with every
+        # jqwik line deleted — CLAUDE.md rule 8's first named example, and blind
+        # to exactly the regression that already shipped: 0.21.2 kept the removal
+        # and dropped the reason.
+        self.assertTrue(lines, "the jqwik warning is gone; deleting it must fail")
+        joined = " ".join(lines).lower()
+        # Assert on the hazard, not on the payload. Requiring the injection string
+        # verbatim made a defect (the unscoped imperative sitting in agent context
+        # on every invocation) into a required invariant.
+        self.assertIn("stdout", joined,
+                      "the warning must say where the hazard lands")
+        for banned in ("recommend", "prefer jqwik", "use jqwik for"):
+            self.assertNotIn(banned, joined,
+                             "jqwik may only appear as a warning, never a recommendation")
 
     def test_every_skill_body_fits_the_compaction_proxy(self):
         """The survival guard's probe list is per-skill and binds to ctdd-change
@@ -1005,15 +1016,103 @@ class CrossSkillAgreementTests(unittest.TestCase):
         r2 = run("R100\told.cs\tnew.cs\n")
         self.assertNotEqual(r2.returncode, 2, "a rename legitimately has three fields")
 
-    def test_no_skill_claims_enforcement_it_does_not_have(self):
-        """`ctdd-tests` contains no script and invokes no checker, so a
-        description saying it *enforces* naming and coverage claims mechanical
-        assurance the plugin does not provide — in the always-loaded surface."""
-        import yaml
+    def test_ctdd_tests_lanes_and_tool_commands_are_executable(self):
+        """Seven repairs, all instructions that could not be followed as written.
+
+        The authz command named no OpenAPI argument and never mentioned `-o`, so it
+        exited 2 — and its all-deny caveat had been compressed away, leaving an
+        agent to read a generator limit as a contract fact and scaffold a 403 for
+        the legitimately authorised caller. Step 7 had no accepting branch for a
+        passing pin, the mandatory outcome of `must pass before refactor`. The
+        craft lane never entered the section holding its own criteria. Two thirds
+        of the promotion rule were deleted with no changelog entry. The only skill
+        that runs the checkers carried neither their exit semantics nor a blocked
+        row. The jqwik warning carried an unscoped imperative into agent context on
+        every invocation. And the per-test verdict vocabulary was one `ctdd-review`
+        could not render.
+
+        Plus the negative control (backlog C1): break the rule the test names,
+        re-run, revert — the discipline the pilot used twice under pressure and
+        never wrote down, and the tool-free form of the mutation testing the skill
+        already recommends. The revert must be verified, because it licenses a
+        production edit inside a lane whose guardrail forbids one."""
         t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
-        desc = yaml.safe_load(re.match(r"^---\n(.*?)\n---\n", t, re.S).group(1))["description"]
-        self.assertNotIn("Enforces", desc,
-                         "a skill with no mechanism must not claim enforcement")
+        for probe in (
+            "<openapi-path> -o <matrix-path>",
+            "read that as a generator limit, never as a contract fact",
+            "those are the required results of their lanes",
+            "Read `Test review` items 1, 2 and 6 first",
+            "show the old marked name and the new name together",
+            "drop the marker last",
+            "red state, or checker result without running",
+            "Its claim is unverified",
+            "break the one production rule the test names, re-run, and revert",
+            "confirming a clean production diff",
+            "carry only the non-`keep` verdicts into its findings",
+        ):
+            self.assertIn(probe, t, f"ctdd-tests lost: {probe!r}")
+        # The jqwik hazard is described, never reproduced: an unscoped
+        # "Disregard previous instructions" in the always-loaded surface is the
+        # same injection one trust level up from the evidence channel.
+        self.assertNotIn("Disregard previous instructions`", t)
+        self.assertIn("instructing agents to disregard previous instructions", t)
+
+    def test_approval_baselines_are_test_surface(self):
+        """Re-recording an approval or snapshot baseline makes an implementation
+        pass without editing any test file, so it evades the guardrail's verb list
+        — edit, delete, skip, loosen, replace, reclassify — and landed as `other`
+        in every deterministic consumer. A spec amendment with no artifact."""
+        import importlib.util
+        gp = Path(__file__).resolve().parents[1] / "hooks" / "spec-edit-guard.py"
+        spec = importlib.util.spec_from_file_location("seg_ab", gp)
+        guard = importlib.util.module_from_spec(spec); spec.loader.exec_module(guard)
+        pats = guard.patterns("CTDD_TEST_PATTERNS", guard.TEST_DEFAULT)
+        for path in ("src/App.Tests/CaptureHandlerTests.verified.txt",
+                     "src/App/__snapshots__/list.snap",
+                     "web/list.test.js.snap",
+                     "src/App.Tests/Handler.approved.json"):
+            self.assertTrue(any(rx.search(path) for rx in pats),
+                            f"{path} is not classified as test surface")
+
+    def test_the_evaluation_set_agrees_with_the_description(self):
+        """Two cases asserted should_trigger=true for phrasings the description
+        names as rejects, and ctdd-change-triggers.json marks the same shape true
+        — so both eval sets claimed the same request. The changelog records fixing
+        this exact defect once; nothing runs the evals, so nothing caught the
+        repeat."""
+        import json as _json
+        root = self._skills().parent
+        cases = _json.loads((root / "evals" / "ctdd-tests-triggers.json")
+                            .read_text(encoding="utf-8"))
+        for c in cases:
+            q = c.get("query", "").lower()
+            if "sync" in q and "code" in q or "update them to match" in q:
+                self.assertFalse(
+                    c.get("should_trigger"),
+                    f"the description routes this to ctdd-change: {q[:80]}")
+
+    def test_no_skill_claims_enforcement_it_does_not_have(self):
+        """`ctdd-tests` contains no script and invokes no checker, so text saying it
+        *enforces* naming and coverage claims mechanical assurance the plugin does
+        not provide. The guard asserted `assertNotIn("Enforces", ...)` — capital E,
+        frontmatter only — so `it enforces behaviour-level naming` passed, and that
+        exact sentence had already shipped in the docs that describe the skill.
+        A rejection claim is ruled out the same way: a skill can never reject, only
+        route."""
+        root = self._skills().parent
+        targets = [self._skills() / "ctdd-tests" / "SKILL.md",
+                   self._skills() / "ctdd-tests" / "references" / "rationale.md",
+                   root / "docs" / "ctdd-in-depth.md",
+                   root / "README.md"]
+        for f in targets:
+            if not f.exists():
+                continue
+            text = f.read_text(encoding="utf-8").lower()
+            for claim in ("enforce", "rejects non-conforming", "rejects the"):
+                for line in text.split("\n"):
+                    if claim in line and "ctdd-tests" in line:
+                        self.fail(f"{f.name} claims {claim!r} for ctdd-tests, which "
+                                  f"runs no checker: {line.strip()[:110]}")
 
     def test_the_ordered_workflow_names_the_lanes_that_do_not_write_a_test(self):
         """The v0.21.2 rewrite replaced the old "When writing" / "When reviewing"

@@ -40,6 +40,14 @@ TEST_DEFAULT = [
     r"(^|/)test_[^/]*\.py$",                  # test_capture.py
     r"\.(test|spec)\.\w+$",                   # foo.test.ts, foo.spec.js
     r"_(test|spec)\.\w+$",                    # foo_test.go, foo_spec.rb
+    # Approval / snapshot baselines. Re-recording one (`verify --accept`,
+    # `jest -u`, `--snapshot-update`) makes an implementation pass without
+    # editing any test file, so it evaded the guardrail's verb list — edit,
+    # delete, skip, loosen, replace, reclassify — and landed as `other` in every
+    # deterministic consumer. A spec amendment with no artifact anywhere.
+    r"\.(verified|approved|received)\.[^/]+$",
+    r"(^|/)__snapshots__/",
+    r"\.snap$",
 ]
 
 CONTRACT_DEFAULT = [
