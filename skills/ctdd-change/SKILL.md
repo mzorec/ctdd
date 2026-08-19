@@ -101,7 +101,7 @@ Execute steps 0–10 in ascending order. Until the step 6 Approval record exists
    4. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <diff-base>`.
    5. Compare its inventory with `Files likely to change`.
    6. Stop and reopen the gate when the approved specification is wrong, when 8.5 exceeds the plan, or when requested review feedback falls outside approved scope (feedback inside scope re-enters at the lowest invalidated step, no new plan): amend the plan file with the old and new form, re-run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" <plan-path>`, return to step 6, and resume at the lowest invalidated step after re-approval.
-9. **Produce the review packet.** Enter: step 8 produced current-turn results. Emit: Review packet. Stop: 9.1. Changed tests are changed requirements and contract diffs are boundary changes: the packet presents them as the spec, not as code.
+9. **Produce the review packet.** Enter: step 8 produced current-turn results. Emit: Review packet. Stop: 9.1. Changed test expectations are changed requirements and contract diffs are boundary changes: the packet presents them as the spec, not as code.
    1. Stop for the required sealed hold-out result from the named runner, asking write / decline / defer as a Decision prompt. Resolve it to `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; only the human declines, an unavailable runner is `NOT RUN`, and `failed` blocks.
    2. Set Back-translation to one sentence derived from the changed tests alone, beside the business requirement so the human compares prose to prose, or to `n/a — no test diff`.
    3. Read `references/execution.md` now even if read earlier; re-run its checkers and assemble its exact packet.

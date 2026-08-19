@@ -742,7 +742,12 @@ class CrossSkillAgreementTests(unittest.TestCase):
         rather than a summary of the diff, and `beside the business requirement`,
         which is the comparison that makes it usable."""
         t = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("Changed tests are changed requirements", t)
+        # "test expectations", not "tests": a rename, de-flake or altitude repair is a
+        # changed test and not a changed requirement, and ctdd-tests keeps those in
+        # its own lane on exactly that basis. `expectation` is already the term of art
+        # in dimension 4.
+        self.assertIn("Changed test expectations are changed requirements", t)
+        self.assertNotIn("Changed tests are changed requirements", t)
         self.assertIn("contract diffs are boundary changes", t)
         self.assertIn("from the changed tests alone", t)
         self.assertIn("beside the business requirement", t)
@@ -763,8 +768,11 @@ class CrossSkillAgreementTests(unittest.TestCase):
         on a rename."""
         fmt = (self._skills() / "ctdd-change" / "references"
                / "plan-format.md").read_text(encoding="utf-8")
-        self.assertIn("recompute each value by hand", fmt)
-        self.assertIn("rather than read the code that produced it", fmt)
+        self.assertIn("recompute each one by hand from the business requirement", fmt)
+        # never by reading the code is the clause that makes the fallback a second
+        # reading rather than a countersignature on the first.
+        self.assertIn("never by reading the code that produced it", fmt)
+
         self.assertIn("never as the equivalent", fmt)
         self.assertIn("is a waiver, not a neutral outcome", fmt)
         rev = (self._skills() / "ctdd-review" / "SKILL.md").read_text(encoding="utf-8")

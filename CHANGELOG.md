@@ -32,6 +32,16 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.28.1 — 2026-08-03
+
+### Fixed
+- **"Changed test expectations are changed requirements", not "changed tests".** A rename, de-flake or altitude repair is a changed test and not a changed requirement — `ctdd-tests` keeps those in its own lane on exactly that basis, and `expectation` is already the term of art in its dimension 4. The absolute form coexisted with the craft lane in v0.20.1 too, so this is a precision fix rather than a defect repair.
+- **Rule 8 compressed to its two imperatives.** Recompute each value by hand from the business requirement, never by reading the code that produced it; offer it as the fallback, never as the equivalent. The explanation of why reading the implementation inherits the misunderstanding belongs in the findings log, not in a file loaded on every plan-gated change. Both imperatives kept — the 0.21.x mistake was compressing away the semantic condition, not compressing.
+- **The changelog no longer claims a `consumer pin` field exists.** It is demonstrated in the worked example only; no field rule requires it and `check-plan.py` does not check it. The example teaches, but the entry described a contract that was never written — the example-versus-contract ambiguity this project keeps trying to eliminate.
+
+### Changed
+- **A section repeating what another already carries is a fault.** The two-reader block licensed unbounded detail below the summary without saying anything against repetition, which is what 28 amendment rounds actually produced. The permission stays; the constraint is new.
+
 ## 0.28.0 — 2026-08-03
 
 ### Restored
@@ -57,7 +67,7 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 ## 0.27.1 — 2026-08-03
 
 ### Added
-- **`consumer pin` in the contract-changes field.** `consumers: <names>` is a list; a pin is a test. The field asks whether anything actually fails in CI when this change breaks a consumer, and `none — <reason>` is a legitimate answer that makes the gap visible at the gate instead of in production. Restored from v0.11.3, where the rule required a consumer-driven contract update; the field form asks the question without requiring the consumer to publish one.
+- **`consumer pin` shown in the worked contract-changes entry.** `consumers: <names>` is a list; a pin is a test that fails in CI when compatibility breaks. It is demonstrated in the example only — no field rule requires it and `check-plan.py` does not check it — because there is still no observed instance of an unpinned consumer breaking downstream. This project's evidence is that the example is the operative instruction, so it teaches; but it is not a contract, and 0.27.0's own judgement that it lacked an observed instance was correct. Promote it to a field rule with a guard when that instance arrives.
 
 ### Changed
 - **Both budget guards now state what they are and what they are not.** The compaction reserve is early warning: the survival probes slice at the proxy itself, so the reserve guards them by nothing — and at 14,500 the body limit is already stricter than Anthropic's ~5,000-token guidance (~3,600 tokens, 72%). The route ratchet is a ratchet, not a budget: no published guidance bounds per-change reference load, the number was set to wherever the content happened to be, and its only job is to make growth a decision.
