@@ -89,7 +89,10 @@ class CheckPlanTests(unittest.TestCase):
             r = run("Risk: trivial — null check in logging. Skipping the plan gate.\n",
                     ["--diff", d])
             self.assertEqual(r.returncode, 0)
-            self.assertIn("trivial claim stands", r.stdout)
+            self.assertIn("trivial claim survives the surface check", r.stdout)
+            # and must not claim more than it inspected: 3.4 needs intent,
+            # this reads paths.
+            self.assertIn("NOT checked", r.stdout)
         finally:
             os.unlink(d)
 
@@ -200,6 +203,40 @@ class CheckPlanTests(unittest.TestCase):
                     any(head in mk or mk in head for mk in marked),
                     f"{tier} drops {name!r} but plan-format does not mark it "
                     f"conditional; marked: {sorted(marked)}")
+
+    def test_both_lanes_none_derives_large_in_every_heading_style(self):
+        """v0.30.0 made both lanes declaring `none` derive `large`, because a plan
+        naming no test in either lane passed at 8 of 19 with no red-state log, no
+        pin log and no ctdd-tests invocation — step 8's `satisfied every applicable
+        evidence lane` met vacuously, weaker than the trivial lane it was built to
+        close.
+
+        That fix shipped with no tests, and its own regex omitted the heading
+        prefix every REQUIRED pattern allows — so `## New-behavior tests: none`
+        missed the guard and still derived `small`. A cosmetic markdown choice
+        decided whether a zero-test plan passed the gate."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("cp_lanes", SCRIPT)
+        cp = importlib.util.module_from_spec(spec); spec.loader.exec_module(cp)
+        base = ("Risk: normal · contract: none · ADR: none · hold-out: not required\n"
+                "{p}New-behavior tests — must be observed failing: none — refactor\n"
+                "{p}Preservation pins — must pass before and after: none — covered\n")
+        for prefix in ("", "## ", "### ", "- ", "* ", "**"):
+            self.assertEqual(
+                cp.plan_tier(base.format(p=prefix)), "large",
+                f"a plan with {prefix!r} headings and no test in either lane "
+                f"must not reach a lighter tier")
+
+    def test_a_named_test_in_either_lane_still_allows_a_lighter_tier(self):
+        """The guard must not simply force everything to large."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("cp_lanes2", SCRIPT)
+        cp = importlib.util.module_from_spec(spec); spec.loader.exec_module(cp)
+        base = ("Risk: normal · contract: none · ADR: none · hold-out: not required\n"
+                "## New-behavior tests — must be observed failing: none — refactor\n"
+                "## Preservation pins — must pass before and after:\n"
+                "- `capture_rounds_half_up` — path: `t.cs`; case: legacy behavior.\n")
+        self.assertEqual(cp.plan_tier(base), "small")
 
     def test_the_tier_is_derived_from_declarations_not_claimed(self):
         """The 2026-07-27 Flik plan ran to 31,448 chars — ~14 minutes to read at
@@ -434,7 +471,7 @@ class ComposedCheckerTests(unittest.TestCase):
                                capture_output=True, text=True, timeout=15)
         self.assertEqual(r.returncode, 2)
         self.assertIn("authoritative spec-surface classifier", r.stderr)
-        self.assertNotIn("trivial claim stands", r.stdout)
+        self.assertNotIn("trivial claim survives", r.stdout)
 
     def test_help_does_not_print_literal_newline_escapes(self):
         r = subprocess.run([sys.executable, SCRIPT, "--help"],
@@ -457,7 +494,7 @@ class ComposedCheckerTests(unittest.TestCase):
                            capture_output=True, text=True)
         self.assertEqual(r.returncode, 2, f"must not pass over discarded input:\n{r.stdout}")
         self.assertIn("unparseable", r.stdout)
-        self.assertNotIn("trivial claim stands", r.stdout)
+        self.assertNotIn("trivial claim survives", r.stdout)
 
     def test_parser_does_not_leak_state_between_calls(self):
         """Malformed lines are returned, not accumulated in module state, so one

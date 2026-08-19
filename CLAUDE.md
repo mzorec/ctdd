@@ -17,7 +17,7 @@ A skills-based plugin that brings Contract- and Test-Driven Development to backe
 
 ## Non-negotiable rules for changing this repo
 
-**1. Behavior changes ship with tests in the same commit.** This is a hard-learned rule: a `check-plan.py` regex fix once broke a fixture silently because the change had no test. Any edit to a script's behavior updates or adds cases in its `test_*.py`. Run `python3 -m pytest scripts/ hooks/ -q` — it must stay green (currently **231 passing, 2 skipped**; count with pytest, not by grepping `def test_`).
+**1. Behavior changes ship with tests in the same commit.** This is a hard-learned rule: a `check-plan.py` regex fix once broke a fixture silently because the change had no test. Any edit to a script's behavior updates or adds cases in its `test_*.py`. Run `python3 -m pytest scripts/ hooks/ -q` — it must stay green (currently **234 passing, 2 skipped**; count with pytest, not by grepping `def test_`).
 
 **2. One definition of "spec surface."** `check-spec-surface.py` holds the test/contract/ADR patterns. `check-plan.py` and the hook import or mirror that one definition (env overrides included) — never fork a second copy. If you touch the patterns, touch them there.
 

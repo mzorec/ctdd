@@ -368,6 +368,7 @@ def names_from_plan(path, want_pins=False):
 
 
 def main():
+    reclassified = False
     args = sys.argv[1:]
     if not args:
         print("check-redstate: missing log argument. Pass a log path or '-' for stdin.",
@@ -398,6 +399,14 @@ def main():
                     # observed failing" over a plan naming four, and nothing said one
                     # had been reclassified. Report the reclassification, then verify
                     # the rest.
+                    # Exit non-zero. Step 7.12 says "stop on any state other than
+                    # intended red" and step 8's Enter demands intended red for
+                    # *every* new-behaviour test the plan names — both key on this
+                    # exit code. Reporting the reclassification while exiting 0 let
+                    # an agent proceed with a named test never observed in either
+                    # direction: the verdict said "all 3 observed failing" over a
+                    # plan naming four.
+                    reclassified = True
                     print(f"check-redstate: treated {len(_skipped)} `currently_`-"
                           f"prefixed name(s) as characterization observations, not "
                           f"new-behaviour tests: {', '.join(_skipped)}. They are not "
@@ -458,7 +467,7 @@ def main():
             print(f"check-redstate: all {len(ok)} pin test(s) observed PASSING against the "
                   f"current implementation — preservation baseline captured. Re-run the same "
                   f"tests after the change; they must still pass.")
-            return 0
+            return 2 if reclassified else 0
         print("check-redstate: PIN BASELINE NOT VERIFIED.")
         if amb:
             print(f"  occurrences disagree ({len(amb)}): " +
@@ -497,7 +506,7 @@ def main():
         print(f"check-redstate: all {len(failing)} new test(s) observed failing — "
               f"red state verified. (That they failed for the *right* reason is "
               f"still the reviewer's read.)")
-        return 0
+        return 2 if reclassified else 0
 
     print("check-redstate: RED STATE NOT VERIFIED.")
     if ambiguous_names(log, names):

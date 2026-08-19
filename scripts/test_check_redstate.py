@@ -194,11 +194,14 @@ class CheckRedstateTests(unittest.TestCase):
         log = write(JEST_LOG)
         try:
             r = run(log, "--tests-from", plan.name)
-            self.assertEqual(r.returncode, 0, r.stdout)
-            # It must not be demanded to fail (findings #29, #36) — but it must
-            # be *reported* as reclassified. Silence let a verdict say "all 3
-            # observed failing" over a plan naming four, with nothing to show a
-            # named test had left the red set.
+            # It must not be demanded to fail (findings #29, #36), and it must not
+            # be certified either. plan-format puts `currently_` names under
+            # `Preservation pins`, so one under the new-behaviour heading is a plan
+            # defect; step 7.12 stops on any state but intended red and step 8
+            # demands intended red for *every* named test, and both key on this
+            # exit code. v0.30.0 reported the reclassification and still exited 0,
+            # which let an agent proceed with a named test never observed either way.
+            self.assertEqual(r.returncode, 2, r.stdout)
             self.assertIn("characterization observations", r.stdout)
             self.assertIn("currently_returns_200_for_unknown_id", r.stdout)
         finally:
@@ -556,7 +559,8 @@ class ExtractionHardeningTests(unittest.TestCase):
         log = write("  Failed ReturnsPagedResult [1 ms]\n")
         try:
             r = run(log, "--tests-from", plan)
-            self.assertEqual(r.returncode, 0, f"only the unmarked test is new behaviour:\n{r.stdout}")
+            self.assertEqual(r.returncode, 2, f"a marked name under the new-behaviour "
+                             f"heading is a plan defect, not a pass:\n{r.stdout}")
             for marked in ("CurrentlyReturns200ForUnknownId", "Currently_returns_200"):
                 # It must not appear in the verified red-state list; it must
                 # appear in the reclassification report, so a name leaving the

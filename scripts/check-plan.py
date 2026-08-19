@@ -175,11 +175,18 @@ MEDIUM_SECTIONS = SMALL_SECTIONS | {
 }
 
 
+# The same heading prefix every REQUIRED pattern allows: a plan writing its
+# sections as `## New-behavior tests` or `- Preservation pins` is well formed.
+# Omitting it here meant a cosmetic markdown choice decided whether a plan
+# declaring zero tests in both lanes derived `small` — reopening the hole the
+# guard below was written to close, through the guard's own regex.
+_HEADING = r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*"
+
 _LANE_NONE = {
     "new-behavior": re.compile(
-        r"^\s*[`*_]*new[- ]behavio(?:u)?r\s+tests?\b[^\n]*?:\s*none\b", re.I | re.M),
+        _HEADING + r"new[- ]behavio(?:u)?r\s+tests?\b[^\n]*?:\s*none\b", re.I | re.M),
     "preservation": re.compile(
-        r"^\s*[`*_]*preservation\s+pins?\b[^\n]*?:\s*none\b", re.I | re.M),
+        _HEADING + r"preservation\s+pins?\b[^\n]*?:\s*none\b", re.I | re.M),
 }
 
 
@@ -435,8 +442,16 @@ def main():
                       f"test or a contract file is never trivial; produce the full "
                       f"plan. (check-spec-surface has the complete inventory.)")
             return 1
-        print("check-plan: trivial claim stands — the diff touches no "
-              "test/contract surface.")
+        # The lane has two conditions and this inspects one. 3.3 is path-based
+        # and checkable; 3.4 (a changed limit, validation rule, generated file
+        # or file of unknown type is plan-gated) needs intent, and three
+        # attempts at that heuristic were killed at 43-50% false positives.
+        # So say what was checked, not that the claim stands.
+        print("check-plan: trivial claim survives the surface check — no test, "
+              "contract or ADR path touched. NOT checked: 3.4's "
+              "behavior-preserving requirement. This reads paths, not hunks, so "
+              "a changed limit or validation rule inside one production file "
+              "looks identical to a mechanical rename.")
         return 0
 
     tier = plan_tier(text)

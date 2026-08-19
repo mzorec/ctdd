@@ -15,6 +15,7 @@ the required action for each.
 | Wrong red: the failure comes from setup, environment, a typo, or an unrelated defect | Fix that cause, re-run, and require intended red. A wrong red never unlocks step 8. |
 | Premature green: a named new test passes before implementation | Stop. Report whether the behavior already exists or the assertion fails to constrain it, and return to step 6. |
 | Pin fail: a named pin fails before the change | Stop. The pin describes behavior the code never had; return to step 6. |
+| Broken pin: a named pin passed before the change and fails after it | Stop. The change broke preserved behavior. This is the finding, not a plan defect: do not amend the pin away and do not weaken it. Report it and return to 8.1 with the implementation, never to step 6 with the plan. |
 | Weakened green: green obtained by relaxing, deleting, skipping, or retargeting an assertion | Stop and reopen the gate under 8.6; never keep the relaxed assertion silently. |
 ## Break points
 | Signal | Required action |

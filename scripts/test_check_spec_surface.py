@@ -323,35 +323,29 @@ class ChangeSkillStructureTests(unittest.TestCase):
     # auto-compaction. No authoritative tokenizer is available here, so this uses a
     # deliberately pessimistic character proxy: 3 chars/token rather than the ~4
     # typical of English prose, because markdown with backticks, paths and code
-    # tokenizes worse than prose. The property being asserted is therefore MARGIN —
-    # these rules sit comfortably inside the surviving window — not a simulation of
-    # the real boundary. Keep required rules well ahead of it, never near it.
-    # 5,000 tokens expressed in characters. The ratio was 3, chosen as a
-    # worst case; measured across these three bodies it is 4.00, so the proxy
-    # was understating the same token budget by a quarter and the body limit
-    # sat at 72% of Anthropic's ~5,000-token guidance while presenting itself
-    # as the ceiling. Raised to 3.5: still below measured density, so the
-    # survival probes keep a margin, but no longer a limit that blocks
-    # correctness work while claiming to enforce a guidance number it is well
-    # inside.
+    # tokenizes worse than prose. The property asserted is MARGIN — these rules sit
+    # comfortably inside the surviving window — not a simulation of the boundary.
     #
-    # What this does NOT do is validate the 5,000 itself. Compaction behaviour
-    # here has never been measured — one long session run to a compaction, then
-    # checking whether a step-8 rule is still followed, is the experiment that
-    # would settle it. Until then this is a conservative guess expressed with a
-    # less conservative ratio, not a measurement.
-    COMPACTION_PROXY_CHARS = int(5000 * 3.5)
+    # Raised to 3.5 in v0.31.0 and restored here. Two things were wrong with that
+    # raise. It was made because a guard fired, and the guard that fired was the
+    # 500-char reserve — the early warning this file itself labels "NOT
+    # PROTECTION" — so the response raised the constant the probes slice on, by
+    # 2,500, which rule 9 names as the thing to check first. And its stated
+    # justification, "measured 4.00", was `len(body)/(len(body)//4)`: 4.00 for any
+    # text at all, a tautology rather than a measurement. External tokenizers put
+    # this content at 4.16-4.50, so a raise may well be defensible — but it needs a
+    # measurement and a reason that is not the early-warning guard going off.
+    COMPACTION_PROXY_CHARS = 5000 * 3
 
-    def _surviving_head(self):
-        return re.sub(r"^---\n.*?\n---\n", "", self.skill,
-                      flags=re.S)[:self.COMPACTION_PROXY_CHARS]
+    # Position, not presence. While the body is smaller than the proxy the head
+    # slice IS the whole body, so every probe assertion is position-independent
+    # and a probe can only fall out of a body that already failed the size guard —
+    # structurally unreachable. Measured: the last probe sits at 12,961 of 14,660.
+    # This ceiling is the real constraint and it can fail: move a must-survive rule
+    # to the end of the body and this fires, where the presence checks do not.
+    MAX_PROBE_OFFSET_CHARS = 13_500
 
-    def test_load_bearing_rules_survive_conservative_compaction_proxy(self):
-        """Presence in the file is not the property that matters; presence in the
-        re-attached head is. A rule past the boundary is gone for the rest of a
-        long session, which is exactly when the discipline matters most."""
-        head = self._surviving_head()
-        must_survive = {
+    MUST_SURVIVE = {
             "no result claim without current-turn run": "Do not claim a test, build, gate, checker",
             "tests are delegated before edits": "Invoke `ctdd-tests` before creating",
             "artifact conflicts stop": "Stop on incompatible claims",
@@ -364,7 +358,35 @@ class ChangeSkillStructureTests(unittest.TestCase):
             "red-state verdict is required": "Verify red state with",
             "pin verdict is required": "Verify pins with",
             "hold-out blocks review": "Stop for the required sealed hold-out result",
-        }
+    }
+
+    def _surviving_head(self):
+        return re.sub(r"^---\n.*?\n---\n", "", self.skill,
+                      flags=re.S)[:self.COMPACTION_PROXY_CHARS]
+
+    def test_every_must_survive_rule_sits_well_inside_the_window(self):
+        """Presence in the surviving head is not the property that matters once the
+        head is the whole body — then it is vacuous. Assert *offset*: each rule that
+        must survive compaction has to sit inside MAX_PROBE_OFFSET_CHARS, so growth
+        that pushes one toward the boundary fails here rather than silently."""
+        body = re.sub(r"^---\n.*?\n---\n", "", self.skill, flags=re.S)
+        worst = []
+        for label, probe in self.MUST_SURVIVE.items():
+            at = body.find(probe)
+            self.assertGreaterEqual(at, 0, f"the rule '{label}' is gone: {probe!r}")
+            worst.append((at, label))
+        at, label = max(worst)
+        self.assertLessEqual(
+            at, self.MAX_PROBE_OFFSET_CHARS,
+            f"'{label}' sits at {at} chars, past the {self.MAX_PROBE_OFFSET_CHARS} "
+            f"ceiling — it is drifting toward the compaction boundary")
+
+    def test_load_bearing_rules_survive_conservative_compaction_proxy(self):
+        """Presence in the file is not the property that matters; presence in the
+        re-attached head is. A rule past the boundary is gone for the rest of a
+        long session, which is exactly when the discipline matters most."""
+        head = self._surviving_head()
+        must_survive = self.MUST_SURVIVE
         for label, probe in must_survive.items():
             self.assertIn(probe, head,
                           f"'{label}' falls outside the surviving head — "
@@ -379,9 +401,18 @@ class ChangeSkillStructureTests(unittest.TestCase):
         for name in sorted(f.name for f in (self.base / "references").glob("*.md")):
             if name == "adr-template.md":
                 continue  # fetched by adr-rules.md, which is itself loaded early
-            self.assertIn(name, head,
-                          f"the instruction to read references/{name} falls outside "
-                          f"the surviving head, so the fallback it backs would vanish")
+            if name == "rationale.md":
+                continue  # marked do-not-load during a change, by design
+            # Assert the *loader sentence*, not the bare filename. Every reference
+            # is also named in the Output contract table, so `name in head` stayed
+            # true when step 5.1's `Read references/plan-format.md.` was replaced
+            # with prose — the guard was green while the fallback it protects had
+            # stopped existing. Rule 8's `a path pattern that matched zero
+            # references once the paths were normalised`, one level up.
+            self.assertRegex(
+                head, rf"(?i:read)\s+`references/{re.escape(name)}`",
+                f"no `Read references/{name}` loader survives the boundary, so the "
+                f"fallback it backs would vanish")
 
 
 class QuotedPathTests(unittest.TestCase):
@@ -430,17 +461,18 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # spare. The alternative was relocating steps 7-10, which converts four
     # guaranteed-present survival probes into conditionally-loaded ones; that
     # stays filed with a trigger rather than forced to fit a number.
-    # EARLY WARNING, NOT PROTECTION. The survival probes slice the body at
-    # COMPACTION_PROXY_CHARS itself, so this reserve does not guard them by one
-    # character — it only shortens the runway before one would fail, and that
-    # failure is loud and names the rule that fell out.
+    # EARLY WARNING, NOT PROTECTION. The real constraint is now
+    # MAX_PROBE_OFFSET_CHARS, which asserts where each must-survive rule sits
+    # rather than merely that it is present — the presence form went vacuous the
+    # moment the body was smaller than the proxy, because then the head slice is
+    # the whole body.
     #
-    # Keep it small. At 14,500 the limit is already stricter than Anthropic's
-    # ~5,000-token guidance (14,500 chars is ~3,600 tokens, 72% of it), so a body
-    # under this ceiling is not large by any external measure. Treating this number
-    # as a hard constraint produced four rounds of shaving sentences to fit it, and
-    # broke three survival probes doing so. The probes are the constraint.
-    MINIMUM_MARGIN_CHARS = 500
+    # 500 -> 300. The v0.31.0 additions put the body 160 chars over the old limit,
+    # and the response then was to raise the proxy by 2,500 — the constant the
+    # probes slice on — because this guard fired. Rule 9 says check which number
+    # fired first. This one did, it is the early warning, and lowering it is the
+    # cheap honest move; the probes are protected by offset now, not by this.
+    MINIMUM_MARGIN_CHARS = 300
     # Raised once, deliberately, for plan tiers (v0.24.0). This ratchet measures
     # agent context — loaded once, cached, cheap. Tiering spends ~700 characters
     # of it to take roughly 2,000 words off every small plan a human reads at the
@@ -484,7 +516,12 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # step 8 body that assumed a plan the trivial lane never wrote. One of the
     # six was a deletion. None is new guidance; all are repairs to instructions
     # that could not be executed as written.
-    MAX_PLAN_GATED_METHODOLOGY_CHARS = 41500
+    # 41,500 -> 41,800 for Part A: a post-change pin-fail state (the method's most
+    # important signal had no state and the nearest row said to amend the pin
+    # away), the trivial lane no longer skipping the validator, tests, suite and
+    # build, and step 8's Enter no longer satisfiable by the empty set. Net of
+    # deleting 7.7's pre-implementation after-run.
+    MAX_PLAN_GATED_METHODOLOGY_CHARS = 41800
     """ctdd-tests keeps craft work (de-flaking, altitude, renaming) out of the
     plan gate, while every consumer of the diff — this script, the hook, and
     ctdd-review — reads any modified test as a changed requirement. Both are
@@ -758,63 +795,113 @@ class CrossSkillAgreementTests(unittest.TestCase):
         return _norm(s)
 
     def test_the_workflow_has_no_unexecutable_transitions(self):
-        """Six findings, all of them instructions that could not be followed as
-        written rather than missing guidance.
+        """Six v0.31.0 repairs, asserted as whole sentences rather than fragments.
 
-        6.4 lost the harness exclusion to a prose-to-contract rewrite while 6.2
-        still tells the agent to write into the plan-mode surface. 3.7 said return
-        to 3.1 as plan-gated, but step 4's Enter was `step 3 did not fire 3.6` —
-        permanently false once it had, so the only executable path was to continue
-        down a lane the agent had just been told it did not qualify for. 6.3 asked
-        for three options and nothing consumed two of them. The write freeze was
-        keyed on an Approval record existing at all, so it discharged permanently
-        at the first approval and imposed nothing during an 8.6 re-approval wait.
-        Step 8 admitted the trivial lane into a body that re-runs pins named in the
-        plan and compares against `Files likely to change`. And 7.7's trigger,
-        `preservation-only conversion`, occurred once in the whole tree — in the
-        clause requiring it — so nothing in a plan could signal one."""
+        The first version was a list of `assertIn` substring checks, and every
+        repaired rule could be negated while leaving the asserted substring intact
+        — the write freeze rewritten to "Once an Approval record exists ... write
+        whatever you like; the only file you write is the step 5 plan file is not a
+        rule" passed. That is rule 8's third named failure verbatim: a substring
+        assertion that stayed true while the sentence it checked inverted.
+
+        Asserting the full sentence is not as strong as constructing the forbidden
+        state and showing the workflow rejects it — that needs an executor this
+        repo does not have — but it does mean a negation has to delete the
+        sentence, and deletion is what the guard now catches."""
         t = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("harness acceptance of a plan-mode surface are not approval", t)
-        self.assertIn("Approval record exists for the current plan revision", t)
-        self.assertIn("re-present on changes; stop on reject", t)
-        self.assertIn("Retract the declaration", t)
-        self.assertIn("or 3.7 retracted it", t)
-        self.assertIn("in the trivial lane compare it with the declared diff", t)
+        sentences = {
+            "write freeze keyed on the current revision":
+                "Until an Approval record exists for the current plan revision, the "
+                "only file you write is the step 5 plan file; an amendment voids the "
+                "previous one.",
+            "approval excludes a harness surface":
+                "Your own restatement, silence, a subagent verdict, a passing "
+                "checker, and harness acceptance of a plan-mode surface are not "
+                "approval.",
+            "the other two prompt options are consumed":
+                "Amend the plan, re-run the checker and re-present on changes; stop "
+                "on reject.",
+            "the trivial lane can be unwound":
+                "Retract the declaration from stdout and the PR/MR description, then "
+                "return to 3.1 as plan-gated, when any later step contradicts 3.4 or "
+                "3.5.",
+            "step 4 admits a retraction":
+                "Enter: step 3 did not fire 3.6, or 3.7 retracted it.",
+            "step 8 does not assume a plan in the trivial lane":
+                "in the trivial lane compare it with the declared diff instead, take "
+                "8.3's pin re-run and 8.6 as `n/a`, and still run the validator, "
+                "tests, suite and build",
+            "step 8 needs at least one named test":
+                "Enter: step 7 satisfied every applicable evidence lane, and at "
+                "least one lane named a test",
+        }
+        for label, sentence in sentences.items():
+            self.assertIn(sentence, t, f"the rule '{label}' no longer reads as written")
+        # 7.7's trigger was unevaluable: `preservation-only conversion` occurred
+        # once in the whole tree, in the clause requiring it.
         self.assertNotIn("preservation-only conversion", t)
-        # the obligation the deleted clause was bundled with must survive
         self.assertIn("pin-state-after path", t)
 
     def test_quoted_checker_output_in_references_matches_the_scripts(self):
-        """worked-change.md quoted `check-plan: all mandatory sections present (`
-        for four releases after tiers changed the string to carry the tier and an
-        N-of-M count — so the example gave no worked instance of a field the gate
-        requires. An example that teaches a string the script never prints is
-        worse than no example, and nothing noticed because nothing compared them."""
+        """worked-change.md quoted a check-plan verdict for four releases after
+        tiers changed the string, and nothing compared them.
+
+        The first guard had two holes, both reproduced: it only inspected lines
+        *starting* with the prefix, so the whole review-packet block — whose lines
+        start `Plan check: `, `Red state: ` — was skipped and a fabricated verdict
+        passed there; and it compared five words, so a truncated quote is a prefix
+        of the real literal and always passes. The live stale instance sat in the
+        skipped block the whole time.
+
+        Compared token-wise: a `{hole}` in the script matches any one word in the
+        quote, a digit matches any digit run, and the quote must appear as a
+        contiguous run of some literal — so a truncation fails."""
+        def words(s):
+            """One normaliser for both sides: an interpolation hole and a digit
+            run both become `*`, punctuation is dropped, case is ignored."""
+            s = re.sub(r"\{[^}]*\}", " * ", s)
+            s = re.sub(r"\d+", " * ", s)
+            s = re.sub(r"[^\w*]+", " ", s)
+            return s.lower().split()
+
         scripts = Path(__file__).resolve().parent
-        literals = []
-        for name in ("check-plan.py", "check-redstate.py", "check-spec-surface.py"):
-            src = (scripts / name).read_text(encoding="utf-8")
-            literals.append(src)
-        blob = "\n".join(literals)
-        refs = (self._skills() / "ctdd-change" / "references")
+        raw = "\n".join((scripts / n).read_text(encoding="utf-8")
+                        for n in ("check-plan.py", "check-redstate.py",
+                                  "check-spec-surface.py"))
+        raw = re.sub(r'"\s*\n\s*(?:f?")?', " ", raw)   # rejoin split literals
+        lits = [words(chunk) for chunk in raw.split('"')]
+
+        def ends_with(lit, want):
+            """The quote must run to the end of the literal, not merely start it.
+
+            A truncation is a contiguous prefix of the real string, so a
+            prefix-tolerant match always passed — which is how `all mandatory
+            sections present` survived four releases after the script began
+            emitting `... for a {tier} plan (N of M; ...)`.
+            """
+            n = len(want)
+            if n > len(lit):
+                return False
+            return all(a == "*" or b == "*" or a == b
+                       for a, b in zip(lit[len(lit) - n:], want))
+
+        refs = self._skills() / "ctdd-change" / "references"
+        checked = 0
         for f in sorted(refs.glob("*.md")):
-            text = f.read_text(encoding="utf-8")
-            for line in text.split("\n"):
-                s = line.strip()
+            for line in f.read_text(encoding="utf-8").split("\n"):
                 for prefix in ("check-plan:", "check-redstate:", "check-spec-surface:"):
-                    if not s.startswith(prefix):
+                    k = line.find(prefix)
+                    if k < 0:
                         continue
-                    # Compare the first few words after the prefix: enough to catch a
-                    # renamed verdict, loose enough to allow the example's own values.
-                    # Normalise both sides: numbers and f-string holes become a
-                    # placeholder, so `all 4 pin test(s)` matches `all {n} pin
-                    # test(s)` while a renamed verdict still fails.
-                    stem = _norm(" ".join(s[len(prefix):].strip().split()[:5]))
-                    if len(stem.split()) < 3:
+                    want = words(line[k + len(prefix):].split("`")[0])
+                    if len(want) < 3:
                         continue
-                    self.assertIn(
-                        stem, _norm(blob),
-                        f"{f.name} quotes {prefix} ... {stem!r}, which no script emits")
+                    checked += 1
+                    self.assertTrue(
+                        any(ends_with(l, want) for l in lits),
+                        f"{f.name} quotes {prefix} {' '.join(want)!r}, "
+                        f"which no script emits")
+        self.assertGreater(checked, 0, "no quoted checker output was inspected")
 
     def test_the_last_three_audit_losses_are_restored(self):
         """Closing out the v0.11.3-v0.20.1 audit. A flaky spec reads as an

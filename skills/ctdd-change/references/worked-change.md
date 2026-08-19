@@ -107,10 +107,10 @@ Business requirement: The merchant is allowed one capture below the authorized a
 Back-translation: Capture accepts any amount from one cent to the authorized amount, emits exactly one event carrying that amount, and rejects a second capture with 409.
 Plan: docs/plans/PAY-123-partial-capture.md
 Approval: "release the remainder when the authorization expires. Approved."
-Plan check: check-plan: all mandatory sections present
+Plan check: check-plan: all mandatory sections present for a large plan (19 of 19; presence, not quality — the review still owns quality).
 Red state: check-redstate: all 4 new test(s) observed failing — red state verified. (That they failed for the *right* reason is still the reviewer's read.)
-Pin state before: check-redstate: all 4 pin test(s) observed PASSING against the current implementation — preservation baseline captured.
-Pin state after: check-redstate: all 4 pin test(s) observed PASSING against the current implementation — preservation baseline captured.
+Pin state before: check-redstate: all 4 pin test(s) observed PASSING against the current implementation — preservation baseline captured. Re-run the same tests after the change; they must still pass.
+Pin state after: check-redstate: all 4 pin test(s) observed PASSING against the current implementation — preservation baseline captured. Re-run the same tests after the change; they must still pass.
 Spec surface: Verdict: SPEC SURFACE TOUCHED — ... (exit 1 = attention, not error)
 Verification: dotnet test --filter CaptureTests => 10 passed; dotnet test => 412 passed; dotnet build => exit 0; spectral lint payments/contract/openapi.yaml => no errors
 Hold-out: passed

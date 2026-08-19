@@ -32,6 +32,35 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.35.0 — 2026-08-03
+
+Part A: seven fail-open paths where evidence certified nothing.
+
+### Fixed
+- **A markdown heading bypassed the both-lanes-none guard.** `_LANE_NONE` omitted the heading prefix every REQUIRED pattern allows, so `## New-behavior tests: none` derived `small` while the same plan with bare headings derived `large` — a cosmetic choice deciding whether a plan declaring zero tests passed the gate, reopening v0.30.0's hole through that fix's own regex. **That fix had shipped with no tests at all**; both heading-style cases are now covered.
+- **A pin that passes before and fails after had no state.** The seven-state vocabulary had `pin fail: a named pin fails *before* the change`, whose action is *"the pin describes behavior the code never had; return to step 6"* — so the single most important signal this method produces routed to a row telling the agent to amend the pin away, with only a guardrail between it and that. A **broken pin** state is added: *this is the finding, not a plan defect; do not amend the pin away and do not weaken it; return to 8.1 with the implementation, never to step 6 with the plan.*
+- **The trivial lane stopped running anything.** 8.5's `treat 8.3 and 8.6 as n/a` cancelled all five of 8.3's obligations, only one of which is plan-dependent — so the lane admitted on *named* existing tests never ran them, and a rename that does not compile could ship. Now only the pin re-run and 8.6 are `n/a`; the validator, tests, suite and build still run.
+- **7.7 wrote the pin-state-after log before implementation.** v0.31.0 deleted its unevaluable trigger but kept the obligation, making the after-run unconditional inside step 7 — so `.pinstate-after.log` was always created from a pre-change run and only later overwritten at 8.3, which may never run. `check-redstate` cannot tell the two apart. 8.3 owns the after-run; the step-7 duplicate is gone.
+- **Step 8's Enter was satisfiable by the empty set.** v0.30.0's repair was tier-only, so a `large` plan writing all 19 sections with both lanes `none` still skipped both lanes and emitted a conformant packet reading `Red state: n/a` beside a genuine human approval. The Enter now requires at least one lane to name a test.
+- **`check-redstate` exited 0 while certifying a subset.** A `currently_`-prefixed name under the new-behaviour heading is reclassified and dropped — correctly, since it marks an observation — but `plan-format` puts those under `Preservation pins`, so one there is a plan defect, and step 7.12 and step 8's Enter both key on this exit code. It now exits 2: the reclassification is reported *and* uncertified, rather than reported and blessed.
+- **`trivial claim stands` reported more than it inspected.** The lane has two conditions; the cross-check reads paths, so it cannot see 3.4's behavior-preserving requirement — a changed validation limit in one production file produced the same verdict as a mechanical rename. Message only: *survives the surface check… NOT checked: 3.4's behavior-preserving requirement. This reads paths, not hunks.* No heuristic was built; three attempts at that class were killed at 43–50% false positives.
+
+### Changed
+- Route ratchet 41,500 → 41,800, net of deleting 7.7's pre-implementation after-run.
+
+## 0.34.0 — 2026-08-03
+
+Four guards that did not guard, all reproduced by mutation before and after. Until these worked, nothing protected the repairs of the last three releases — including the ones they were written for.
+
+### Fixed
+- **The v0.31.0 guard passed with every rule it covered inverted.** It was a list of substring checks, so rewriting the write freeze to *"Once an Approval record exists … write whatever you like; the only file you write is the step 5 plan file is not a rule"* left it green. Rule 8's third named failure verbatim. It now asserts whole sentences; all four of the reviewer's inversions fail.
+- **The survival probes were structurally unreachable, and the wrong constant had been moved.** Setting the proxy back to `5000 * 3` produces exactly one failure: the **500-char reserve**, which this file itself labels *EARLY WARNING, NOT PROTECTION*. v0.31.0 responded to that early warning by raising the constant `_surviving_head()` slices on, by 2,500 — which rule 9 says to check first. And the stated justification, *"measured 4.00"*, was `len(body)/(len(body)//4)`: 4.00 for any text at all, a tautology rather than a measurement. The proxy is restored to 15,000, the reserve lowered to 300, and a new `MAX_PROBE_OFFSET_CHARS = 13,500` asserts **where** each must-survive rule sits rather than merely that it is present — the presence form goes vacuous the moment the body is smaller than the proxy, because then the head slice is the whole body. Moving a probe to the end of the body now fails, naming the rule and its offset.
+- **The quoted-literal guard skipped the block it was written for.** It only inspected lines *starting* with a checker prefix, so the whole review-packet block — `Plan check: `, `Red state: ` — was skipped and a fabricated `BANANA PANCAKE VERDICT` passed there; and it compared five words, so a truncation is a prefix of the real literal and always passed. Now token-wise, end-anchored, holes and digits wildcarded. It immediately found **three** live truncations, not the one reported.
+- **The reference-loader guard asserted the filename, not the loader.** Every reference is also named in the Output contract table, so replacing step 5.1's `Read references/plan-format.md.` with prose left it green while the fallback it protects had stopped existing.
+
+### Fixed — references
+- `worked-change.md`'s packet quotes regenerated: the plan-check verdict was missing the tier and N-of-M count, and both pin-state lines dropped the re-run sentence.
+
 ## 0.33.0 — 2026-08-03
 
 Seven `ctdd-tests` repairs plus the negative control. All eight are instructions that could not be followed, or a discipline the pilot used and never wrote down.

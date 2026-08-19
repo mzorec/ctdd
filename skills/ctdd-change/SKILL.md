@@ -88,18 +88,17 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
    4. Skip 7.5–7.8 when the plan's `Preservation pins` names no test.
    5. Invoke `ctdd-tests` to write the preservation pins against the current implementation.
    6. Run the pins before replacing preserved behavior, save the complete run to the pin-state path. Verify pins with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" <pin-log> --tests-from <plan-path> --expect-pass`.
-   7. Re-run the same pins to the pin-state-after path and verify them the same way.
-   8. Stop on any state other than pin pass; read `references/execution.md`.
-   9. Skip 7.10–7.12 when the plan's `New-behavior tests` names no test.
-   10. Invoke `ctdd-tests` to write the new-behavior tests.
-   11. Run them before implementing new behavior, save the complete run to the red-state path. Verify red state with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" <red-log> --tests-from <plan-path>`.
-   12. Stop on any state other than intended red; read `references/execution.md`.
-8. **Implement and verify.** Enter: step 7 satisfied every applicable evidence lane — pin pass for every preservation pin the plan names, intended red for every new-behavior test the plan names — or step 3.6 fired. Emit: verification results. Stop: 8.6.
+   7. Stop on any state other than pin pass; read `references/execution.md`.
+   8. Skip 7.10–7.12 when the plan's `New-behavior tests` names no test.
+   9. Invoke `ctdd-tests` to write the new-behavior tests.
+   10. Run them before implementing new behavior, save the complete run to the red-state path. Verify red state with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" <red-log> --tests-from <plan-path>`.
+   11. Stop on any state other than intended red; read `references/execution.md`.
+8. **Implement and verify.** Enter: step 7 satisfied every applicable evidence lane, and at least one lane named a test — pin pass for every preservation pin the plan names, intended red for every new-behavior test the plan names — or step 3.6 fired. Emit: verification results. Stop: 8.6.
    1. Implement only the behavior approved at step 6, or nothing beyond the declared diff in the trivial lane. Replace any compile-only stub from step 7 with that implementation, and add no other production code.
    2. Do not weaken, delete, skip, or retarget an assertion to obtain green.
    3. Run the contract validator, the focused tests, the broader suite, and the build in the current turn; re-run every preservation pin named in the plan to the pin-state-after path; record `NOT RUN — <reason>` for anything absent, and never reuse an earlier turn's output.
    4. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <diff-base>`.
-   5. Compare its inventory with `Files likely to change`; in the trivial lane compare it with the declared diff instead, and treat 8.3 and 8.6 as `n/a`.
+   5. Compare its inventory with `Files likely to change`; in the trivial lane compare it with the declared diff instead, take 8.3's pin re-run and 8.6 as `n/a`, and still run the validator, tests, suite and build.
    6. Stop and reopen the gate when the approved specification is wrong, when 8.5 exceeds the plan, or when requested review feedback falls outside approved scope (feedback inside scope re-enters at the lowest invalidated step, no new plan): amend the plan file with the old and new form, re-run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" <plan-path>`, return to step 6, and resume at the lowest invalidated step after re-approval.
 9. **Produce the review packet.** Enter: step 8 produced current-turn results. Emit: Review packet. Stop: 9.1. Changed test expectations are changed requirements and contract diffs are boundary changes: the packet presents them as the spec, not as code.
    1. Stop for the required sealed hold-out result from the named runner, asking write / decline / defer as a Decision prompt. Resolve it to `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; only the human declines, an unavailable runner is `NOT RUN`, and `failed` blocks.
@@ -111,4 +110,4 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
    1. Write no note for behavior already expressed by a test or contract.
    2. When the change leaves one universal rule, deliberate gap, or durable external fact not expressed by a test or contract, read `references/colocated-notes.md` and write one Colocated note.
 ## Evidence and break points
-Before implementing, classify the run as **pin pass**, **intended red**, **compile red**, **wrong red**, **premature green**, **pin fail**, or **weakened green**. Only pin pass and intended red authorize step 8. A checker that cannot run, cannot read its input, or exits `2` leaves its claim unverified. `references/execution.md` carries the required action for every state and break point, the packet assembly, and the standalone-ADR procedure.
+Classify every run as **pin pass**, **intended red**, **compile red**, **wrong red**, **premature green**, **pin fail**, **broken pin**, or **weakened green**. Only pin pass and intended red authorize step 8. A checker that cannot run, cannot read its input, or exits `2` leaves its claim unverified. `references/execution.md` carries the required action for every state and break point, the packet assembly, and the standalone-ADR procedure.
