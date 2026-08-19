@@ -22,24 +22,24 @@ Proceeding unless you object
 Decisions confirmed in session (conditional: include only when a BLOCKING question was answered before approval)
 Risk level: <normal | high-risk> - <one-line reason>
 Existing behavior
-Known gaps
-Assumptions
-Uncovered or ambiguous
+Known gaps (conditional: omitted at the small or medium tier)
+Assumptions (conditional: omitted at the small tier)
+Uncovered or ambiguous (conditional: omitted at the small tier)
 
 New-behavior tests
 - `<exact test name>` - path: `<path>`; case: <positive | negative | boundary | error path | authorization | side effect | legacy behavior>; <behavior>; expected pre-implementation failure: <what fails>.
-Case coverage not reached
+Case coverage not reached (conditional: omitted at the small or medium tier)
 Preservation pins
 Changed existing assertions (conditional: include only when an existing assertion changes)
 
-Contract changes
-NFR budgets
+Contract changes (conditional: omitted at the small or medium tier)
+NFR budgets (conditional: omitted at the small or medium tier)
 ADR draft (conditional: include only when `SKILL.md` step 4.3 fires)
-Implementation slices
+Implementation slices (conditional: omitted at the small tier)
 Verification
-Hold-out
+Hold-out (conditional: omitted at the small tier)
 Files likely to change
-Residual risk
+Residual risk (conditional: omitted at the small tier)
 ```
 
 Name the plan file `<TICKET>-<kebab-slug>.md`, or `<YYYY-MM-DD>-<kebab-slug>.md` without a ticket.

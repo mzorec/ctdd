@@ -73,9 +73,9 @@ ADR_PATTERNS = [re.compile(r"(^|/)adrs?/[^/]+\.md$", re.IGNORECASE)]
 ADR_MARKER = re.compile(r"\bADR-(\d{1,4})\b")
 
 
-def markers_in(path, root="."):
+def markers_in(path, root=None):
     """The ADR ids a changed file names, in first-seen order."""
-    f = os.path.join(root, path)
+    f = os.path.join(_project_root(root), path)
     try:
         with open(f, "r", encoding="utf-8", errors="replace") as fh:
             text = fh.read()
@@ -110,7 +110,27 @@ _SKIP_DIRS = {".git", "node_modules", "bin", "obj", "dist", "build",
               "packages", "target", "vendor", ".venv", "__pycache__"}
 
 
-def adr_dirs(root="."):
+for _stream in (sys.stdout, sys.stderr):
+    # A non-ASCII path raised UnicodeEncodeError on a legacy-codepage console,
+    # truncating the inventory mid-list and exiting 1 — the same code that means
+    # SPEC SURFACE TOUCHED, so a crash read as a finding while step 8.5 compared
+    # a silently short inventory against "Files likely to change".
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
+
+
+def _project_root(root=None):
+    """`--git` mode anchors to CLAUDE_PROJECT_DIR; the ADR lookups defaulted to
+    cwd, so running from a subdirectory returned a confidently wrong directory
+    rather than the ambiguity the escape hatch is written for — and wrote 0001
+    beside an existing series."""
+    return root or os.environ.get("CLAUDE_PROJECT_DIR") or "."
+
+
+def adr_dirs(root=None):
     """Directories this repository keeps ADRs in — discovered, never assumed.
 
     `docs/adr/` is where *this* plugin writes a new ADR. It is not where every
@@ -121,6 +141,7 @@ def adr_dirs(root="."):
     Set CTDD_ADR_DIR (os.pathsep-separated, repo-relative) for a layout the
     `adrs?` convention does not cover.
     """
+    root = _project_root(root)
     override = _setting("CTDD_ADR_DIR", "adrDir", root)
     if override:
         return [d for d in (x.strip() for x in override.split(os.pathsep))
@@ -135,7 +156,7 @@ def adr_dirs(root="."):
     return sorted(found)
 
 
-def adr_dir(root="."):
+def adr_dir(root=None):
     """The one directory this repository keeps ADRs in — (path, reason).
 
     Read and write must agree. When they disagree the numbering breaks: the
@@ -149,6 +170,7 @@ def adr_dir(root="."):
       4. `docs/adr` when the repository has none yet — a new convention, and
          the only case where this plugin gets to choose.
     """
+    root = _project_root(root)
     override, source = _setting_with_source("CTDD_ADR_DIR", "adrDir", root)
     if override:
         first = [x.strip() for x in override.split(os.pathsep) if x.strip()][:1]
@@ -161,8 +183,9 @@ def adr_dir(root="."):
     return "docs/adr", "no existing ADR directory; this would create one"
 
 
-def resolve_adr(adr_id, root=".", dirs=None):
+def resolve_adr(adr_id, root=None, dirs=None):
     """The ADR file for `NNNN`, or None."""
+    root = _project_root(root)
     for base in (adr_dirs(root) if dirs is None else dirs):
         d = os.path.join(root, base)
         try:

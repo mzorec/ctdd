@@ -4,7 +4,7 @@ This is not a to-do list. It is a record of ideas that are **deliberately not bu
 
 Each entry opens with **the problem it solves** in plain language — read those first to understand the shape of what's missing. The fields below each (trigger, cost, why-not-now) are the decision mechanics: they tell you *when* the idea earns its build, not just what it is.
 
-**The governing rule.** The runtime is frozen. Nothing here gets built from an armchair — every item names a *trigger*, an observation from real use that must occur first. Building an item before its trigger fires is the exact anti-pattern the method's own kill-criteria section warns against: mitigating a weakness you haven't felt, which is faith dressed as engineering. Most of these will never be built, and that is the intended outcome, not a failure of follow-through.
+**The governing rule.** Nothing here gets built from an armchair, and nothing here gets built without the human saying so — every item names a *trigger*, an observation from real use that must occur first. Building an item before its trigger fires is the exact anti-pattern the method's own kill-criteria section warns against: mitigating a weakness you haven't felt, which is faith dressed as engineering. Most of these will never be built, and that is the intended outcome, not a failure of follow-through.
 
 **How to use this after the pilot.** Run one real change through the loop with pre-registered criteria and a weekly annoyance journal (see the pilot protocol). When the pilot produces a *specific* pain, come here and check whether a filed item addresses exactly that pain. If yes, its trigger has fired — build it. If the pain matches nothing here, that is the more valuable finding: a weakness neither reviewer nor author predicted, which is worth more than anything on this list.
 
@@ -107,7 +107,7 @@ Each is already written into `ctdd-in-depth.md` tagged *(Proposed — not yet bu
 
 ---
 
-## Tier 4 — absorbed from other tools, gated on the freeze
+## Tier 4 — absorbed from other tools, gated on a trigger and an approval
 
 ### Full Superpowers eval-under-pressure methodology
 **The problem.** A skill can trigger correctly and still *fold* the moment a request comes wrapped in urgency, sunk cost, or borrowed authority ("the senior dev said just sync the expected values"). Trigger-accuracy tests don't catch that — they check whether the skill fires, not whether it *holds* once fired. The pressure cases landed in v0.7.0, but the broader technique (systematically hardening skill prose against rationalization) is a repeatable process, not a one-time addition.

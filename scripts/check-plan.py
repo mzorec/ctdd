@@ -93,7 +93,14 @@ REQUIRED = [
 
 # Reason must sit on the SAME line as the risk call: with re.S a bare
 # "Risk: trivial —\n" would let the next section masquerade as the reason.
-TRIVIAL = re.compile(r"risk\s*(level)?\s*[:—-]\s*trivial\b[^\n]{3,}", re.I)
+# Line-anchored, like every other REQUIRED pattern. Unanchored, the word
+# `trivial` anywhere skipped every section, duplicate, tier and hold-out
+# check — including inside the mandatory `Residual risk` section, which is
+# reachable by writing the format correctly, and in prose describing the
+# lane. Steps 3.7 and 8.6 are the workflow's own routes for putting
+# withdrawn trivial wording into a plan file.
+TRIVIAL = re.compile(r"^\s*[`*_]*risk\s*(level)?\s*[:—-]\s*trivial\b[^\n]{3,}",
+                     re.I | re.M)
 
 # --- Plan tiers -------------------------------------------------------------
 # The 2026-07-27 Flik change produced a 31,448-character plan: 3,166 words, ~14
@@ -109,7 +116,29 @@ TRIVIAL = re.compile(r"risk\s*(level)?\s*[:—-]\s*trivial\b[^\n]{3,}", re.I)
 # not possible, because nothing is declared.
 _CONTRACT_NONE = re.compile(r"contract\s*[:=]\s*none\b", re.I)
 _HIGH_RISK = re.compile(r"risk\s*(level)?\s*[:—-]\s*high-risk\b", re.I)
-CATEGORICAL_LINE = re.compile(r"contract\s*:.*hold.?out\s*:", re.I)
+# The categorical line, matched without assuming field order. The old pattern
+# required `contract:` before `hold-out:`, so a plan that ordered those fields
+# differently was not recognised as categorical and was counted as a second
+# `risk level` section — a DUPLICATED error naming a section that does not
+# exist, which step 5.4's "re-run until it exits 0" cannot converge on because
+# plan-format never ordered the fields.
+CATEGORICAL_LINE = re.compile(
+    r"^\s*[`*_]*risk\s*[:—-].*?(?:contract\s*:|hold.?out\s*:)", re.I)
+
+
+def categorical_line(text):
+    """The one line the tier, triviality and hold-out reads must come from.
+
+    Every one of those three read the whole document with an unanchored pattern,
+    so a stray `contract: none` in prose downgraded the tier, an `hold-out:` in a
+    superseded amendment won over the real declaration, and the word `trivial`
+    anywhere — including inside the mandatory `Residual risk` section — skipped
+    every section, duplicate, tier and hold-out check.
+    """
+    for line in text.splitlines():
+        if CATEGORICAL_LINE.search(line):
+            return line
+    return ""
 HOLDOUT_BLOCK = re.compile(
     r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*hold.?out\b.*?(?=\n\s*\n|\Z)",
     re.I | re.M | re.S)
@@ -123,7 +152,7 @@ def _holdout_required(text):
     negative lookahead does not help because `\s*` backtracks to zero width and
     steps over it. Read the field and look at what it starts with.
     """
-    m = _HOLDOUT_FIELD.search(text)
+    m = _HOLDOUT_FIELD.search(categorical_line(text) or text)
     return bool(m) and m.group(1).strip().lower().startswith("required")
 _NEW_BEHAVIOUR_NONE = re.compile(
     r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*new[- ]behavio(?:u)?r\s+tests?\b[^\n]*?"
@@ -133,6 +162,12 @@ SMALL_SECTIONS = {
     "decision summary: BLOCKING", "decision summary: proceeding", "risk level",
     "existing behavior", "proposed tests: new-behavior heading",
     "proposed tests: preservation-pin heading", "verification", "files to change",
+    # The guardrail calls the business requirement the source of intent and step
+    # 9.2 back-translates against it, so dropping it below `large` gated the modal
+    # case on a plan that never said what it was for. Every bug fix lands at
+    # `medium` by construction: 5.3 requires the regression test be named, so the
+    # new-behavior heading is never `none` and the small tier is unreachable.
+    "business requirement", "intended behavior",
 }
 MEDIUM_SECTIONS = SMALL_SECTIONS | {
     "assumptions", "uncovered/ambiguous", "implementation slices",
@@ -141,8 +176,15 @@ MEDIUM_SECTIONS = SMALL_SECTIONS | {
 
 
 def plan_tier(text):
-    """large | medium | small — derived, so it cannot be claimed."""
-    if (not _CONTRACT_NONE.search(text)) or _HIGH_RISK.search(text) \
+    """large | medium | small — derived, so it cannot be claimed.
+
+    Read from the categorical line alone. Searching the document let prose
+    control the tier: a plan declaring `contract: additive` but containing the
+    sentence "the wire contract: none of it changes shape" derived `medium`,
+    dropping six checked sections including `contract changes` itself.
+    """
+    cat = categorical_line(text) or text
+    if (not _CONTRACT_NONE.search(cat)) or _HIGH_RISK.search(cat) \
             or _holdout_required(text):
         return "large"
     if _NEW_BEHAVIOUR_NONE.search(text):
@@ -321,6 +363,12 @@ def main():
                   "verified is not a passing claim.")
             return 2
         touched, added_only = [], True
+        if not diff_text.strip():
+            print("check-plan: the --diff input is empty — nothing was inspected, "
+                  "so the triviality claim is NOT verified. A wrong base ref, a "
+                  "shallow clone, or staged work against an unstaged diff all "
+                  "produce this.")
+            return 2
         entries, malformed = surface.parse_name_status(diff_text)
         if malformed:
             # The standalone checker refuses a verdict over discarded input; the
@@ -332,7 +380,10 @@ def main():
             return 2
         for status, old, new in entries:
             for p in (old, new):
-                if p and surface.classify(p) in ("test", "contract"):
+                # "adr" was omitted, so CI blessed as trivial the same diff the
+                # runtime gate calls SPEC SURFACE TOUCHED — opposite verdicts on
+                # a change that rewrites a decision record.
+                if p and surface.classify(p) in ("test", "contract", "adr"):
                     touched.append(p)
                     # Only a pure addition of *test* surface stays in the
                     # compressed bug-fix lane; contract files and edits to
@@ -374,8 +425,12 @@ def main():
     # rather than loosen the pattern that the gate depends on.
     duplicated = []
     for name, pat in required:
-        lines = [text[m.start():text.find("\n", m.start())]
-                 for m in re.finditer(pat, text, re.IGNORECASE | re.MULTILINE)]
+        # `find` returns -1 on a final line with no trailing newline, which
+        # sliced to text[start:-1] and dropped that line's last character.
+        lines = []
+        for m in re.finditer(pat, text, re.IGNORECASE | re.MULTILINE):
+            end = text.find("\n", m.start())
+            lines.append(text[m.start():] if end < 0 else text[m.start():end])
         real = [l for l in lines if not CATEGORICAL_LINE.search(l)]
         if len(real) > 1:
             duplicated.append((name, len(real)))

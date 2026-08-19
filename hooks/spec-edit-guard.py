@@ -109,8 +109,20 @@ def repo_config(root=None):
     root = root or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
     data = {}
     try:
-        with open(os.path.join(root, CONFIG_NAME), "r", encoding="utf-8") as fh:
-            loaded = json.load(fh)
+        with open(os.path.join(root, CONFIG_NAME), "rb") as fh:
+            raw = fh.read()
+        # PowerShell's `>` writes UTF-16LE and `Set-Content -Encoding UTF8`
+        # writes UTF-8+BOM. Both raised ValueError here and were swallowed, so
+        # every setting silently reverted to defaults on the platform this repo
+        # documents interpreter fallbacks for.
+        for enc in ("utf-8-sig", "utf-16", "utf-8"):
+            try:
+                loaded = json.loads(raw.decode(enc))
+                break
+            except (UnicodeDecodeError, ValueError):
+                continue
+        else:
+            return {}
         if isinstance(loaded, dict):
             data = loaded
     except (OSError, ValueError):
@@ -132,6 +144,14 @@ def patterns(env_var, default):
     raw = setting(env_var, {"CTDD_TEST_PATTERNS": "testPatterns",
                             "CTDD_CONTRACT_PATTERNS": "contractPatterns"}.get(env_var, ""))
     values = default if not raw else [p.strip() for p in raw.split(";") if p.strip()]
+    if raw and not values:
+        # ";" is truthy, discards the default, and splits to zero segments — no
+        # re.error, so every fail-closed path was bypassed and the trivial lane,
+        # the CI cross-check and this hook all went silent at once while the
+        # report still said "env overrides honored".
+        raise ValueError(
+            f"{env_var} is set but contains no usable pattern ({raw!r}); an "
+            f"override that matches nothing would silently empty the spec surface")
     compiled = []
     for value in values:
         try:
@@ -200,9 +220,20 @@ def main():
         test_rx = patterns("CTDD_TEST_PATTERNS", TEST_DEFAULT)
         contract_rx = patterns("CTDD_CONTRACT_PATTERNS", CONTRACT_DEFAULT)
     except ValueError as exc:
-        print(f"spec-edit-guard: invalid pattern configuration: {exc}",
-              file=sys.stderr)
-        return 2
+        # Exit 2 from a PreToolUse hook is the *block* signal, so one typo in a
+        # regex blocked every Write in the session — from a hook whose own
+        # docstring says reminders are advisory, not blocking. Report loudly and
+        # let the tool call through: a misconfigured reminder must not become a
+        # gate. The source is named because the value may come from .ctdd.json
+        # rather than the environment variable the message used to blame.
+        print(f"spec-edit-guard: invalid pattern configuration: {exc} "
+              f"(check the environment and {CONFIG_NAME}). Detection is running "
+              f"on defaults until this is fixed.", file=sys.stderr)
+        # Exit 2 from PreToolUse is the *block* signal, so one typo in a regex
+        # blocked every Write in the session — from a hook whose docstring says
+        # reminders are advisory. After the fact there is nothing to block, so
+        # PostToolUse keeps 2 and surfaces the error to the model.
+        return 0 if event == "PreToolUse" else 2
 
     if event == "PreToolUse":
         # Only job here: catch Write overwriting an EXISTING test file.

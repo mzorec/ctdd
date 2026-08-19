@@ -159,7 +159,11 @@ class CheckPlanTests(unittest.TestCase):
         headings = [l for l in skel.group(1).split("\n")
                     if l.strip() and not l.startswith(("-", " ", "\t", "`", "<"))
                     and "(conditional" not in l]
-        self.assertGreater(len(headings), 15, "skeleton extraction found too little")
+        # Floor lowered from 15 to 12: nine sections are now marked conditional
+        # because a tier omits them, and this guard counts unconditional lines
+        # only. The sanity check is that extraction found *something*, not that
+        # a particular number of sections is unconditional.
+        self.assertGreater(len(headings), 8, "skeleton extraction found too little")
         spec = importlib.util.spec_from_file_location("cp_mod", SCRIPT)
         cp = importlib.util.module_from_spec(spec); spec.loader.exec_module(cp)
         for h in headings:
@@ -167,6 +171,35 @@ class CheckPlanTests(unittest.TestCase):
                 any(_re.search(rx, h, _re.I | _re.M) for _, rx in cp.REQUIRED),
                 f"plan-format.md makes {h.split(':')[0].strip()!r} mandatory and no "
                 f"REQUIRED pattern detects it; the gate would pass a plan without it")
+
+    def test_every_tier_enforces_what_the_format_calls_mandatory(self):
+        """The format-drift guard asserted each mandatory heading has a pattern in
+        REQUIRED, but `required_for(tier)` is what runtime enforces — so deleting a
+        name from MEDIUM_SECTIONS left the guard green while the drift was live.
+        Rule 8's own test applies: delete the rule the guard covers and confirm it
+        fails. It did not.
+
+        Anything a tier drops must be marked conditional in plan-format, because
+        that file says `omit only the sections marked conditional` and two files
+        disagreeing about what is mandatory is how six sections were dropped
+        without anyone noticing."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("cp_tiers", SCRIPT)
+        cp = importlib.util.module_from_spec(spec); spec.loader.exec_module(cp)
+        fmt = (Path(SCRIPT).resolve().parents[1] / "skills" / "ctdd-change"
+               / "references" / "plan-format.md").read_text(encoding="utf-8")
+        skel = fmt.split("```markdown", 1)[1].split("```", 1)[0]
+        marked = {l.split("(")[0].strip().rstrip(":").lower()
+                  for l in skel.split("\n") if "conditional" in l.lower()}
+        every = {n for n, _ in cp.REQUIRED}
+        for tier in ("small", "medium", "large"):
+            dropped = every - {n for n, _ in cp.required_for(tier)}
+            for name in dropped:
+                head = name.split(":")[0].replace("/", " or ").strip().lower()
+                self.assertTrue(
+                    any(head in mk or mk in head for mk in marked),
+                    f"{tier} drops {name!r} but plan-format does not mark it "
+                    f"conditional; marked: {sorted(marked)}")
 
     def test_the_tier_is_derived_from_declarations_not_claimed(self):
         """The 2026-07-27 Flik plan ran to 31,448 chars — ~14 minutes to read at

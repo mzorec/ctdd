@@ -32,6 +32,37 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.29.1 — 2026-08-03
+
+### Changed
+- **Skill prose is no longer frozen; it needs the human's approval.** Rule 3 asked for a freeze that was never quite true — prose changed anyway, and the freeze framing meant the argument happened after the edit rather than before it. It now asks for the same evidence and the same displacement, but as a **stop-and-ask**: name what it displaces, what it costs against the body and route budgets, and what evidence demanded it, then wait. The `real-use finding, not a review suggestion` bar is unchanged.
+- The rule also states what this session got wrong twice: **a budget guard firing is not permission to drop the cheapest item and call it a displacement.** Where the only honest resolution is a human decision, say so rather than resolving it quietly.
+- `CLAUDE.md`'s runtime note and `docs/backlog.md`'s governing rule and Tier 4 heading no longer say *frozen*; they say the change waits for a trigger **and** an approval.
+
+## 0.29.0 — 2026-08-03
+
+Fourteen defects from an external adversarial review, every one reproduced before fixing. Nine were in code changed during the preceding sessions.
+
+### Fixed — critical
+- **A fully green run certified as red state.** `_verdict_text` stripped the matched test name but left the rest of the line, so `tests/test_error_paths.py::t PASSED` put `error` at index 12 against `passed` at 30 and first-marker-wins read a PASSED line as a failure. Step 7.11 runs exactly that command and 7.12 treats exit 0 as intended red, so an agent that implemented first and captured green passed the gate — the vacuous-test case the script exists to catch. Markers must now match as whole words. `--expect-pass` failed closed on the same input, so only the safety-critical lane was wrong.
+
+### Fixed — the gate could be skipped
+- **The word `trivial` anywhere skipped every check.** `TRIVIAL` was the one required pattern left unanchored, so `Residual risk: trivial — …` in a mandatory section, or prose describing the lane, exempted the plan from every section, duplicate, tier and hold-out check. Line-anchored like the rest.
+- **Tier, triviality and hold-out now read the categorical line alone.** All three searched the whole document: a stray `contract: none` in prose downgraded a contract-bearing plan to `medium`, and a superseded `hold-out: not required` in an amendment beat the real declaration, skipping the actionability check entirely.
+- **The categorical line is matched without assuming field order.** Requiring `contract:` before `hold-out:` made a reordered line count as a second `risk level` section — a `DUPLICATED` error naming a section that does not exist, which step 5.4's *re-run until it exits 0* cannot converge on. Also fixes an off-by-one that dropped the last character of a match on a final line with no trailing newline.
+- **`--diff` includes ADR surface and refuses empty input.** CI blessed as trivial the same ADR-touching diff the runtime gate calls SPEC SURFACE TOUCHED; and a zero-byte diff — from a wrong base ref, a shallow clone, or staged work against an unstaged diff — verified a triviality claim over nothing inspected.
+- **`business requirement` and `intended behavior` are required at every tier.** Every bug fix lands at `medium` by construction, since 5.3 requires the regression test be named, so the small tier is unreachable — and the modal case was gated on a plan that never said what it was for, with step 9.2 back-translating against a section that need not exist.
+
+### Fixed — configuration and platform
+- **An override that yields no patterns is a configuration error.** `CTDD_TEST_PATTERNS=";"` is truthy, discarded the defaults and split to zero segments with no `re.error`, so the trivial lane, the CI cross-check and the hook all went silent at once while the report still said *env overrides honored*.
+- **The advisory hook no longer blocks.** Exit 2 from `PreToolUse` is the block signal, so one typo in a regex blocked every Write in the session. `PostToolUse` keeps exit 2, where there is nothing left to block.
+- **`.ctdd.json` is decoded through BOM and UTF-16.** PowerShell's `>` writes UTF-16LE and `Set-Content -Encoding UTF8` writes UTF-8+BOM; both raised `ValueError`, were swallowed, and every setting silently reverted to defaults on the platform this repo documents interpreter fallbacks for.
+- **ADR lookups anchor to `CLAUDE_PROJECT_DIR`.** From a subdirectory they returned a confident wrong directory rather than the ambiguity the escape hatch exists for — writing `0001` beside an existing series.
+- **`check-spec-surface` reconfigures stdout to UTF-8.** A non-ASCII path raised `UnicodeEncodeError` on a legacy codepage, truncating the inventory and exiting 1 — the same code that means SPEC SURFACE TOUCHED, so a crash read as a finding.
+
+### Fixed — a guard that was not guarding
+- **The format-drift guard checks `required_for(tier)`, not just `REQUIRED`.** It asserted every mandatory heading had a pattern, never that the pattern survived into the tier sets — so deleting a name from `MEDIUM_SECTIONS` left it green while the drift was live. Rule 8's own test: delete the rule the guard covers and confirm it fails. It did not. The nine sections a tier omits are now marked conditional in `plan-format.md`, and the guard derives that set from the format rather than a hardcoded list.
+
 ## 0.28.1 — 2026-08-03
 
 ### Fixed

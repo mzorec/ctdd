@@ -624,6 +624,44 @@ class ExtractionHardeningTests(unittest.TestCase):
 
 
 
+class MarkerWordTests(unittest.TestCase):
+    """A fully green pytest run certified as red state. `_verdict_text` stripped
+    the matched test name but left the rest of the line, so `test_error_paths.py`
+    put `error` at index 12 against `passed` at 30, and first-marker-wins read a
+    PASSED line as a failure. Step 7.11 runs exactly this command and 7.12 treats
+    exit 0 as intended red, so an agent that implemented first and captured green
+    passed the gate — the vacuous-test case the script exists to catch.
+
+    Markers must be whole words. `--expect-pass` failed closed on the same input,
+    so only the safety-critical lane was wrong."""
+
+    def test_a_green_run_in_a_module_named_error_is_not_red_state(self):
+        log = ("tests/test_error_paths.py::test_rejects_expired PASSED\n"
+               "tests/test_error_paths.py::test_accepts_valid PASSED\n")
+        r = run(write(log), "--test", "test_rejects_expired", "--test", "test_accepts_valid")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertNotIn("red state verified", r.stdout)
+
+    def test_a_marker_word_inside_any_identifier_does_not_vote(self):
+        for ident in ("test_failure_modes", "assert_helpers", "success_paths"):
+            log = f"tests/{ident}.py::t_case PASSED\n"
+            r = run(write(log), "--test", "t_case")
+            self.assertEqual(r.returncode, 1, f"{ident}: {r.stdout}")
+
+    def test_a_real_failure_still_verifies(self):
+        r = run(write("  Failed Ns.T_Case [4 ms]\n"), "--test", "T_Case")
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_a_real_pass_still_verifies_a_pin(self):
+        r = run(write("tests/test_error_paths.py::T_Pin PASSED\n"),
+                "--test", "T_Pin", "--expect-pass")
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_the_pass_lane_was_never_wrong_and_stays_right(self):
+        r = run(write("tests/test_error_paths.py::T_Pin PASSED\n"), "--test", "T_Pin")
+        self.assertEqual(r.returncode, 1)
+
+
 class StackTraceTests(unittest.TestCase):
     """v0.24.0 regression, caught by the 2026-07-30 session. A .NET failure block
     names the test twice — `Failed <FQN> [4 ms]`, then `at <FQN>() in ...` in the

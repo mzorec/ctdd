@@ -95,6 +95,27 @@ FAIL_MARKERS = (
 # line like "Failed: 0, Passed: 12" does not count as evidence of failure.
 PASS_MARKERS = ("passed", "✓", "√", "ok ", "success")
 
+def _marker_positions(low, markers):
+    """Where each marker occurs *as a verdict word*, not inside an identifier.
+
+    Substring matching is why a fully green pytest run certified as red state:
+    stripping the matched test name still left `tests/test_error_paths.py` on the
+    line, `error` sat at index 12 and `passed` at 30, and first-marker-wins read
+    the line as a failure. A surrounding word character now disqualifies a hit,
+    so `error_paths`, `test_failure_modes` and `success_is_logged` stop voting.
+    """
+    out = []
+    for m in markers:
+        for hit in re.finditer(re.escape(m), low):
+            i, j = hit.start(), hit.end()
+            before = low[i - 1] if i else " "
+            after = low[j] if j < len(low) else " "
+            if before.isalnum() or before == "_" or after.isalnum() or after == "_":
+                continue
+            out.append(i)
+    return out
+
+
 # Summary/aggregate lines: never evidence about an individual test.
 SUMMARY_RX = re.compile(
     r"(failed:\s*\d|passed:\s*\d|total tests|test run|\d+\s+passed|\d+\s+failed)",
@@ -107,18 +128,14 @@ def looks_like_failure(line):
     low = line.lower()
     if SUMMARY_RX.search(low):
         return False
-    has_fail = any(m in low for m in FAIL_MARKERS)
-    if not has_fail:
+    fail_at = _marker_positions(low, FAIL_MARKERS)
+    if not fail_at:
         return False
-    # A line carrying both markers is ambiguous; prefer the pass reading unless
-    # the failure marker leads (e.g. "Failed X" vs "X ... passed").
-    has_pass = any(m in low for m in PASS_MARKERS)
-    if has_pass:
-        first_fail = min((low.find(m) for m in FAIL_MARKERS if m in low), default=len(low))
-        first_pass = min((low.find(m) for m in PASS_MARKERS if m in low), default=len(low))
-        return first_fail < first_pass
+    pass_at = _marker_positions(low, PASS_MARKERS)
+    if pass_at:
+        # Both present: prefer the pass reading unless the failure marker leads.
+        return min(fail_at) < min(pass_at)
     return True
-
 
 def _match_span(line, name):
     """Return (start, end) where `name` appears as a whole identifier, else None.
@@ -158,16 +175,13 @@ def looks_like_pass(line):
     low = line.lower()
     if SUMMARY_RX.search(low):
         return False
-    has_pass = any(m in low for m in PASS_MARKERS)
-    if not has_pass:
+    pass_at = _marker_positions(low, PASS_MARKERS)
+    if not pass_at:
         return False
-    has_fail = any(m in low for m in FAIL_MARKERS)
-    if has_fail:
-        first_fail = min((low.find(m) for m in FAIL_MARKERS if m in low), default=len(low))
-        first_pass = min((low.find(m) for m in PASS_MARKERS if m in low), default=len(low))
-        return first_pass < first_fail
+    fail_at = _marker_positions(low, FAIL_MARKERS)
+    if fail_at:
+        return min(pass_at) < min(fail_at)
     return True
-
 
 def _verdicts(log, name):
     """Every verdict the log carries for this name, in order.
