@@ -33,7 +33,9 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
 ## 0.37.0 — 2026-08-03
-S
+
+A full adversarial review of the plugin — 14 parallel agents, most script defects reproduced by running the code rather than inferred. **17 P0s, 9 P2s, 10 P4s and 12 workflow defects**, every fix reproduced before and mutation-tested after. Suite 243 → 289.
+
 ### Gate bypasses — the evidence checkers certified false states
 
 - **A fully green run certified as "red state verified."** v0.29.0 disqualified a marker word only when the adjacent character was alphanumeric or `_`, so it fixed one spelling and left `/`, `-`, `.` and space voting: `tests/error/test_capture.py::test_x PASSED` supplied its own failure verdict from a path segment. Step 7.10 runs exactly this command and 7.11 stops on any state but intended red, so an agent that implemented first and captured green passed the gate.

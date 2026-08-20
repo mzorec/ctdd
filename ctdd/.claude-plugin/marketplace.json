@@ -1,0 +1,20 @@
+{
+  "name": "ctdd",
+  "owner": {
+    "name": "Marko Zorec",
+    "url": "https://github.com/mzorec"
+  },
+  "metadata": {
+    "description": "Contract- and Test-Driven Development for backend APIs and microservices — the contract and behavior tests are the executable spec.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "ctdd",
+      "source": "./",
+      "description": "Drive backend changes contract-first, with tests as the executable spec: a pre-coding plan gate, changed tests reviewed as changed requirements, hold-outs on load-bearing paths, and deterministic scripts for spec-surface diffs, plan linting, and contract-derived authorization matrices.",
+      "category": "development",
+      "keywords": ["ctdd", "tdd", "testing", "openapi", "api-contract", "microservices", "code-review"]
+    }
+  ]
+}
