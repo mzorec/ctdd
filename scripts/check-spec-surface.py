@@ -58,7 +58,27 @@ except Exception as exc:
 
 # ADRs are review surface too (a changed decision record is a changed "why"),
 # but they are not the hook's business, so the pattern lives here.
-ADR_PATTERNS = [re.compile(r"(^|/)adrs?/[^/]+\.md$", re.IGNORECASE)]
+# `--adr-dir` honours CTDD_ADR_DIR / `.ctdd.json adrDir`; classify() hardcoded
+# `adr/`. So the ADR that adr-rules.md rule 4 told you to write — into the
+# directory this same script resolved — landed as `other`, and the run reported
+# "no test/contract/ADR surface touched": the verdict the trivial lane opens on.
+# One script, two definitions. Rule 2 says there is one.
+def _adr_patterns():
+    pats = [re.compile(r"(^|/)adrs?/[^/]+\.md$", re.IGNORECASE)]
+    # The *configured* directory, resolved exactly as `--adr-dir` resolves it —
+    # `adr_dirs()` reports what exists on disk, which is a different question and
+    # is empty in a repo that has not written its first ADR yet.
+    seen = {"adr", "adrs"}
+    for d in list(adr_dirs()) + [_setting("CTDD_ADR_DIR", "adrDir", None) or ""]:
+        seg = (d or "").strip("/")
+        if not seg or seg.lower() in seen:
+            continue
+        seen.add(seg.lower())
+        pats.append(re.compile(rf"(^|/){re.escape(seg)}/[^/]+\.md$", re.IGNORECASE))
+    return pats
+
+
+ADR_PATTERNS = None   # resolved on first use; see ensure_patterns_loaded()
 
 # An ADR marker is a comment naming a decision that governs this file, e.g.
 #   // ADR-0017: Domain must not depend on frameworks
@@ -252,7 +272,7 @@ def classify(path):
         return "contract"
     if _matches(p, TEST_PATTERNS):
         return "test"
-    if _matches(p, ADR_PATTERNS):
+    if _matches(p, ADR_PATTERNS if ADR_PATTERNS is not None else _adr_patterns()):
         return "adr"
     return None
 

@@ -425,6 +425,76 @@ class CheckPlanTests(unittest.TestCase):
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("risk level", r.stdout)
 
+    def test_the_adr_field_is_cross_checked_against_the_diff(self):
+        """`ADR: NNNN required` sits on a mandatory line and was validated by
+        nothing — only `contract` and `hold-out` were — so a plan could name a
+        decision record and never write one, or say `ADR: none` while the diff
+        rewrote one."""
+        import tempfile, os, subprocess, sys as _s
+
+        def with_diff(decl, diff):
+            d = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False,
+                                            encoding="utf-8")
+            d.write(decl); d.close()
+            f = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False,
+                                            encoding="utf-8")
+            f.write(diff); f.close()
+            try:
+                return subprocess.run([_s.executable, SCRIPT, d.name, "--diff", f.name],
+                                      capture_output=True, text=True,
+                                      encoding="utf-8", errors="replace", timeout=15)
+            finally:
+                os.unlink(d.name); os.unlink(f.name)
+
+        trivial = "Risk: trivial - rename only. Skipping the plan gate.\n"
+        # claims an ADR, writes none
+        r = with_diff(trivial + "ADR: 0017 required\n", "M\tsrc/Handler.cs\n")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("claims an ADR", r.stdout)
+        # claims none, rewrites one
+        r2 = with_diff(trivial, "M\tdocs/adr/0007-x.md\n")
+        self.assertEqual(r2.returncode, 1, r2.stdout)
+        # neither: unaffected
+        self.assertEqual(with_diff(trivial, "M\tsrc/Handler.cs\n").returncode, 0)
+
+    def test_a_claimed_retarget_requires_its_section(self):
+        """4.5 routes a changed existing assertion as an amendment and rule 3 gives
+        it a section, but the section is conditional and nothing tied it to its
+        trigger — so a change carried entirely by retargeting an assertion could
+        declare both evidence lanes `none` and pass with the amendment recorded
+        nowhere."""
+        import re as _re
+        claim = FULL_PLAN.replace(
+            "Risk level:", "Intended behavior: the change retargets the existing "
+            "assertion.\nRisk level:", 1)
+        claim = _re.sub(r"(?im)^Changed existing assertions.*$", "", claim)
+        r = run(claim)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("Changed existing assertions", r.stdout)
+        # a plan that claims nothing of the sort is unaffected
+        self.assertEqual(run(FULL_PLAN).returncode, 0)
+
+    def test_a_none_bullet_is_not_a_named_test(self):
+        """`_BULLET_NAME` read the word `none` as an identifier, so the evidence-lane
+        guard **rejected the form plan-format rule 4 mandates** (`Preservation
+        pins: none — <reason>`) and **accepted** `- none — <reason>` as a named
+        test. That is the tier inversion this guard was written to close,
+        reintroduced through the guard — rule 8 not applied to its own fix."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("cp_none", SCRIPT)
+        cp = importlib.util.module_from_spec(spec); spec.loader.exec_module(cp)
+        cat = "Risk: normal · contract: none · ADR: none · hold-out: not required\n"
+        head = cat + "New-behavior tests: none — refactor\n"
+        for pins in ("Preservation pins: none — no existing tests.\n",
+                     "Preservation pins\n- none — the touched area has none.\n",
+                     "Preservation pins\n- n/a — nothing to pin.\n",
+                     "Preservation pins\n- TBD\n"):
+            self.assertEqual(
+                cp.plan_tier(head + pins), "large",
+                f"a lane declaring nothing must not name a test:\n{pins}")
+        named = head + "Preservation pins\n- `capture_rounds_half_up` — path: `t.cs`.\n"
+        self.assertEqual(cp.plan_tier(named), "small")
+
     def test_the_honest_declaration_never_costs_more_than_an_empty_one(self):
         """`_names_a_test` inferred "a test exists" from the *absence* of the word
         `none`, so the tier inverted: an honest `New-behavior tests: none — pure

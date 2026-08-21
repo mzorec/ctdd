@@ -799,6 +799,34 @@ class ContradictoryVerdictTests(unittest.TestCase):
         self.assertIn("red state verified", r.stdout)
 
 
+class SetupErrorTests(unittest.TestCase):
+    """pytest reports a fixture collapse as `ERROR tests/x.py::t - KeyError`, and
+    `error` is a FAIL_MARKER — so two tests that only ERRORed in setup certified as
+    "red state verified" with no assertion ever executed. `execution.md` has a
+    state for exactly this: **wrong red**, *the failure comes from setup,
+    environment, a typo, or an unrelated defect*."""
+
+    PLAN = ("New-behavior tests — must be observed failing:\n"
+            "- `test_rejects_zero`\n- `test_accepts_partial`\n"
+            "Preservation pins — must pass before and after: none — n/a\n")
+
+    def test_a_fixture_error_is_not_intended_red(self):
+        log = write("ERROR tests/test_capture.py::test_rejects_zero - KeyError: 'f'\n"
+                    "ERROR tests/test_capture.py::test_accepts_partial - KeyError: 'f'\n")
+        r = run(log, "--tests-from", write(self.PLAN))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("errored before the test body ran", r.stdout)
+        self.assertNotIn("red state verified", r.stdout)
+        # and it must not be misdiagnosed as behaviour that already exists
+        self.assertNotIn("passed before implementation", r.stdout)
+
+    def test_a_real_assertion_failure_still_verifies(self):
+        log = write("FAILED tests/test_capture.py::test_rejects_zero - AssertionError\n"
+                    "FAILED tests/test_capture.py::test_accepts_partial - AssertionError\n")
+        r = run(log, "--tests-from", write(self.PLAN))
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+
 class AnsiColourTests(unittest.TestCase):
     """An SGR escape terminates in `m`, an alphanumeric, so a coloured `FAILED`
     disqualified its own marker. The mention survived as a verdict-less line and

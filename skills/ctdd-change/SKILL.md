@@ -39,9 +39,9 @@ Do not infer an order among these condition-triggered rules.
 | ADR | `<resolved ADR directory>/NNNN-<kebab-slug>.md` | `references/adr-template.md` rendered with Context, Decision, and Consequences. |
 | Contract change | Exact repo-relative contract path listed in the plan | Valid OpenAPI, JSON Schema, protobuf, AsyncAPI, Pact, or repository-native contract syntax. |
 | Test change | Exact repo-relative test path listed in the plan | Behavior-level test names and assertions produced under `ctdd-tests`. |
-| Test evidence logs | Red state: `${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.redstate.log`; pin state before: `${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.pinstate.log`; pin state after: `${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.pinstate-after.log` | Complete raw output from the named run. |
+| Test evidence logs | Verification: `${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.verify.log`; red state: `${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.redstate.log`; pin state before: `${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.pinstate.log`; pin state after: `${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.pinstate-after.log` | Complete raw output from the named run. |
 | Review packet | `stdout` | The exact field list in `references/execution.md`, assembled at step 9. |
-| Colocated note | Exact repo-relative source or contract path listed in the plan | One sentence stating one universal rule, deliberate gap, or durable external fact. |
+| Colocated note | A path from the plan's `Colocated notes` | One sentence stating one universal rule, deliberate gap, or durable external fact. |
 ## Ordered change workflow
 Execute steps 0–10 in ascending order. Until an Approval record exists for the current plan revision, the only file you write is the step 5 plan file; an amendment voids the previous one. An amendment re-enters at the lowest invalidated step.
 0. **Establish the baseline.** Enter: a change request exists. Emit: Baseline statement. Stop: unresolvable base, contamination.
@@ -57,12 +57,12 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
    3. Use the greenfield bullet when nothing exists. Scan this repository's ADR titles when the change adds contract surface: new surface carries no markers.
 3. **Classify the change.** Enter: step 2 printed the reading. Emit: Trivial-risk declaration, or nothing. Continue: to step 4 unless 3.6 fires.
    1. Treat the change as plan-gated unless every condition in 3.2–3.5 holds.
-   2. Require a diff that already exists against `diff-base` and that contains the complete requested change; anything still to be written is plan-gated.
-   3. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <diff-base>` and require exit `0` with `Verdict: no test/contract/ADR surface touched.`; treat exit `1` and exit `2` alike as plan-gated.
+   2. Require a diff that already exists against `diff-base`, that you did not write in this session, and that contains the complete requested change; anything still to be written is plan-gated.
+   3. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <diff-base>` and require exit `0` with `Verdict: no test/contract/ADR surface touched.`; cross-check it with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" <declaration-path> --diff <name-status>`; treat exit `1` and exit `2` alike as plan-gated.
    4. Require a code-only, behavior-preserving diff: rename, comment, formatting, or mechanical extraction only. A changed limit, validation rule, generated file, or file of unknown type is plan-gated.
    5. Require named existing tests that already cover every touched behavior, and no colocated note.
    6. Print the Trivial-risk declaration, add it to the PR/MR description, and go to step 8.
-   7. Retract the declaration from stdout and the PR/MR description, then return to 3.1 as plan-gated, when any later step contradicts 3.4 or 3.5.
+   7. Print a correction naming the withdrawn declaration, remove it from the PR/MR description, then return to 3.1 as plan-gated, when any later step contradicts 3.2, 3.3, 3.4 or 3.5.
 4. **Draft the decision inputs.** Enter: step 3 did not fire 3.6, or 3.7 retracted it. Emit: draft content held for step 5. Continue: after 4.5.
    1. Read `references/worked-change.md` and copy its artifact shapes.
    2. Draft the approach, scope boundary, and highest risk inside the future plan.
@@ -85,7 +85,7 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
    1. Re-check the working tree against step 0.
    2. Stop when a target file changed outside the approved plan.
    3. Write each approved contract or ADR artifact to its exact planned path.
-   4. Skip 7.5–7.8 when the plan's `Preservation pins` names no test.
+   4. Skip 7.5–7.7 when the plan's `Preservation pins` names no test.
    5. Invoke `ctdd-tests` to write the preservation pins against the current implementation.
    6. Run the pins before replacing preserved behavior, save the complete run to the pin-state path. Verify pins with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" <pin-log> --tests-from <plan-path> --expect-pass`.
    7. Stop on any state other than pin pass; read `references/execution.md`.
@@ -96,15 +96,15 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
 8. **Implement and verify.** Enter: step 7 satisfied every applicable evidence lane, and at least one lane named a test — pin pass for every preservation pin the plan names, intended red for every new-behavior test the plan names — or step 3.6 fired. Emit: verification results. Stop: 8.6.
    1. Implement only the behavior approved at step 6, or nothing beyond the declared diff in the trivial lane. Replace any compile-only stub from step 7 with that implementation, and add no other production code.
    2. Do not weaken, delete, skip, or retarget an assertion to obtain green.
-   3. Run the contract validator, the focused tests, the broader suite, and the build in the current turn; re-run every preservation pin named in the plan to the pin-state-after path; record `NOT RUN — <reason>` for anything absent, and never reuse an earlier turn's output.
-   4. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <diff-base>`.
-   5. Compare its inventory with `Files likely to change`; in the trivial lane compare it with the declared diff instead, take 8.3's pin re-run and 8.6 as `n/a`, and still run the validator, tests, suite and build.
-   6. Stop and reopen the gate when the approved specification is wrong, when 8.5 exceeds the plan, or when requested review feedback falls outside approved scope (feedback inside scope re-enters at the lowest invalidated step, no new plan): amend the plan file with the old and new form, re-run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" <plan-path>`, return to step 6, and resume at the lowest invalidated step after re-approval.
-9. **Produce the review packet.** Enter: step 8 produced current-turn results. Emit: Review packet. Stop: 9.1. Changed test expectations are changed requirements and contract diffs are boundary changes: the packet presents them as the spec, not as code.
-   1. Stop for the required sealed hold-out result from the named runner, asking write / decline as a Decision prompt. Resolve it to `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; only the human declines, an unavailable runner is `NOT RUN`, and `failed` blocks.
+   3. Run the contract validator, the focused tests, the broader suite, and the build in the current turn, saving each to the verification path; re-run every preservation pin named in the plan to the pin-state-after path; record `NOT RUN — <reason>` for anything absent, and never reuse an earlier turn's output.
+   4. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <diff-base> --plan <plan-path>`.
+   5. Act on what 8.4 reported; in the trivial lane take only 8.3's pin re-run and 8.6 as `n/a`.
+   6. Stop and reopen the gate when the approved specification is wrong, when 8.5 exceeds the plan, or when requested review feedback falls outside approved scope (feedback inside scope re-enters at the lowest invalidated step, no new plan): amend the plan file with the old and new form, re-run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" <plan-path> --approval <approval-path>`, return to step 6, and resume at the lowest invalidated step only after that reports the new revision approved.
+9. **Produce the review packet.** Enter: step 8 produced current-turn results. Emit: Review packet. Stop: 9.1 when a plan exists. Changed test expectations are changed requirements and contract diffs are boundary changes: the packet presents them as the spec, not as code.
+   1. Stop for the required sealed hold-out result from the named runner, asking write / decline as a Decision prompt. Resolve it to `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; only the human declines *or* confirms the runner is unavailable, so `NOT RUN` needs the same prompt a decline does; `failed` blocks.
    2. Set Back-translation to one sentence derived from the changed tests alone, beside the business requirement so the human compares prose to prose, or to `n/a — no test diff`.
    3. Read `references/execution.md` now even if read earlier; re-run its checkers and assemble its exact packet.
-   4. Stop and hand the `ctdd-review` verdict to the human: name the final diff and wait. Never load `ctdd-review` here, and never dispatch it yourself unless asked — a review this session commissions and frames is not independent, whichever context runs it.
+   4. Stop and hand the `ctdd-review` verdict to the human: name the final diff and wait. Never load `ctdd-review` here, and never dispatch it yourself unless asked — a review this session commissions and frames is not independent, whichever context runs it. When asked, record it in the packet's `Review:` field.
 
 10. **Write a colocated note only when triggered.** Enter: step 9 printed the packet, and before 9.4 hands over the diff. Emit: Colocated note, or nothing.
    1. Write no note for behavior already expressed by a test or contract.

@@ -21,6 +21,8 @@ the required action for each.
 | Signal | Required action |
 |---|---|
 | A checker cannot run, cannot read its input, or exits `2` | Treat the claim it would have verified as unverified: plan-gated at step 3, blocked at steps 5 and 7, `NOT RUN — <reason>` in the packet. |
+| A target file changed outside the approved plan (7.2) | Stop. Name the files. Revert them, or amend under 8.6 and re-approve; 7.2 does not self-clear. |
+| A run produced no per-test lines, only a summary | Unverified in both lanes: `not found in the log` is neither a pass nor a failure. Re-run with per-test reporting. |
 | Plan mode owns the write location | Leave plan mode, write the canonical plan to `docs/plans/`, and keep the harness copy non-authoritative. |
 | A planned test is difficult to write or duplicates an existing test | Hand the case to `ctdd-tests`; add no production seam and delete no coverage to make it easy. |
 | Verification surfaces failures unrelated to this change | Report them with the failing command, exclude them from the packet's pass claims, and do not fix them under this plan. |
@@ -40,4 +42,4 @@ the required action for each.
 4. Emit the packet in the exact shape the output contract declares.
 
 ## Review packet shape — emitted to `stdout`
-`Business requirement: <text>`; `Back-translation: <text or n/a — no test diff>`; `Plan: <repo-relative path or n/a — trivial>`; `Approval: <quoted approval or n/a — trivial>`; `Plan check: <final checker line or n/a>`; `Red state: <final verdict or n/a — plan declares none>`; `Pin state before: <final verdict or n/a — plan declares none>`; `Pin state after: <final verdict or n/a — plan declares none>`; `Spec surface: <Verdict line>`; `Verification: <command => result or NOT RUN — <reason>>; ...` for the contract validator, focused tests, broader suite, and build; `Hold-out: <passed, failed, declined by human, NOT RUN — <reason>, or not required>`; `Residual risk: <text or none>`.
+`Business requirement: <text>`; `Back-translation: <text or n/a — no test diff>`; `Plan: <repo-relative path or n/a — trivial>`; `Approval: <quoted approval or n/a — trivial>`; `Review: <n/a or commissioned by the author — independence not established>`; `Plan check: <final checker line or n/a>`; `Red state: <final verdict or n/a — plan declares none>`; `Pin state before: <final verdict or n/a — plan declares none>`; `Pin state after: <final verdict or n/a — plan declares none>`; `Spec surface: <Verdict line>`; `Verification: <command => result or NOT RUN — <reason>>; ...` for the contract validator, focused tests, broader suite, and build; `Hold-out: <passed, failed, declined by human, NOT RUN — <reason>, or not required>`; `Residual risk: <text or none>`.

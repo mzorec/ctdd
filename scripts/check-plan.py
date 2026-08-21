@@ -58,6 +58,7 @@ REQUIRED = [
     # heading existing. A presence detector that matches prose is not detecting
     # presence of the thing it names.
     ("decision summary: BLOCKING",  r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*blocking\b"),
+
     ("decision summary: proceeding", r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*proceed(ing)?\s+unless\b"),
     ("risk level",            r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*risk\s*(level)?\s*[:—-]"),
     ("existing behavior",     r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*existing\s+behaviou?r\b"),
@@ -229,7 +230,19 @@ _LANE_HEADING = {
 # Any identifier-shaped token is a name; a length floor rejected short test
 # names and would have re-derived the tier from a stylistic choice, which is
 # the class of bug this predicate exists to close.
+# `none` is a declaration, not an identifier. Reading it as a test name made this
+# guard reject the form plan-format rule 4 MANDATES (`Preservation pins: none —
+# <reason>`) while accepting `- none — <reason>` as a named test — the same
+# inversion the guard was written to close, reintroduced through the guard.
+_NOT_A_NAME = {"none", "n", "na", "tbd", "todo", "nothing"}
 _BULLET_NAME = re.compile(r"^\s*[-*]\s+[`'\"]?([A-Za-z_][\w.]*)", re.M)
+
+
+def _bullet_names_a_test(line):
+    m = _BULLET_NAME.match(line)
+    if not m:
+        return False
+    return m.group(1).replace("/", "").lower() not in _NOT_A_NAME
 
 
 def _names_a_test(text):
@@ -253,7 +266,7 @@ def _names_a_test(text):
                     continue
                 if not follow.lstrip().startswith(("-", "*")):
                     break
-                if _BULLET_NAME.match(follow):
+                if _bullet_names_a_test(follow):
                     return True
             break
     return False
@@ -543,6 +556,23 @@ def main():
         # or file of unknown type is plan-gated) needs intent, and three
         # attempts at that heuristic were killed at 43-50% false positives.
         # So say what was checked, not that the claim stands.
+        # `ADR:` on the categorical line, cross-checked against the diff.
+        # The trivial lane has no categorical line, so read the whole
+        # declaration: what matters is whether an ADR is claimed at all.
+        adr_claimed = bool(re.search(r"\bADR\s*[:=]\s*(?!none\b)\S", text, re.I))
+        adr_touched = any(
+            surface.classify(e[1]) == "adr" for e in entries if len(e) > 1 and e[1])
+        if adr_claimed and not adr_touched:
+            print("check-plan: the categorical line claims an ADR and the diff "
+                  "touches no ADR surface. A decision record that is named and not "
+                  "written is a decision nothing records.")
+            return 1
+        if adr_touched and not adr_claimed:
+            print("check-plan: the diff rewrites a decision record and the "
+                  "categorical line claims no ADR. `ADR: none` over an ADR edit is "
+                  "the claim check-spec-surface exists to contradict.")
+            return 1
+
         print("check-plan: trivial claim survives the surface check — no test, "
               "contract or ADR path touched. NOT checked: 3.4's "
               "behavior-preserving requirement. This reads paths, not hunks, so "
@@ -621,6 +651,25 @@ def main():
             return 1
         print(f"check-plan: approval record verified for revision {want}.")
 
+    # 4.5 routes a changed existing assertion as an amendment and rule 3 gives it
+    # its own section, but the section is conditional and no rule tied it to the
+    # thing that triggers it — so a change carried entirely by retargeting an
+    # assertion could declare both evidence lanes `none` and pass with the
+    # amendment recorded nowhere. It cannot be required unconditionally; it can
+    # be required when the plan says an assertion changed.
+    _CHANGED = re.compile(
+        r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*changed\s+existing\s+assertions?\b",
+        re.I | re.M)
+    claims_change = re.search(
+        r"retarget\w*|changed?\s+(?:the\s+)?(?:existing\s+)?assertion", text, re.I)
+    if claims_change and not _CHANGED.search(text):
+        print("check-plan: MISSING `Changed existing assertions` — the plan says an "
+              "existing assertion changes and records no old and new form.")
+        print("Field rule 3 gives that its own section; a retargeted assertion is a "
+              "spec amendment, and both evidence lanes may legitimately read `none` "
+              "while it carries the whole change.")
+        return 1
+
     # Field rule 9: exact file paths, never wildcards, bare directories,
     # `(+ tests)`, `TBD` or unnamed future files. Mechanically checkable and
     # unchecked — and these paths feed `check-redstate --tests-from`, so the gate
@@ -651,7 +700,11 @@ def main():
         print("Tier, triviality and the hold-out check all read it; without it "
               "they fall back to the whole document and prose decides the tier.")
         return 1
-    for field in ("contract", "hold-out"):
+    # `ADR: NNNN required` sits on a mandatory line and was parsed by nothing, so
+    # a plan could claim a decision record and never write one — or say `ADR: none`
+    # while the diff rewrites one. The `--diff` path already classifies surface, so
+    # both directions are checkable there; here, only that the field exists.
+    for field in ("contract", "hold-out", "ADR"):
         if not re.search(rf"{field.replace('-', '.?')}\s*[:=—–-]", cat, re.I):
             print(f"check-plan: the categorical line names no `{field}:` field — "
                   f"{cat.strip()[:70]!r}")

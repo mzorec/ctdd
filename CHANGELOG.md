@@ -32,8 +32,61 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.38.0 — 2026-08-03
+
+A second adversarial review, this one scoped to `ctdd-change` and its references and run against the repair pass above — so several findings are defects that pass introduced or left behind. **15 High, 18 Medium**; every fix reproduced before and mutation-tested after. Suite 289 → 317.
+
+### Gate bypasses
+
+- **The `NO EVIDENCE LANE` guard rejected the mandated form and accepted the other.** `_BULLET_NAME` read the word `none` as a test identifier, so `Preservation pins: none — <reason>` — the form `plan-format` rule 4 **mandates** — derived `large` while `- none — <reason>` derived `small` and passed at 10 of 19. That is the tier inversion the guard was written to close, reintroduced through the guard: rule 8 was not applied to its own fix.
+- **JSON Schema and `openapi/` directories were not contract surface.** `SKILL.md` names both as valid Contract change artifacts, but `openapi` was anchored to the *basename* — so `openapi/payments.yaml`, the layout README's own CI recipe uses, classified as nothing, along with `schemas/*.schema.json` and Avro.
+- **The ADR you were told to write was not ADR surface.** `--adr-dir` honours `CTDD_ADR_DIR` and `.ctdd.json adrDir`; `classify()` hardcoded `adr/`. An ADR written into the directory this same script resolved landed as `other` and the run reported *no test/contract/ADR surface touched* — the verdict the trivial lane opens on. The same asymmetry as `planDir`, fixed in one place and left in its twin.
+- **Fixture ERRORs certified as intended red.** `error` is a fail marker, so two tests that only `ERROR`ed in setup — no assertion executed — gave *"all 2 new test(s) observed failing — red state verified"*, exit 0. `execution.md` has a state for exactly this, **wrong red**, and the checker could not tell it apart; it also misreported it as *passed before implementation*, sending the agent to hunt for behaviour that already existed.
+- **`ADR:` on the mandatory categorical line was parsed by nothing.** Only `contract` and `hold-out` were validated, so a plan could name a decision record and never write one — or say `ADR: none` while the diff rewrote one. `--diff` now cross-checks both directions.
+- **3.2 never said who wrote the diff.** It required only *a diff that already exists*, so an agent that explored and patched in an earlier turn could classify **its own edit** as pre-existing and skip the human gate on it.
+
+### Instructions that could not be followed
+
+- **A lane's skip range swallowed the other lane's skip.** 7.4 read *Skip 7.5–7.8* while 7.8 is itself the skip rule for the new-behaviour lane. The step-7 renumbering corrected two of three copies and left this one — masked only by the evidence-lane guard, and that mask was defeated by the `- none` bullet above.
+- **Field rule 11 described a transition that could not converge.** It said *remove the question it answered* — and the section is required, so the very re-run it mandates then reports `MISSING sections`. Step 5.4's *re-run until it exits 0* had no fixed point, and the worked example taught the same loop.
+- **A declared Stop had no action.** The step 7 header names `Stop: 7.2, 7.7, 7.11`; only 7.7 and 7.11 had break-point rows, and 7.2 has no self-clearing condition, so resuming from a contaminated tree was undefined.
+- **Step 9's Stop could not be satisfied in the trivial lane.** `Stop: 9.1` was unconditional and 9.1 stops for a hold-out result — but that lane has no plan, so no `hold-out:` field, no `Hold-out` block and no named runner.
+- **The trivial-lane retraction was unexecutable.** *Retract the declaration from stdout* — stdout cannot be unprinted. It now prints a correction; the trigger also named only 3.4 and 3.5 while 3.2 and 3.3 can be contradicted just as easily.
+- **A summary-only run drew opposite diagnoses in the two lanes.** `not found in the log` is neither a pass nor a failure, and nothing said so.
+- **A change carried entirely by a retargeted assertion recorded the amendment nowhere.** The section is conditional and nothing tied it to its trigger, so both evidence lanes could read `none` and the plan passed.
+
+### Escapes and evidence gaps
+
+- **`NOT RUN` was `defer` under another name.** Removing `defer` from 9.1's options left the identical escape as a resolution the agent picked alone — and the canonical example establishes unavailability *by construction*. A money-path change could ship at exit 0 with **no `declined by human`**, which is the only value that fires rule 8's fallback. It now needs the same Decision prompt a decline does.
+- **An amendment could be re-approved by the original message.** 8.6 re-ran `check-plan.py` without `--approval`, so the revision digest — added precisely to tell a pre-amendment record from a current one — was never checked.
+- **The colocated note had no legal path.** The Output contract fixed it to one *listed in the plan* while the reference said no plan section names one, and the remedy ran after 9.3 had printed the packet. The plan gains a conditional `Colocated notes` section.
+- **The worked Approval record carried no plan revision**, so an agent copying the transcript produced a record `--approval` cannot verify.
+- **`Verification` was the one evidence lane with no artifact.** Red state and pins each have a log and a checker; the four commands 8.3 mandates had free text, and `NOT RUN — <reason>` was accepted for every row with nothing to check it against. They now save to `<name>.verify.log`.
+- **Five checker flags were built and invoked by no step.** `--plan`, `--diff`, `--approval`, `--post-approval` and `--plan-dir` each closed a specific hole and then sat unreachable — 8.5 compared inventory to plan **by hand and in one direction** while `--plan` does both. A flag nothing invokes is a checker the workflow does not have; a guard now asserts every flag is reachable.
+- **A commissioned review discloses itself.** *Never dispatch it yourself unless asked* let *"now review it"* license a review of the agent's own diff, which the same file calls non-independent. The packet's `Review:` field now records **commissioned by the author — independence not established**, so the claim cannot be silently false.
+
+### The artifacts agents copy
+
+- **The hold-out asked for a value the contract never exposes.** *Assert the remaining authorized amount you compute yourself* — and the plan's own `Intended behavior` returns a status and a payment state. **The assertion cannot be written**, so the one mechanism against circular encoding was unwritable exactly as the canonical example specifies it.
+- **The canonical summary named none of the decisions the format requires it to name**, so an agent copying it approved a plan whose `Residual risk` says a load-bearing path rides entirely on the sealed hold-out — without ever being told.
+- **The tier prose omitted the rule the linter enforces**, so *re-run until it exits 0* converged on removing sections rather than naming a test.
+- **`Status: Accepted` was still unreachable.** The rule said *once the change carrying it has shipped* — after the workflow ends — so every ADR stayed `Proposed` for life and rule 15's append-only freeze never fired. The gate is the acceptance.
+- **The two surfaces disagreed about what the summary must name**; the `Hold-out` is the single exemption and both now say so.
+- The canonical `Verification` ran three commands where 8.3 requires four; the example contradicted itself on consumer contracts; a preservation pin dropped the side effect it exists to preserve; and the worked example ran `check-spec-surface.py < surface.txt`, a file the workflow never creates.
+
+### Not built
+
+- **Hunk-reading for silently rewritten assertions.** Three reviews have now killed that heuristic class at 43–50% false positives, and a deleted line inside a test file is a renamed variable as often as a weakened assertion. The honest half is covered: when the plan *says* an assertion changed, the section is required.
+- **`--commands-from` for the verification log.** The artifact is enough for now; matching commands needs a notion that does not exist, and one real run should come first.
+
+### Also
+
+- A duplicate `skills/skills/` tree, introduced by a botched restore during mutation testing, shipped in two packages before being caught by a grep for something else. Removed.
+
 ## 0.37.0 — 2026-08-03
-S
+
+A full adversarial review of the plugin — 14 parallel agents, most script defects reproduced by running the code rather than inferred. **17 P0s, 9 P2s, 10 P4s and 12 workflow defects**, every fix reproduced before and mutation-tested after. Suite 243 → 289.
+
 ### Gate bypasses — the evidence checkers certified false states
 
 - **A fully green run certified as "red state verified."** v0.29.0 disqualified a marker word only when the adjacent character was alphanumeric or `_`, so it fixed one spelling and left `/`, `-`, `.` and space voting: `tests/error/test_capture.py::test_x PASSED` supplied its own failure verdict from a path segment. Step 7.10 runs exactly this command and 7.11 stops on any state but intended red, so an agent that implemented first and captured green passed the gate.

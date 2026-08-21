@@ -31,6 +31,7 @@ New-behavior tests
 Case coverage not reached (conditional: omitted at the small or medium tier)
 Preservation pins
 Changed existing assertions (conditional: include only when an existing assertion changes)
+Colocated notes (conditional: include only when step 10.2 will write one)
 
 Contract changes (conditional: omitted at the small or medium tier)
 NFR budgets (conditional: omitted at the small or medium tier)
@@ -50,11 +51,11 @@ The plan file is the complete artifact; the terminal is where the human decides.
 
 The hold-out is printed in full because it is the one item asking the human to leave the terminal and do something.
 
-The summary names — one line each, not the sections — every decision the human may refuse: `Business requirement`, `Assumptions`, `Uncovered or ambiguous`, `Known gaps`, `NFR budgets`, `Residual risk`, and an `ADR draft` when one exists. Offer those sections; print them when asked.
+The summary names — one line each, not the sections — every decision the human may refuse other than the `Hold-out`, printed in full above: `Business requirement`, `Assumptions`, `Uncovered or ambiguous`, `Known gaps`, `NFR budgets`, `Residual risk`, and an `ADR draft` when one exists. Offer those sections; print them when asked.
 
 ## Plan tiers
 
-`check-plan.py` requires a different section set per tier and names the tier it applied on every run. The tier is **derived, never written**: `small` needs `contract: none`, `risk: normal`, `hold-out: not required`, and `New-behavior tests: none`; any contract delta, `high-risk`, or a required hold-out is `large`; everything else is `medium`. So `small` cannot be claimed over a contract delta the way `trivial` was once claimed over an absent diff.
+`check-plan.py` requires a different section set per tier and names the tier it applied on every run. The tier is **derived, never written**: `small` needs `contract: none`, `risk: normal`, `hold-out: not required`, `New-behavior tests: none`, and at least one named test in the other lane; any contract delta, `high-risk`, a required hold-out, or **no named test in either lane** is `large`; everything else is `medium`. So `small` cannot be claimed over a contract delta the way `trivial` was once claimed over an absent diff.
 
 Tiers shrink **documentation**, never **evidence**. Both test headings, the risk line, the verification commands, and the approval gate are required at every tier — a tier that could drop one would rebuild the triviality hole under a friendlier name.
 
@@ -72,7 +73,7 @@ The complete example below is the operative instruction: anything it demonstrate
 8. When the human declines a required hold-out, list the load-bearing expected values and ask them to recompute each one by hand from the business requirement, never by reading the code that produced it. Offer it as the fallback, never as the equivalent, and do not label it a hold-out result.
 9. Use exact file paths; never write wildcards, directories, `(+ tests)`, `TBD`, or unnamed future files.
 10. Pin the tests that already assert a decision recorded by any ADR this change touches; a decision no test protects is a decision this change can silently reverse.
-11. Capture the human's stated direction, not a competing one; a decision handed back unresolved returns to `BLOCKING` with their version as the default. Record every resolved BLOCKING answer under `Decisions confirmed in session` and remove the question it answered; an approved plan must not still be asking, and the answer must be findable without the chat. Re-run the checker after every plan edit; re-present when the answer changes any other presented decision.
+11. Capture the human's stated direction, not a competing one; a decision handed back unresolved returns to `BLOCKING` with their version as the default. Record every resolved BLOCKING answer under `Decisions confirmed in session` and replace the question with `none — answered before approval`; the section is required, so removing it fails the re-run, and the answer must be findable without the chat. Re-run the checker after every plan edit; re-present when the answer changes any other presented decision.
 
 `ctdd-tests` owns test naming, altitude, assertion form, and what may not be asserted. Do not restate them here: two copies of a test rule drift, and the one in this file is the copy nobody checks.
 
@@ -99,7 +100,7 @@ Add a row of your own for concurrency, idempotency, duplicate delivery, persiste
 Request: `Add partial capture to the payments service.`
 
 ```markdown
-Allow one capture below the authorized amount while preserving over-capture rejection. The unresolved decision is the released remainder's hold lifetime. Money-path boundary semantics require a sealed hold-out.
+One capture below the authorized amount; over-capture still rejected. BLOCKING: the remainder's hold lifetime. Assumed: it releases at once. Gap: `settlement-batch` unpinned. Not reached: authorization. NFR: none. Residual: the expiry path rides on the hold-out. No ADR.
 Risk: normal · contract: additive · ADR: none · hold-out: required: 2 sealed tests from human
 Business requirement: The merchant is allowed one capture below the authorized amount.
 Intended behavior: `POST /payments/{id}/capture` accepts `0 < amount <= authorizedAmount`, moves the payment to `CAPTURED`, and rejects any later capture.
@@ -117,7 +118,7 @@ Existing behavior
 - `payments/contract/openapi.yaml` — `POST /payments/{id}/capture`: requires capture amount equal to the authorized amount.
 - `tests/payments/CaptureTests.cs::capture_fails_when_amount_exceeds_authorized_amount`: rejects over-capture.
 Known gaps
-- No consumer contract exists for the checkout caller.
+- `settlement-batch` has no consumer contract; only `checkout-web` is pinned.
 
 Assumptions
 - A successful partial capture moves the payment to `CAPTURED`.
@@ -136,7 +137,7 @@ Case coverage not reached
 - authorization — n/a — the capture policy on the route is unchanged.
 
 Preservation pins
-- `capture_succeeds_when_amount_equals_authorized_amount` — path: `tests/payments/CaptureTests.cs`; case: legacy behavior; full capture remains accepted before and after.
+- `capture_succeeds_when_amount_equals_authorized_amount` — path: `tests/payments/CaptureTests.cs`; case: legacy behavior, side effect; full capture remains accepted before and after.
 - `capture_fails_when_amount_is_zero` — path: `tests/payments/CaptureTests.cs`; case: boundary; zero remains rejected before and after.
 - `capture_fails_when_amount_is_negative` — path: `tests/payments/CaptureTests.cs`; case: negative; negative amounts remain rejected before and after.
 - `capture_fails_when_amount_exceeds_authorized_amount` — path: `tests/payments/CaptureTests.cs`; case: boundary; over-capture remains rejected before and after.
@@ -159,13 +160,14 @@ Implementation slices
 
 Verification
 - `dotnet test --filter CaptureTests` — expected: all listed new-behavior and pin tests pass.
+- `dotnet test` — expected: broader suite green.
 - `dotnet build` — expected: exit 0.
 - `spectral lint payments/contract/openapi.yaml` — expected: no errors.
 
 Hold-out
 - decision: required
 - reason: money-path amount and boundary semantics
-- request: 2 sealed tests. (1) capture 33.33 against an authorization of 100.00, assert the remaining authorized amount you compute yourself. (2) capture the exact authorized amount, assert the resulting status. Your own words, not the names above.
+- request: 2 sealed tests. (1) capture 33.33 against an authorization of 100.00, assert the response status and resulting payment state, computed by you from the requirement. (2) capture the exact authorized amount, assert the resulting state. Your own words, not the names above.
 - options: `write` — 2 assertions, ~5 minutes; `decline` — recorded as `declined by human`, and this plan then lists the values you must verify independently.
 - recommended: `write` — the edge was derived from the same document the implementation reads, so nothing in the agent's suite is independent evidence it is right.
 - storage: separate repository, unavailable to this session

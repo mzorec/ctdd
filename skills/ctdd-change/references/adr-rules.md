@@ -8,7 +8,7 @@ Load this file only when `SKILL.md` step 4.3 fires or the Standalone ADR procedu
 4. Resolve the ADR directory once with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --adr-dir` and write the approved or standalone ADR to `<that directory>/NNNN-<kebab-slug>.md`. Never assume a path: writing into a directory the repository does not use restarts the numbering beside an existing series.
 5. Find the next number by incrementing the highest existing ADR number in that same directory, matching its width: a repository numbering `001`–`014` continues at `015`, not `0001`, because the reader strips leading zeros and `001-` and `0001-` would resolve to the same decision. Start at `0001` only when the directory is empty.
 6. Render `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-change/references/adr-template.md`.
-7. Set `Status` to `Proposed` unless the user explicitly supplies another valid status, and to `Accepted` once the change carrying it has shipped. Nothing else promotes an ADR, so one left `Proposed` for life never reaches rule 15's append-only freeze and its Context and Decision stay rewritable.
+7. Set `Status` to `Accepted` when writing it at 7.3 — the human approved the draft at the gate, and that is the acceptance. Use `Proposed` only for a standalone ADR written outside an approved plan; nothing later promotes one, so a `Proposed` ADR never reaches rule 15's freeze.
 8. Set `Date` to the current date.
 9. Name the known deciders; write `Not recorded` when none are supplied.
 10. Write `Context` in two to five sentences describing the situation, constraints, and considered options.

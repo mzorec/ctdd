@@ -6,7 +6,7 @@ Load this file only at `SKILL.md` step 10.2, after 10.1 determines that no test 
    - a universal invariant that cannot be executable;
    - a deliberately undefined boundary that cannot be executable;
    - a durable external fact required by the code.
-2. Write the note at the governed source or contract path. No plan section names one, so the path is not pre-approved: report the write in the packet as a post-approval spec-surface edit.
+2. Write the note at a path the plan's `Colocated notes` section names. That section is conditional: when 10.2 will fire, the path is approved at the gate with everything else.
 3. Write one sentence.
 4. State the rule before its provenance.
 5. Add provenance only when it is stable.

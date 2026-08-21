@@ -561,7 +561,49 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # than assumed. The plan-dir work paid for itself — replacing five hardcoded
     # `docs/plans/` mentions with the resolved form ran 13 characters cheaper than
     # the assumption it removed.
-    MAX_PLAN_GATED_METHODOLOGY_CHARS = 42700
+    # 42,700 -> 43,000 for four mechanical repairs from the second review pass:
+    # a break-point row for the 7.2 contamination stop (declared a Stop in the
+    # step header with no row anywhere), a row for a summary-only run (the two
+    # lanes gave that log opposite diagnoses), the `Changed existing assertions`
+    # check tied to its trigger, and 3.2 naming who may have authored the diff —
+    # it required only that one "already exists", so an agent that explored and
+    # patched in an earlier turn could classify its own edit as pre-existing.
+    # 43,000 -> 43,200 for the three judgement calls the human decided:
+    #   - `NOT RUN` needs the same prompt a decline does. Removing `defer` from
+    #     9.1's options left the identical escape under another name, and the
+    #     canonical example establishes unavailability by construction — so a
+    #     money-path change could ship with no `declined by human`, which is the
+    #     only value that fires rule 8's fallback.
+    #   - 8.6 re-runs with `--approval`, so an amendment cannot be re-approved by
+    #     the original message. The digest existed and nothing checked it.
+    #   - The colocated note writes to a path the plan named. The Output contract
+    #     said "listed in the plan" while the reference said no section names one,
+    #     and the remedy — report it in the packet — ran after 9.3 printed it.
+    # 43,200 -> 43,300. `--plan`, `--diff` and `--approval` were built and never
+    # invoked by any step — dead code that made the deficit direction, the trivial
+    # cross-check and the staleness check unreachable in practice. Wiring them cost
+    # this, net of displacing 8.5's hand comparison, which `--plan` now does in
+    # both directions.
+    # 43,300 -> 43,500. The canonical summary named none of the seven decisions
+    # the format requires it to name — so an agent copying it approved a plan
+    # whose `Residual risk` says a load-bearing path is covered only by the sealed
+    # hold-out, without ever being told. Naming them is the cost; three
+    # displacements were made first (the summary rewritten as pointers rather than
+    # restatements, the hold-out request trimmed, the worked command shortened).
+    # 43,500 -> 43,600. `ADR:` on the mandatory categorical line was parsed by
+    # nothing, so a plan could name a decision record and never write one — or say
+    # `ADR: none` while the diff rewrote one. The trivial-lane retraction told the
+    # agent to unprint stdout. Step 9's Stop fired on a hold-out the trivial lane
+    # cannot declare. And `Verification` was the one evidence lane with no
+    # artifact: red state and pins each have a log, its four commands had free
+    # text. Two displacements first — 8.4's restatement of what `--plan` reports,
+    # and 8.5's restatement of 8.3's four commands.
+    # 43,600 -> 43,700. The self-review exception ("never dispatch it yourself
+    # *unless asked*") licensed exactly what the same sentence calls
+    # non-independent, and conceded a subagent does not fix it. Keeping the
+    # exception preserves the workflow; the packet's new `Review:` field stops the
+    # independence claim being silently false when it is used.
+    MAX_PLAN_GATED_METHODOLOGY_CHARS = 43700
     """ctdd-tests keeps craft work (de-flaking, altitude, renaming) out of the
     plan gate, while every consumer of the diff — this script, the hook, and
     ctdd-review — reads any modified test as a changed requirement. Both are
@@ -725,7 +767,11 @@ class CrossSkillAgreementTests(unittest.TestCase):
         fmt = (root / "plan-format.md").read_text(encoding="utf-8")
         self.assertIn("Re-run the checker after every plan edit", fmt)
         worked = (root / "worked-change.md").read_text(encoding="utf-8")
-        self.assertIn("Every plan edit", worked)
+        # The example points to field rule 11 now instead of restating it —
+        # and the rule itself was wrong: it said *remove the question*,
+        # which fails the very re-run it tells you to make, because the
+        # section is required.
+        self.assertIn("Field rule 11 governs", worked)
         self.assertNotIn("checker did not have to run again", worked)
 
     def test_every_bundled_reference_is_tracked_by_git(self):
@@ -919,6 +965,46 @@ class CrossSkillAgreementTests(unittest.TestCase):
         self.assertIn(".claude/settings.json", readme)
         self.assertNotIn("into your own project's `.claude/`", readme)
 
+    def test_contract_layouts_named_by_the_skill_are_contract_surface(self):
+        """SKILL.md names JSON Schema and OpenAPI as valid Contract change
+        artifacts, but `openapi` was anchored to the *basename* — so
+        `openapi/payments.yaml`, the layout README's own CI recipe uses,
+        classified as nothing. A contract lives in a directory as often as in a
+        filename."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("css_c", SCRIPT)
+        css = importlib.util.module_from_spec(spec); spec.loader.exec_module(css)
+        for path in ("openapi/payments.yaml", "schemas/payment.schema.json",
+                     "events/PaymentCaptured.avsc", "payments.openapi.yaml",
+                     "api-specs/capture.yaml", "contracts/pact.json"):
+            self.assertEqual(css.classify(path), "contract", path)
+        for path in ("src/Handler.cs", "docs/schemas-guide.md", "README.md"):
+            self.assertIsNone(css.classify(path), path)
+
+    def test_the_configured_adr_directory_is_adr_surface(self):
+        """`--adr-dir` honours `CTDD_ADR_DIR` / `.ctdd.json adrDir`; `classify()`
+        hardcoded `adr/`. So the ADR that adr-rules.md rule 4 told you to write —
+        into the directory this same script resolved — landed as `other`, and the
+        run reported *no test/contract/ADR surface touched*: the verdict the
+        trivial lane opens on. One script, two definitions; rule 2 says there is
+        one."""
+        import importlib.util, os
+        spec = importlib.util.spec_from_file_location("css_adr2", SCRIPT)
+        css = importlib.util.module_from_spec(spec); spec.loader.exec_module(css)
+        self.assertEqual(css.classify("docs/adr/0016-x.md"), "adr")
+        old = os.environ.get("CTDD_ADR_DIR")
+        os.environ["CTDD_ADR_DIR"] = "docs/decisions"
+        try:
+            self.assertEqual(css.classify("docs/decisions/0016-x.md"), "adr",
+                             "the resolved ADR directory must classify as ADR "
+                             "surface, or the ADR you were told to write is not "
+                             "spec surface")
+        finally:
+            if old is None:
+                del os.environ["CTDD_ADR_DIR"]
+            else:
+                os.environ["CTDD_ADR_DIR"] = old
+
     def test_a_letter_prefixed_adr_filename_still_resolves(self):
         """`re.match(r"0*(\\d{1,4})", name)` is position-anchored to a digit, so
         every `ADR-NNNN-slug.md` resolved to nothing — a common convention — and a
@@ -1037,6 +1123,265 @@ class CrossSkillAgreementTests(unittest.TestCase):
         self.assertIn("write / decline", line[0])
         self.assertNotIn("defer", line[0])
 
+    def test_a_commissioned_review_declares_itself(self):
+        """*never dispatch it yourself unless asked* licensed exactly what the same
+        sentence calls non-independent — and it conceded a subagent does not fix
+        it. The exception stays, because requiring a fresh session on every change
+        is real friction; what it may not do is leave the independence claim
+        silently false."""
+        body = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("record it in the packet's `Review:` field", body)
+        ex = (self._skills() / "ctdd-change" / "references"
+              / "execution.md").read_text(encoding="utf-8")
+        self.assertIn("commissioned by the author — independence not established", ex)
+
+    def test_the_verification_lane_has_an_artifact(self):
+        """Red state and pins each have a log path and a checker; `Verification` —
+        the four commands 8.3 mandates — had neither, so the packet carried free
+        text and `NOT RUN — <reason>` was accepted for every row with nothing to
+        check it against."""
+        body = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn(".verify.log", body)
+        self.assertIn("saving each to the verification path", body)
+
+    def test_step_nine_stops_only_where_it_can(self):
+        """Step 9 declared `Stop: 9.1` unconditionally, and 9.1 stops for a
+        hold-out result. The trivial lane has no plan, so no categorical
+        `hold-out:` field, no `Hold-out` block and no named runner — the stop had
+        no inputs and no way to clear."""
+        body = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
+        head = [l for l in body.split("\n") if l.startswith("9. **")]
+        self.assertEqual(len(head), 1, "step 9 moved")
+        self.assertIn("Stop: 9.1 when a plan exists", head[0])
+
+    def test_the_two_surfaces_agree_on_what_the_summary_names(self):
+        """SKILL.md's gate presentation prints the `Hold-out` in full and then the
+        summary; plan-format said the summary names *every* decision, which would
+        include the one just printed. The Hold-out is the single exemption and
+        both surfaces have to say so, or the agent has to guess which is right."""
+        fmt = (self._skills() / "ctdd-change" / "references"
+               / "plan-format.md").read_text(encoding="utf-8")
+        line = [l for l in fmt.split("\n") if "The summary names" in l]
+        self.assertEqual(len(line), 1, "the gate-visible sentence moved")
+        self.assertIn("other than the `Hold-out`", line[0])
+
+    def test_the_canonical_summary_names_every_refusable_decision(self):
+        """The format requires the summary to name each decision the human may
+        refuse, one line each; the canonical summary named **none** of them. So an
+        agent copying it approved a plan whose `Residual risk` says the expiry
+        path is covered only by the sealed hold-out — without ever being told."""
+        import re as _re
+        fmt = (self._skills() / "ctdd-change" / "references"
+               / "plan-format.md").read_text(encoding="utf-8")
+        ex = _re.search(r"## Complete example.*?```markdown\n(.*?)```", fmt,
+                        _re.S).group(1)
+        summary = ex.split("\n")[0].lower()
+        for token in ("blocking", "assum", "gap", "not reached", "nfr", "residual",
+                      "adr"):
+            self.assertIn(token, summary,
+                          f"the canonical summary names no {token!r} decision")
+
+    def test_the_worked_example_runs_the_prescribed_invocation(self):
+        """It ran `check-spec-surface.py < surface.txt` while 8.4 prescribes
+        `--git <diff-base>`, and `surface.txt` is created nowhere in the workflow —
+        so the shape agents copy was a command the procedure never issues."""
+        wc = (self._skills() / "ctdd-change" / "references"
+              / "worked-change.md").read_text(encoding="utf-8")
+        self.assertNotIn("< surface.txt", wc)
+        self.assertIn("check-spec-surface.py\" --git", wc)
+
+    def test_the_holdout_asks_for_something_the_contract_exposes(self):
+        """The request asked the human to assert *the remaining authorized amount*,
+        a value the plan's own `Intended behavior` never exposes — the response
+        carries a status and a payment state. An assertion on a value the API does
+        not return cannot be written, so the one mechanism against circular
+        encoding was unwritable as specified."""
+        import re as _re
+        fmt = (self._skills() / "ctdd-change" / "references"
+               / "plan-format.md").read_text(encoding="utf-8")
+        ex = _re.search(r"## Complete example.*?```markdown\n(.*?)```", fmt,
+                        _re.S).group(1)
+        req = [l for l in ex.split("\n") if l.startswith("- request:")]
+        self.assertEqual(len(req), 1, "the hold-out request moved")
+        self.assertNotIn("remaining authorized amount", req[0])
+
+    def test_the_example_verification_runs_what_step_8_requires(self):
+        """8.3 requires four commands — contract validator, focused tests, broader
+        suite, build — and the canonical `Verification` listed three, omitting the
+        broader suite: the one that catches a regression outside the focused
+        filter. The example is the operative instruction, so it taught three."""
+        import re as _re
+        fmt = (self._skills() / "ctdd-change" / "references"
+               / "plan-format.md").read_text(encoding="utf-8")
+        ex = _re.search(r"## Complete example.*?```markdown\n(.*?)```", fmt,
+                        _re.S).group(1)
+        block = ex.split("Verification", 1)[1].split("\nHold-out", 1)[0]
+        self.assertGreaterEqual(len([l for l in block.split("\n")
+                                     if l.strip().startswith("- `")]), 4,
+                                "the example runs fewer commands than 8.3 requires")
+        self.assertIn("broader suite", block)
+
+    def test_the_example_does_not_contradict_itself_on_consumer_contracts(self):
+        """`Known gaps` said *no consumer contract exists for the checkout caller*
+        while `Contract changes` named `consumer pin: pacts/checkout-web-…`. Both
+        cannot be true, and the example is what agents copy."""
+        import re as _re
+        fmt = (self._skills() / "ctdd-change" / "references"
+               / "plan-format.md").read_text(encoding="utf-8")
+        ex = _re.search(r"## Complete example.*?```markdown\n(.*?)```", fmt,
+                        _re.S).group(1)
+        gaps = ex.split("Known gaps", 1)[1].split("\n\n", 1)[0].lower()
+        if "consumer pin: `pacts/checkout-web" in ex.lower():
+            self.assertNotIn("no consumer contract exists for the checkout", gaps)
+
+    def test_an_adr_reaches_the_status_its_freeze_needs(self):
+        """`Accepted` appeared only in a rule and the template's enum, and the rule
+        said *once the change has shipped* — which is after the workflow ends, so
+        no step promoted anything. Every ADR stayed `Proposed` for life and rule
+        15's append-only freeze never fired. The gate is the acceptance."""
+        rules = (self._skills() / "ctdd-change" / "references"
+                 / "adr-rules.md").read_text(encoding="utf-8")
+        self.assertIn("Set `Status` to `Accepted` when writing it at 7.3", rules)
+        self.assertNotIn("once the change carrying it has shipped", rules)
+
+    def test_every_checker_flag_is_invoked_by_some_step(self):
+        """`--plan`, `--diff`, `--approval`, `--post-approval` and `--plan-dir`
+        were each built to close a specific hole and then invoked by no step — so
+        the deficit direction of 8.5, the trivial lane's cross-check and the
+        approval staleness check were all unreachable in practice. A flag nothing
+        runs is a checker the workflow does not have."""
+        surfaces = "\n".join(
+            f.read_text(encoding="utf-8")
+            for f in list(self._skills().glob("*/SKILL.md"))
+            + list((self._skills() / "ctdd-change" / "references").glob("*.md")))
+        for flag in ("--plan ", "--diff ", "--approval ", "--post-approval",
+                     "--plan-dir", "--tests-from", "--expect-pass", "--git "):
+            self.assertIn(flag, surfaces,
+                          f"{flag.strip()} is implemented but no step invokes it")
+
+    def test_not_run_is_not_a_unilateral_escape(self):
+        """Removing `defer` from 9.1's options left the identical escape under
+        another name: `NOT RUN — <reason>` was a resolution the agent picked
+        alone, and the canonical example establishes unavailability *by
+        construction* (`storage: separate repository, unavailable in-session`).
+        So a money-path change could ship reading `Hold-out: NOT RUN — sealed
+        suite runs in CI post-merge`, exit 0, with **no `declined by human`** —
+        the only value that fires plan-format rule 8's fallback."""
+        body = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
+        line = [l for l in body.split("\n") if "sealed hold-out result" in l]
+        self.assertEqual(len(line), 1, "9.1 moved")
+        self.assertIn("`NOT RUN` needs the same prompt a decline does", line[0])
+        self.assertNotIn("an unavailable runner is `NOT RUN`", line[0])
+
+    def test_an_amendment_cannot_be_reapproved_by_the_old_message(self):
+        """8.6 re-ran `check-plan.py` without `--approval`, so the revision digest
+        — added precisely so a pre-amendment record could be told from a current
+        one — was never checked. An amendment changing a test expectation touches
+        no section the summary must name, so nothing else surfaced it either."""
+        body = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
+        line = [l for l in body.split("\n") if "reopen the gate when the approved" in l]
+        self.assertEqual(len(line), 1, "8.6 moved")
+        self.assertIn("--approval", line[0])
+        self.assertIn("only after that reports the new revision approved", line[0])
+
+    def test_the_colocated_note_writes_to_an_approved_path(self):
+        """The Output contract fixed the path to one *listed in the plan* while the
+        reference said no plan section names one — and the remedy, *report the
+        write in the packet*, ran after 9.3 had already printed it. So a
+        post-approval edit to a source or contract file landed after every check
+        that would have surfaced it."""
+        fmt = (self._skills() / "ctdd-change" / "references"
+               / "plan-format.md").read_text(encoding="utf-8")
+        self.assertIn("Colocated notes (conditional", fmt)
+        ref = (self._skills() / "ctdd-change" / "references"
+               / "colocated-notes.md").read_text(encoding="utf-8")
+        self.assertIn("a path the plan's `Colocated notes` section names", ref)
+        self.assertNotIn("the path is not pre-approved", ref)
+
+    def test_every_declared_stop_has_a_break_point_row(self):
+        """The step 7 header declares `Stop: 7.2, 7.7, 7.11`, and only 7.7 and
+        7.11 had rows — so the one Stop that fires on a contaminated tree had no
+        action anywhere, and 7.2 has no self-clearing condition to resume from."""
+        ex = (self._skills() / "ctdd-change" / "references"
+              / "execution.md").read_text(encoding="utf-8")
+        self.assertIn("changed outside the approved plan (7.2)", ex)
+        self.assertIn("does not self-clear", ex)
+
+    def test_a_summary_only_run_has_one_diagnosis(self):
+        """The same log drew opposite verdicts in the two lanes. `not found in the
+        log` is neither a pass nor a failure, and nothing said so."""
+        ex = (self._skills() / "ctdd-change" / "references"
+              / "execution.md").read_text(encoding="utf-8")
+        self.assertIn("no per-test lines", ex)
+        self.assertIn("neither a pass nor a failure", ex)
+
+    def test_the_trivial_lane_diff_is_not_the_agents_own(self):
+        """3.2 required only *a diff that already exists* and never said who wrote
+        it — so an agent that explored and patched in an earlier turn could
+        classify its own edit as pre-existing and skip the human gate on it."""
+        body = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("that you did not write in this session", body)
+
+    def test_a_lane_skip_does_not_swallow_the_other_lanes_skip(self):
+        """7.4 read *Skip 7.5–7.8* while 7.8 is itself the skip rule for the other
+        lane — so skipping the pin lane swallowed the new-behaviour lane's skip.
+        The step-7 renumbering corrected two of three copies and left this one;
+        it was masked only by the NO EVIDENCE LANE guard guaranteeing one lane
+        names a test, and that mask was defeated by the `- none` bullet bug."""
+        import re as _re
+        body = _re.sub(r"^---\n.*?\n---\n", "",
+                       (self._skills() / "ctdd-change" / "SKILL.md")
+                       .read_text(encoding="utf-8"), flags=_re.S)
+        skips = _re.findall(r"Skip (\d+)\.(\d+)[–-](\d+)\.(\d+)", body)
+        self.assertTrue(skips, "no skip ranges found")
+        # collect the substep number of every skip rule
+        skip_lines = {int(m.group(1))
+                      for m in _re.finditer(r"^\s+(\d+)\.\s+Skip ", body, _re.M)}
+        for a_t, a_n, b_t, b_n in skips:
+            self.assertEqual(a_t, b_t, "a skip range must stay inside its step")
+            spanned = set(range(int(a_n), int(b_n) + 1))
+            self.assertFalse(
+                spanned & skip_lines,
+                f"Skip {a_t}.{a_n}-{b_t}.{b_n} swallows another lane's skip rule "
+                f"at {sorted(spanned & skip_lines)}")
+
+    def test_the_worked_approval_record_carries_the_plan_revision(self):
+        """The Approval record must carry `<path>@<revision>` — `--approval`
+        reports APPROVAL STALE without it, and 8.6 edits the plan in place at the
+        same path, so a pre-amendment record is otherwise textually identical to
+        a current one. The transcript showed the path alone, so an agent copying
+        the shape produced a record the checker cannot verify."""
+        import re as _re
+        wc = (self._skills() / "ctdd-change" / "references"
+              / "worked-change.md").read_text(encoding="utf-8")
+        rec = [l for l in wc.split("\n") if l.startswith("Approved by:")]
+        self.assertEqual(len(rec), 1, "the Approval record moved")
+        self.assertRegex(rec[0], r"@[0-9a-f]{12}\b",
+                         "the record names no plan revision")
+
+    def test_field_rule_eleven_describes_a_transition_that_converges(self):
+        """It said *remove the question it answered* — and the section is required,
+        so the very re-run it mandates then reports MISSING. Step 5.4's *re-run
+        until it exits 0* could not converge, and the worked example taught the
+        same loop."""
+        fmt = (self._skills() / "ctdd-change" / "references"
+               / "plan-format.md").read_text(encoding="utf-8")
+        rule = [l for l in fmt.split("\n") if l.startswith("11. ")]
+        self.assertEqual(len(rule), 1, "field rule 11 moved")
+        self.assertIn("none — answered before approval", rule[0])
+        self.assertNotIn("remove the question it answered", rule[0])
+
+    def test_the_tier_prose_states_the_rule_the_linter_enforces(self):
+        """`plan-format` described `small` by contract, risk, hold-out and
+        new-behaviour alone, never stating the both-lanes rule the linter
+        enforces — so step 5.4's *re-run until it exits 0* converged on removing
+        sections rather than naming a test."""
+        fmt = (self._skills() / "ctdd-change" / "references"
+               / "plan-format.md").read_text(encoding="utf-8")
+        tiers = fmt.split("## Plan tiers", 1)[1].split("##", 1)[0]
+        self.assertIn("at least one named test in the other lane", tiers)
+        self.assertIn("no named test in either lane", tiers)
+
     def test_every_step_cross_reference_resolves(self):
         """Nothing resolved an `N.M` reference — every structural guard here is
         literal-substring, and the two that mention `8.3` and `8.6` pin the
@@ -1111,15 +1456,16 @@ class CrossSkillAgreementTests(unittest.TestCase):
                 "Amend the plan, re-run the checker and re-present on changes; stop "
                 "on reject.",
             "the trivial lane can be unwound":
-                "Retract the declaration from stdout and the PR/MR description, then "
-                "return to 3.1 as plan-gated, when any later step contradicts 3.4 or "
-                "3.5.",
+                # Stdout cannot be unprinted, so the retraction has to be a
+                # correction, not a deletion — and the trigger named only 3.4 and
+                # 3.5 while 3.2 and 3.3 can be contradicted just as easily.
+                "Print a correction naming the withdrawn declaration, remove it from "
+                "the PR/MR description, then return to 3.1 as plan-gated, when any "
+                "later step contradicts 3.2, 3.3, 3.4 or 3.5.",
             "step 4 admits a retraction":
                 "Enter: step 3 did not fire 3.6, or 3.7 retracted it.",
             "step 8 does not assume a plan in the trivial lane":
-                "in the trivial lane compare it with the declared diff instead, take "
-                "8.3's pin re-run and 8.6 as `n/a`, and still run the validator, "
-                "tests, suite and build",
+                "in the trivial lane take only 8.3's pin re-run and 8.6 as `n/a`",
             "step 8 needs at least one named test":
                 "Enter: step 7 satisfied every applicable evidence lane, and at "
                 "least one lane named a test",
@@ -1380,7 +1726,12 @@ class CrossSkillAgreementTests(unittest.TestCase):
             for i, line in enumerate(path.read_text(encoding="utf-8").split("\n"), 1):
                 if "check-plan.py" in line:
                     self.assertRegex(
-                        line, r"<[a-z-]*plan[a-z-]*>|docs/plans/",
+                        # The trivial lane validates the declaration, which by
+                        # definition is not a plan — so accept any path-shaped
+                        # argument. The property is "carries a path", not "says
+                        # the word plan".
+                        line, r"<[a-z-]*(?:plan|declaration|description)[a-z-]*"
+                              r"(?:-path)?>|docs/plans/",
                         f"{path.parent.name}/SKILL.md:{i} shows check-plan.py with no "
                         f"plan argument; as displayed it exits 1")
                 if "check-redstate.py" in line:

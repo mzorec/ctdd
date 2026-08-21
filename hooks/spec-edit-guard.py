@@ -56,6 +56,13 @@ CONTRACT_DEFAULT = [
     r"\.(openapi|asyncapi)\.(ya?ml|json)$",                  # payments.openapi.yaml
     r"\.proto$",                                             # gRPC / protobuf IDL
     r"\.pact\.json$",                                        # Pact consumer contracts
+    # SKILL.md names JSON Schema and OpenAPI as valid Contract change artifacts,
+    # but `openapi` was anchored to the *basename* — so `openapi/payments.yaml`,
+    # the layout README's own CI recipe uses, classified as nothing. A contract
+    # lives in a directory as often as in a filename.
+    r"(^|/)(openapi|swagger|asyncapi|schemas?|api-specs?)(/|$)",
+    r"\.schema\.json$",                                       # JSON Schema
+    r"\.(avsc|thrift|graphql|gql)$",                           # Avro, Thrift, GraphQL IDL
 ]
 
 # Files with these extensions are data/contract-shaped. Under a specs?/

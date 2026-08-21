@@ -153,6 +153,24 @@ SUMMARY_RX = re.compile(
 )
 
 
+# A test that never ran is not a test that failed. pytest reports a fixture
+# collapse as `ERROR tests/x.py::t - KeyError`, and `error` is a FAIL_MARKER, so
+# two tests that only ERRORed in setup certified as "red state verified" with no
+# assertion ever executed. execution.md has a state for exactly this — **wrong
+# red**, "the failure comes from setup, environment, a typo, or an unrelated
+# defect" — and the checker could not tell it from intended red.
+SETUP_ERROR_RX = re.compile(
+    r"^\s*(?:ERROR|E\s)|"                       # pytest collection/fixture error
+    r"\berror (?:setting up|in fixture|during setup)\b|"
+    r"\bfixture\b.*\b(?:error|not found|failed)\b",
+    re.IGNORECASE)
+
+
+def looks_like_setup_error(line):
+    """True when the line reports a failure *before* the test body ran."""
+    return bool(SETUP_ERROR_RX.search(line))
+
+
 def looks_like_failure(line):
     """True if this line reports the named test failing."""
     low = line.lower()
@@ -229,6 +247,10 @@ def _verdicts(log, name):
             text = _verdict_text(line, name)
             if looks_like_pass(text):
                 out.append(True)
+            elif looks_like_setup_error(line):
+                # A test that never ran is not a test that failed: this is
+                # execution.md's **wrong red**, not intended red.
+                out.append("setup")
             elif looks_like_failure(text):
                 out.append(False)
             else:
@@ -575,10 +597,30 @@ def main():
                       "names no test, so nothing can be verified from it.")
         return 1
 
-    failing, passing, absent = [], [], []
+    failing, passing, absent, setup = [], [], [], []
     for name in names:
         seen, failed = observed_failing(log, name)
-        (failing if failed else (passing if seen else absent)).append(name)
+        if failed:
+            failing.append(name)
+        elif any(x == "setup" for x in _marked(log, name)):
+            # execution.md's **wrong red**: the failure came from setup, so the
+            # assertion never ran. Reporting it as "passed before implementation"
+            # sent the agent to look for behaviour that already exists.
+            setup.append(name)
+        elif seen:
+            passing.append(name)
+        else:
+            absent.append(name)
+
+    if setup:
+        print("check-redstate: RED STATE NOT VERIFIED.")
+        print(f"  errored before the test body ran ({len(setup)}): "
+              f"{', '.join(setup)}")
+        print("    This is `wrong red`: the failure comes from setup, a fixture, "
+              "the environment, or an unrelated defect, so no assertion executed. "
+              "Fix the harness and re-run; a test that never ran is not a test "
+              "that failed.")
+        return 1
 
     if not passing and not absent:
         print(f"check-redstate: {', '.join(failing)}")

@@ -59,10 +59,10 @@ Human: release the remainder when the authorization expires. Approved.
 ```
 
 ```
-Approved by: "release the remainder when the authorization expires. Approved."; plan: docs/plans/PAY-123-partial-capture.md.
+Approved by: "release the remainder when the authorization expires. Approved."; plan: docs/plans/PAY-123-partial-capture.md@453959650ce8.
 ```
 
-Every plan edit invalidates its checker result. Move the answer to `Decisions confirmed in session` and remove the question, re-run `check-plan.py` to exit `0`, then print approval. The same message approves because no other presented decision changed; otherwise re-present the amended plan.
+Field rule 11 governs: the answer moves, the question becomes `none — answered before approval`, and `check-plan.py --post-approval` must exit 0.
 
 ## Step 7 — artifacts and evidence
 
@@ -95,7 +95,7 @@ Implementation follows the `Implementation slices` order, one slice per named te
 
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" < surface.txt
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git origin/main --plan <plan-path>
 check-spec-surface: spec-surface inventory (deterministic; patterns shared with the spec-edit hook, env overrides honored)
 
 Contract surface (1):
