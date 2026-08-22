@@ -488,7 +488,26 @@ class CrossSkillAgreementTests(unittest.TestCase):
     #   - Against the external number there is room: at the 4.16-4.50 chars/token
     #     an outside tokenizer measures for this content, 15,500 chars is roughly
     #     3,450-3,730 tokens, or 69-75% of Anthropic's ~5,000-token guidance.
-    BODY_LIMIT_CHARS = 15_500
+    # 15,500 -> 15,800. The `ctdd-tests` review closed twelve High findings and
+    # three judgement calls in one pass; five displacements were made first (the
+    # plan-dir hint, the standalone clause, the H16 restatement, the H17 and H9
+    # wordings, and the altitude row's justification). What is left is the rules
+    # themselves. Still ~3,950 tokens at 4.0 chars/token, or 79% of Anthropic's
+    # ~5,000-token guidance, and MAX_PROBE_OFFSET_CHARS remains the real
+    # constraint on what survives compaction.
+    # 15,800 -> 15,900 for seven Medium findings in `ctdd-tests`, the largest
+    # being two altitude rows that fired on the same input with opposite actions
+    # — one saying go to a higher boundary, the other to the smallest — in a
+    # section that forbids inferring an order among condition-triggered rules.
+    # Three displacements first: a redundant coverage row swapped for the missing
+    # authorization case, an enumeration the Output contract restated, and the
+    # disambiguator stated on both rows instead of one.
+    # 15,900 -> 16,000 for the last five `ctdd-tests` Mediums. Two displacements
+    # first: the craft lane explained step 6's rule from step 4, and the exit-2
+    # and review-lane clauses were written as prose where a clause would do.
+    # At 4.0 chars/token this is ~4,000 tokens, 80% of Anthropic's ~5,000-token
+    # guidance; MAX_PROBE_OFFSET_CHARS still owns what survives compaction.
+    BODY_LIMIT_CHARS = 16_000
 
     # Kept as the early warning it always was, now against the proxy rather than
     # as the body limit itself.
@@ -1105,7 +1124,11 @@ class CrossSkillAgreementTests(unittest.TestCase):
                  if l.startswith("- Route changed expected behavior")]
         self.assertEqual(len(route), 1, "the routing rule moved")
         keep = tests.split(route[0])[0]
-        self.assertIn("invokes you at 7.5 or 7.9", keep,
+        # Not the step numbers: those live in another file and no checker
+        # resolves a cross-skill reference, so they go stale silently. What must
+        # hold is that the invocation is named before the route that would
+        # otherwise send a new-behavior test away.
+        self.assertIn("invokes you under an approved plan", keep,
                       "the ctdd-change invocation must be named before the route "
                       "that would otherwise send a new-behavior test away")
 
@@ -1414,7 +1437,12 @@ class CrossSkillAgreementTests(unittest.TestCase):
                 a_top, a_n = lo.split("."); b_top, b_n = hi.split(".")
                 if a_top == b_top:
                     refs.update(f"{a_top}.{n}" for n in range(int(a_n), int(b_n) + 1))
-            refs.update(_re.findall(r"\b(\d+\.\d+)\b", body))
+            # A decimal inside a backticked value is data, not a step number:
+            # `0.01` in a coverage table is an amount. Only bare references
+            # count, and a step number never has a leading zero.
+            plain = _re.sub(r"`[^`\n]*`", " ", body)
+            refs.update(m for m in _re.findall(r"\b(\d+\.\d+)\b", plain)
+                        if not m.startswith("0"))
             # A reference qualified by another skill's name belongs to that
             # skill's numbering, not this one's: `ctdd-tests` legitimately cites
             # `ctdd-change` 7.5 and 7.9 as the route by which it is invoked.
@@ -1639,6 +1667,28 @@ class CrossSkillAgreementTests(unittest.TestCase):
         rev = (self._skills() / "ctdd-review" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("hold-out as a finding on a high-risk", rev)
 
+    def test_the_pin_lane_remediation_terminates(self):
+        """`--expect-pass --tests-from <plan>` over a plan whose pin heading
+        declares `none` exits 2 saying *write the `Preservation pins` heading* —
+        and the heading is already there, correctly declaring none. So *fix the
+        invocation and re-run* had no fixed point: the same command, the same
+        exit, the same instruction. The lane must not run at all when the plan
+        declares no pin."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("do not run the pin lane at all", t)
+        self.assertIn("a heading that is already there", t)
+
+    def test_the_craft_lane_records_a_before_verdict(self):
+        """The lane's only integrity condition is *an unchanged verdict*, and step
+        5 performs the edit while step 6 is the only run — so there was nothing to
+        be unchanged from. An agent could call an assertion edit an altitude
+        repair, drop a clause, and report an unchanged verdict truthfully."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        lane = [l for l in t.split("\n") if l.startswith("- **Craft edit")]
+        self.assertEqual(len(lane), 1, "the craft lane moved")
+        self.assertIn("run the test once before editing and record its verdict",
+                      lane[0])
+
     def test_altitude_pressure_runs_in_both_directions(self):
         """The escalation rule only ever pointed up: a hard test moves to `an
         existing higher public boundary`, and the altitude criterion — rewrite
@@ -1781,6 +1831,219 @@ class CrossSkillAgreementTests(unittest.TestCase):
         r2 = run("R100\told.cs\tnew.cs\n")
         self.assertNotEqual(r2.returncode, 2, "a rename legitimately has three fields")
 
+    def test_ctdd_tests_can_capture_evidence_without_a_plan(self):
+        """Evidence capture read *Under an approved `ctdd-change` plan, save to its
+        exact .redstate.log path* — so the standalone lanes, which never have a
+        plan, were told nothing about capturing anything. `plan-dir` appeared zero
+        times here though the sibling resolves it, and `py -3` zero times though
+        the sibling documents the dead-stub fallback in its first line."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("Standalone: save the run to a file anyway", t)
+        self.assertIn("py -3", t)
+
+    def test_the_two_altitude_rules_cannot_fire_together(self):
+        """One row said *use a higher public boundary* when setup obscures the
+        rule; the other said *cover the matrix at the smallest boundary* for a
+        pure transformation needing a database. A pure transformation whose
+        boundary needs a database satisfies both, and the section forbids
+        inferring an order among condition-triggered rules — so the agent had no
+        way to choose. Introduced by the altitude-symmetry work itself."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        up = [l for l in t.split("\n") if l.startswith("| A public-boundary test is hard")]
+        self.assertEqual(len(up), 1, "the higher-boundary row moved")
+        self.assertIn("not a pure transformation", up[0],
+                      "the two altitude rows fire on the same input; the up-rule "
+                      "must defer to the down-rule explicitly")
+
+    def test_the_case_vocabularies_agree(self):
+        """Three lists named the required cases differently — the Output contract,
+        step 5 and step 8 — so an agent could satisfy one and fail another, and
+        two omitted the forbidden-side-effect column the table requires."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("by the names step 5 uses", t)
+        self.assertIn("the uncovered cases, by the names step 5 uses", t)
+
+    def test_keep_is_a_non_finding_not_a_barred_approval(self):
+        """The P3-12 fix grouped `keep` with `rename` under *emit only where the
+        review's own bar is met — a triggering input and an observable
+        consequence*. A sound test has neither, so `keep` — the review lane's most
+        common verdict — became unreportable. They are non-findings for opposite
+        reasons: `rename` is a preference, `keep` is the absence of a finding."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("`keep` is a non-finding and is never emitted", t)
+        self.assertNotIn("Emit `keep` and `rename` as findings only where", t)
+
+    def test_the_output_contract_lists_only_artifacts_this_skill_emits(self):
+        """The `Hold-out test` row described a human writing acceptance tests
+        outside the project — `ctdd-change`'s artifact, owned by its gate
+        presentation and step 9.1 — and no step here produced or consumed it. An
+        Output contract listing artifacts no step emits is the same defect as a
+        flag no step invokes."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertNotIn("| Hold-out test |", t)
+
+    def test_a_deflake_verdict_needs_more_than_one_run(self):
+        """*Fix this flaky test* is an advertised trigger and step 6 prescribes
+        exactly one run — which cannot distinguish a fixed flake from a lucky
+        pass, the definition of flakiness. The count is the agent's to declare;
+        a hard-coded number would be theatre."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("consecutive passes settle it and show them", t)
+
+    def test_the_worked_table_renders_into_the_plan_format(self):
+        """The table gave a bare status code where `plan-format` requires an exact
+        contractual code and body, and had no `n/a` discipline — so a derivation
+        rendered into a plan could not satisfy the plan's own field rules."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        rows = [l for l in t.split("\n")
+                if l.startswith("| ") and l.count("|") == 6 and "---" not in l
+                and not l.startswith("| Case |")]
+        rejects = [r for r in rows if "| None |" in r]
+        self.assertTrue(rejects, "no rejection rows found")
+        for r in rejects:
+            self.assertRegex(r.split("|")[3], r"`\d{3}`,\s*`\w+`",
+                             f"a rejection needs an exact code and body: {r[:70]}")
+        self.assertIn("write `n/a — <reason>` for any column a case cannot have", t)
+
+    def test_exit_two_is_not_always_an_invocation_fault(self):
+        """The row attributed every exit `2` to the invocation, but the checker
+        also returns 2 for a plan-content defect — a `currently_`-prefixed name in
+        the new-behavior set. An agent told to fix its command would re-run
+        forever against a plan it was never told to look at."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        row = [l for l in t.split("\n") if l.startswith("| A checker cannot run")]
+        self.assertEqual(len(row), 1, "the checker row moved")
+        self.assertIn("plan-content defect", row[0])
+
+    def test_the_review_lane_reports_only_what_it_observed(self):
+        """The lane is *steps 1-2, then Test review, then step 8* — it never enters
+        step 6 — while step 8 requires printing a command and a result, and the
+        skill forbids reporting a run it did not observe."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        lane = [l for l in t.split("\n") if l.startswith("- **Isolated review")]
+        self.assertEqual(len(lane), 1, "the review lane moved")
+        self.assertIn("verdicts only", lane[0])
+
+    def test_step_two_discovers_the_paths_the_skill_needs(self):
+        """Step 2 discovered framework, naming and fixture conventions but not the
+        plan path or the evidence-log paths — which step 6 must write to and step
+        7 must verify. The skill was told to use paths it was never told to find."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("the plan path and its evidence-log paths", t)
+
+    def test_artifact_fit_produces_a_verdict(self):
+        """Item 8 asked for a check and named no outcome, so a mismatch could not
+        be reported in a section whose whole output is one verdict per test."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        item = [l for l in t.split("\n") if l.startswith("8. **Artifact fit")]
+        self.assertEqual(len(item), 1, "item 8 moved")
+        self.assertIn("never a silent pass", item[0])
+
+    def test_an_unplanned_failure_reason_has_a_route(self):
+        """Step 7 preserved only *fails for the planned observable reason* and sent
+        everything else to `When blocked`, whose rows cover a missing member, a
+        passing test and a flake — not *it failed, but not for the reason
+        planned*. `execution.md` owns that state as `wrong red`, and the cause is
+        usually production, which this skill may not touch."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("failing for an unplanned reason", t)
+        self.assertIn("`wrong red`", t)
+
+    def test_the_two_worked_artifacts_model_one_endpoint(self):
+        """`ctdd-tests` used `0 < amount <= remaining`, implying a decreasing bound
+        across repeat captures; `plan-format` uses `<= authorizedAmount`, a fixed
+        bound with one capture. An agent reading both got two different products
+        from the same worked example."""
+        tests = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        fmt = (self._skills() / "ctdd-change" / "references"
+               / "plan-format.md").read_text(encoding="utf-8")
+        self.assertIn("0 < amount <= authorizedAmount", tests)
+        self.assertIn("0 < amount <= authorizedAmount", fmt)
+        self.assertNotIn("0 < amount <= remaining", tests)
+
+    def test_fixing_test_support_cannot_move_the_scenario(self):
+        """*Fix test support without changing the expectation* held only the
+        assertion text fixed, while seeded inputs were free to change — so a pin
+        could keep its assertion and quietly preserve a different scenario."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        row = [l for l in t.split("\n") if l.startswith("| The harness, fixture")]
+        self.assertEqual(len(row), 1, "the test-support row moved")
+        self.assertIn("the seeded inputs the assertion reads", row[0])
+
+    def test_the_craft_lane_can_enter_the_step_it_is_sent_to(self):
+        """The craft lane is *steps 1-2, then 5-8; skip 3-4* — and step 5's
+        precondition was *step 4 assigned every test one evidence direction*, a
+        step the lane skips. It could not legally enter the step it is told to
+        run, and the lane's only integrity condition lives there."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        step5 = [l for l in t.split("\n") if l.startswith("5. **Write tests only")]
+        self.assertEqual(len(step5), 1, "step 5 moved")
+        self.assertIn("or the craft lane entered", step5[0],
+                      "the craft lane skips step 4, so step 5's precondition must "
+                      "admit it or the lane cannot start")
+
+    def test_the_worked_table_covers_both_sides_of_each_boundary(self):
+        """`amount 0` returns `400` and was labelled *Lower boundary* — so the
+        smallest **accepted** amount had no row at all, and the table that teaches
+        boundary coverage demonstrated a boundary gap."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        # Select on the table's shape, not on a word one row lacks: the
+        # authorization case has no `remaining` and was invisible to the
+        # filter that was meant to check it.
+        rows = [l for l in t.split("\n")
+                if l.startswith("| ") and l.count("|") == 6 and "---" not in l
+                and not l.startswith("| Case |")]
+        named = {r.split("|")[1].strip(): r for r in rows}
+        # Both sides of both boundaries, plus the categories the skill lists as
+        # required. Pinning only the lower row let the table lose an accepted
+        # upper case, or the authorization case, without failing.
+        for case, verdict in (("Lower boundary", "`200`"),
+                              ("Upper boundary", "`200`"),
+                              ("Below lower boundary", "`400`"),
+                              ("Above upper boundary", "`400`"),
+                              ("Authorization", "`403`")):
+            self.assertIn(case, named, f"the worked table has no {case!r} case")
+            self.assertIn(verdict, named[case],
+                          f"{case} must observe {verdict}: an accepted boundary "
+                          f"and a rejected one are different cases")
+        # and a forbidden side effect must name something assertable
+        self.assertNotIn("| A second event |", t,
+                         "`a second event` names no assertable effect")
+
+    def test_the_compile_red_row_routes_both_arms_and_forbids_a_throwing_stub(self):
+        """It keyed only on *a public type or member is absent* and always
+        prescribed a stub — `execution.md` has a second arm for a member that is
+        not planned, where the plan is incomplete. And the stub it implied throws,
+        which reddens every test alike, so no test can be shown to fail for its
+        own reason."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        row = [l for l in t.split("\n") if l.startswith("| The test cannot compile")]
+        self.assertEqual(len(row), 1, "the compile-red row moved")
+        self.assertIn("never throwing", row[0])
+        self.assertIn("not planned, stop", row[0])
+
+    def test_the_agent_is_told_to_read_the_failure_text(self):
+        """The whole red-state lane turns on failing *for the planned reason*, and
+        nothing anywhere said to read the message: `failure text`, `failure
+        message` and `right reason` each appeared zero times."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("Read each failure's text, not just its verdict", t)
+
+    def test_the_currently_marker_is_gated_in_both_directions(self):
+        """Nothing stopped demoting a confirmed pin to an observation, or writing a
+        new-behaviour test as `currently_*` — both exempt it from the red-state
+        set, so both are ways past the gate."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("Never mark a new-behavior test and never demote a confirmed pin", t)
+
+    def test_the_review_handoff_supplies_what_ctdd_review_publishes(self):
+        """`ctdd-review` publishes `[severity][category][evidence-class]
+        file:start-end — title`; the handoff supplied the category alone and the
+        reviewer cannot synthesise a line range it was never given."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("`file:start-end`", t)
+        self.assertIn("cannot synthesise what it was not given", t)
+
     def test_ctdd_tests_lanes_and_tool_commands_are_executable(self):
         """Seven repairs, all instructions that could not be followed as written.
 
@@ -1803,21 +2066,30 @@ class CrossSkillAgreementTests(unittest.TestCase):
         production edit inside a lane whose guardrail forbids one."""
         t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
         for probe in (
-            "<openapi-path> -o <matrix-path>",
+            # `--check` immediately after `-o` compares the file to itself:
+            # both sides re-serialise identically, so it cannot fail. Drift
+            # shows against the committed matrix, so that runs first.
+            "<openapi-path> --check <matrix-path>` against the committed matrix",
+            "cannot fail",
             "read that as a generator limit, never as a contract fact",
             "those are the required results of their lanes",
-            "Read `Test review` items 1, 2 and 6 first",
+            # Item 4 ("No weakening") is the only rule that calls a relaxed
+            # assertion a spec amendment — the exact risk a craft edit runs.
+            "Read `Test review` items 1, 2, 4 and 6 first",
             "show the old marked name and the new name together",
             "drop the marker last",
             "red state, or checker result without running",
             "Its claim is unverified",
-            "breaking the one production rule the test names, re-running, and reverting",
-            # ...and only where no plan is in flight. Unscoped, it mutated a target
-            # file during step 7, where 7.2 stops on exactly that and 8.1 says add
-            # no other production code — and it contradicted this skill's own
-            # "do not introduce production implementation during a test-only task".
-            "Under an approved plan that is the whole action",
-            "confirming a clean production diff",
+            # The negative control is gone. Scoping it to "no plan in flight" was
+            # not enough: this skill records no baseline and has no restore
+            # vocabulary — `git`, `baseline`, `diff-base`, `working tree`,
+            # `uncommitted` and `stash` appear zero times — so "revert" is
+            # undefined and "a clean production diff" is unachievable on a dirty
+            # tree. Line 28 forbids changing production behaviour without a hedge.
+            # And the inference is unsound where a rule is enforced twice: break
+            # the domain check and request-model binding still rejects, so the
+            # test stays red and a vacuous assertion reads as genuine behaviour.
+            "Never edit production here to tell the two apart",
             # The vocabulary must map into ctdd-review's categories, not collapse
             # into one: `add-coverage` went to `test-quality` although a dedicated
             # `needs-tests` exists, so the test lane could never produce it. And
@@ -1971,9 +2243,19 @@ class CrossSkillAgreementTests(unittest.TestCase):
             if not f.exists():
                 continue
             text = f.read_text(encoding="utf-8").lower()
+            # The `and` could never be true in the two files that most need the
+            # check: `ctdd-tests/SKILL.md` and its `rationale.md` describe the
+            # skill throughout without naming it — `ctdd-tests` appears **zero**
+            # times in the rationale — so requiring both tokens on one line meant
+            # the guard inspected only the README and the in-depth doc, where the
+            # skill is named because the reader needs telling which one is meant.
+            # Inside the skill's own files, every claim is about the skill.
+            # `references/rationale.md` sits one level deeper, so the parent is
+            # `references`, not the skill — check the whole path.
+            own = "ctdd-tests" in f.as_posix()
             for claim in ("enforce", "rejects non-conforming", "rejects the"):
                 for line in text.split("\n"):
-                    if claim in line and "ctdd-tests" in line:
+                    if claim in line and (own or "ctdd-tests" in line):
                         self.fail(f"{f.name} claims {claim!r} for ctdd-tests, which "
                                   f"runs no checker: {line.strip()[:110]}")
 

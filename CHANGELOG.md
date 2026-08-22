@@ -32,11 +32,66 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.39.0 — 2026-08-03
+
+### Removed
+
+- **The break-and-revert technique in the `premature green` row.** It told the agent to break the one production rule a test names, re-run, and revert — verified by a clean production diff. Three problems, each disqualifying on its own. `git`, `baseline`, `diff-base`, `working tree`, `uncommitted` and `stash` appear **zero times** in this skill, unlike `ctdd-change` step 0 which records staged, unstaged and untracked state before touching anything: *revert* was undefined, and a clean diff unachievable on a dirty tree, so an agent chasing it could destroy uncommitted work. It contradicted an unhedged prohibition two lines away — *stop and hand off before changing an expected outcome **or production behavior***, no exception clause. And the inference fails wherever a rule is enforced twice: break the domain check on a negative amount and request-model binding still rejects it, so the test stays red and the agent concludes the behaviour exists when its own assertion may be vacuous. The row now reports and hands off; `ctdd-change` owns the production tree.
+
+### Fixed
+
+
+**Evidence capture and verification**
+
+- **The standalone lanes were told nothing about capturing evidence.** The rule read *Under an approved `ctdd-change` plan, save to its exact `.redstate.log` path* — so a lane with no plan had no instruction at all. `py -3` appeared **zero** times here though the sibling documents the dead-stub fallback in its first line.
+- **Nothing anywhere told the agent to read the failure text.** `failure text`, `failure message` and `right reason` each appeared zero times, while the entire red-state lane turns on failing *for the planned reason*.
+- **A failure for an unplanned reason had no route.** Step 7 preserved only *fails for the planned observable reason* and sent everything else to `When blocked`, whose rows cover a missing member, a passing test and a flake — not *it failed, but not for the reason planned*. That is `execution.md`'s `wrong red`, and the cause is usually production, which this skill may not touch, so it hands off rather than fixing.
+- **Exit `2` was attributed entirely to the invocation.** The checker also returns 2 for a plan-content defect — a `currently_`-prefixed name in the new-behavior set — so an agent told to fix its command would re-run forever against a plan it was never told to look at.
+- **The exit-2 remediation could not terminate.** Over a plan whose pin heading correctly reads `Preservation pins: none — …`, `--expect-pass --tests-from <plan>` exits 2 telling you to *write the heading* — which is already there. *Fix the invocation and re-run* had no fixed point. When the plan declares no pin, the lane does not run.
+- **The prescribed `--check` ran where it cannot fail.** Generate with `-o`, then `--check` the file just written: both sides re-serialise identically, so it always passes. Drift shows against the **committed** matrix, so that runs first.
+- **The de-flake verdict was undecidable from the lane's own evidence.** *Fix this flaky test* is an advertised trigger and step 6 prescribes exactly **one** run, which cannot distinguish a fixed flake from a lucky pass — the definition of flakiness. The agent now states how many consecutive passes settle it and shows them; the count is theirs to declare, because a hard-coded number would be theatre.
+
+**Lanes that could not run as written**
+
+- **The craft lane could not enter the step it is sent to.** It is *steps 1–2, then 5–8; skip 3–4*, and step 5's precondition was *step 4 assigned every test one evidence direction* — a step the lane skips. Its only integrity condition lives there.
+- **The craft lane's only integrity condition had no before-run.** *In step 6 the required result is an unchanged verdict* — but step 5 performs the edit and step 6 is the only run, so there was nothing to be unchanged from. An agent could call an assertion edit an altitude repair, drop a clause, and report an unchanged verdict truthfully.
+- **The craft lane's required reading omitted the one rule that would stop it.** It sent the agent to Test review items 1, 2 and 6 — altitude, naming, de-flaking — leaving out item 4, *No weakening*, the only rule that calls a relaxed assertion a spec amendment, which is the exact risk a craft edit runs.
+- **The review lane had to print a run it never made.** It is *steps 1–2, then Test review, then step 8*, never entering step 6, while step 8 requires a command and a result and the skill forbids reporting an unobserved run.
+- **The compile-red row routed one of two arms and implied a throwing stub.** `execution.md` has a second arm for a member that is *not* planned, where the plan is incomplete rather than the harness. And a throwing stub reddens every test alike, so no test can be shown to fail for its own reason — the row now requires a default-returning stub and resumes at step 6 with the stub counted as a declared artifact.
+- **Two altitude rows fired on the same input with opposite actions.** One said *use a higher public boundary* when setup obscures the rule; the other said *cover the matrix at the smallest boundary* for a pure transformation needing a database — and a pure transformation whose boundary needs a database satisfies both, in a section that forbids inferring an order among condition-triggered rules. Introduced by the altitude-symmetry work itself.
+
+**Ways past the gate**
+
+- **The `currently_` marker was ungated in both directions.** Nothing stopped demoting a confirmed pin to an observation, or writing a new-behaviour test as `currently_*` — both exempt it from the red-state set, so both were ways past the gate.
+- **"Fix test support" let a pin's scenario drift.** It held the assertion text fixed while the seeded inputs the assertion reads were free to change — so a pin could keep its assertion and quietly preserve a different scenario.
+
+**Handoffs to the sibling skills**
+
+- **The review handoff supplied one of five parts.** `ctdd-review` publishes `[severity][category][evidence-class] file:start-end — title` and cannot synthesise a line range it was never given.
+- **`keep` was an approval barred by a defect bar.** The P3-12 fix grouped it with `rename` under *emit only where the review's own bar is met — a triggering input and an observable consequence*, and a sound test has neither. So `keep`, the review lane's most common verdict, became unreportable. They are non-findings for opposite reasons: `rename` is a preference, `keep` is the absence of a finding. Restored to *never emitted*, with the bar applying to `rename` alone.
+- **A cross-skill claim hard-coded the sibling's step numbers.** *Invokes you at 7.5 or 7.9* names coordinates that live in another file, and the cross-reference guard resolves references within a skill, not across them — so a renumbering there would have gone stale here silently. The guard now asserts the property (the invocation is named before the route that would send a new-behaviour test away) rather than the coordinates.
+- **Step 2 discovered conventions but not paths.** It found framework, naming and fixture conventions and not the plan path or the evidence-log paths — which step 6 must write to and step 7 must verify.
+
+**The worked artifacts**
+
+- **The worked coverage table demonstrated a boundary gap.** `amount 0` returns `400` and was labelled *Lower boundary*, so the smallest **accepted** amount had no row — in the table that teaches boundary coverage.
+- **The worked coverage table had no authorization case**, though the skill lists authorization among the required categories. It replaces a `Far below` row that carried no rule the `Below lower boundary` row did not.
+- **The worked table taught a taxonomy the plan format cannot express.** It gave a bare status code where `plan-format` requires an exact contractual code *and body*, and had no `n/a` discipline — so a derivation rendered into a plan could not satisfy the plan's own field rules. Aligned to `plan-format`, on the same reasoning as the endpoint-model conflict: it is the operative instruction for plans, and the table exists to feed one.
+- **The two worked artifacts modelled the same endpoint incompatibly.** `ctdd-tests` used `0 < amount <= remaining`, implying a decreasing bound across repeat captures; `plan-format` uses `<= authorizedAmount`, a fixed bound with one capture. An agent reading both got two different products. `plan-format` wins: it is the operative instruction for plans, and the change under test is *allow one capture below the authorized amount*.
+- **`A second event` named no assertable effect.** A forbidden side effect has to be something a test can check: `More than one PaymentCaptured`.
+- **Three case lists disagreed** — the Output contract, step 5 and step 8 each named the required cases differently, and two omitted the forbidden-side-effect column the table requires. Two now defer to step 5.
+- **`Artifact fit` asked for a check and named no outcome**, so a mismatch could not be reported in a section whose entire output is one verdict per test.
+
+**Guards**
+
+- **The enforcement-claim guard could never fire in the files that need it.** `if claim in line and "ctdd-tests" in line` — and `ctdd-tests` appears **zero times** in its own `rationale.md`, which describes the skill throughout without naming it. The guard was inspecting only the README and the in-depth doc. Inside the skill's own files every claim is about the skill; verified by planting one.
+- **The worked-table guard pinned one row.** It checked that the lower boundary observes `200` and nothing else, so the table could lose an accepted upper case or the authorization case without failing. It now pins both sides of both boundaries and the authorization verdict — and selects rows by the table's shape, since the authorization row has no `remaining` and was invisible to a filter meant to check it.
+
 ## 0.38.0 — 2026-08-03
 
-A second adversarial review, this one scoped to `ctdd-change` and its references and run against the repair pass above — so several findings are defects that pass introduced or left behind. **15 High, 18 Medium**; every fix reproduced before and mutation-tested after. Suite 289 → 317.
+### Fixed
 
-### Gate bypasses
+**Gate bypasses**
 
 - **The `NO EVIDENCE LANE` guard rejected the mandated form and accepted the other.** `_BULLET_NAME` read the word `none` as a test identifier, so `Preservation pins: none — <reason>` — the form `plan-format` rule 4 **mandates** — derived `large` while `- none — <reason>` derived `small` and passed at 10 of 19. That is the tier inversion the guard was written to close, reintroduced through the guard: rule 8 was not applied to its own fix.
 - **JSON Schema and `openapi/` directories were not contract surface.** `SKILL.md` names both as valid Contract change artifacts, but `openapi` was anchored to the *basename* — so `openapi/payments.yaml`, the layout README's own CI recipe uses, classified as nothing, along with `schemas/*.schema.json` and Avro.
@@ -45,7 +100,7 @@ A second adversarial review, this one scoped to `ctdd-change` and its references
 - **`ADR:` on the mandatory categorical line was parsed by nothing.** Only `contract` and `hold-out` were validated, so a plan could name a decision record and never write one — or say `ADR: none` while the diff rewrote one. `--diff` now cross-checks both directions.
 - **3.2 never said who wrote the diff.** It required only *a diff that already exists*, so an agent that explored and patched in an earlier turn could classify **its own edit** as pre-existing and skip the human gate on it.
 
-### Instructions that could not be followed
+**Instructions that could not be followed**
 
 - **A lane's skip range swallowed the other lane's skip.** 7.4 read *Skip 7.5–7.8* while 7.8 is itself the skip rule for the new-behaviour lane. The step-7 renumbering corrected two of three copies and left this one — masked only by the evidence-lane guard, and that mask was defeated by the `- none` bullet above.
 - **Field rule 11 described a transition that could not converge.** It said *remove the question it answered* — and the section is required, so the very re-run it mandates then reports `MISSING sections`. Step 5.4's *re-run until it exits 0* had no fixed point, and the worked example taught the same loop.
@@ -55,7 +110,7 @@ A second adversarial review, this one scoped to `ctdd-change` and its references
 - **A summary-only run drew opposite diagnoses in the two lanes.** `not found in the log` is neither a pass nor a failure, and nothing said so.
 - **A change carried entirely by a retargeted assertion recorded the amendment nowhere.** The section is conditional and nothing tied it to its trigger, so both evidence lanes could read `none` and the plan passed.
 
-### Escapes and evidence gaps
+**Escapes and evidence gaps**
 
 - **`NOT RUN` was `defer` under another name.** Removing `defer` from 9.1's options left the identical escape as a resolution the agent picked alone — and the canonical example establishes unavailability *by construction*. A money-path change could ship at exit 0 with **no `declined by human`**, which is the only value that fires rule 8's fallback. It now needs the same Decision prompt a decline does.
 - **An amendment could be re-approved by the original message.** 8.6 re-ran `check-plan.py` without `--approval`, so the revision digest — added precisely to tell a pre-amendment record from a current one — was never checked.
@@ -65,7 +120,7 @@ A second adversarial review, this one scoped to `ctdd-change` and its references
 - **Five checker flags were built and invoked by no step.** `--plan`, `--diff`, `--approval`, `--post-approval` and `--plan-dir` each closed a specific hole and then sat unreachable — 8.5 compared inventory to plan **by hand and in one direction** while `--plan` does both. A flag nothing invokes is a checker the workflow does not have; a guard now asserts every flag is reachable.
 - **A commissioned review discloses itself.** *Never dispatch it yourself unless asked* let *"now review it"* license a review of the agent's own diff, which the same file calls non-independent. The packet's `Review:` field now records **commissioned by the author — independence not established**, so the claim cannot be silently false.
 
-### The artifacts agents copy
+**The artifacts agents copy**
 
 - **The hold-out asked for a value the contract never exposes.** *Assert the remaining authorized amount you compute yourself* — and the plan's own `Intended behavior` returns a status and a payment state. **The assertion cannot be written**, so the one mechanism against circular encoding was unwritable exactly as the canonical example specifies it.
 - **The canonical summary named none of the decisions the format requires it to name**, so an agent copying it approved a plan whose `Residual risk` says a load-bearing path rides entirely on the sealed hold-out — without ever being told.
@@ -74,20 +129,16 @@ A second adversarial review, this one scoped to `ctdd-change` and its references
 - **The two surfaces disagreed about what the summary must name**; the `Hold-out` is the single exemption and both now say so.
 - The canonical `Verification` ran three commands where 8.3 requires four; the example contradicted itself on consumer contracts; a preservation pin dropped the side effect it exists to preserve; and the worked example ran `check-spec-surface.py < surface.txt`, a file the workflow never creates.
 
-### Not built
+### Deliberately not changed
 
 - **Hunk-reading for silently rewritten assertions.** Three reviews have now killed that heuristic class at 43–50% false positives, and a deleted line inside a test file is a renamed variable as often as a weakened assertion. The honest half is covered: when the plan *says* an assertion changed, the section is required.
 - **`--commands-from` for the verification log.** The artifact is enough for now; matching commands needs a notion that does not exist, and one real run should come first.
 
-### Also
-
-- A duplicate `skills/skills/` tree, introduced by a botched restore during mutation testing, shipped in two packages before being caught by a grep for something else. Removed.
-
 ## 0.37.0 — 2026-08-03
 
-A full adversarial review of the plugin — 14 parallel agents, most script defects reproduced by running the code rather than inferred. **17 P0s, 9 P2s, 10 P4s and 12 workflow defects**, every fix reproduced before and mutation-tested after. Suite 243 → 289.
+### Fixed
 
-### Gate bypasses — the evidence checkers certified false states
+**Gate bypasses — the checkers certified false states**
 
 - **A fully green run certified as "red state verified."** v0.29.0 disqualified a marker word only when the adjacent character was alphanumeric or `_`, so it fixed one spelling and left `/`, `-`, `.` and space voting: `tests/error/test_capture.py::test_x PASSED` supplied its own failure verdict from a path segment. Step 7.10 runs exactly this command and 7.11 stops on any state but intended red, so an agent that implemented first and captured green passed the gate.
 - **A FAILING pin certified as a captured baseline — this lane failed *open*.** `looks_like_pass` had the identical treatment. The v0.29.0 entry closes *"`--expect-pass` failed closed on the same input, so only the safety-critical lane was wrong"* — **that repair opened the lane it called safe**, and a bogus baseline makes v0.35.0's `broken pin` state undetectable in any repository with a `success/` segment.
@@ -101,14 +152,14 @@ A full adversarial review of the plugin — 14 parallel agents, most script defe
 - **A submodule bump read as "no surface touched"** — the exact string SKILL.md 3.3 opens the trivial lane on. Gitlinks now report as *unread surface* and block the lane.
 - **The cwd fallback under-reported surface.** `git diff` emits root-relative paths and `git ls-files --others` cwd-relative ones, so running from a subdirectory made markers unread, ADRs unresolved and untracked files invisible. Now `git rev-parse --show-toplevel`.
 
-### The evidence checker lost named tests
+**The evidence checker lost named tests**
 
 - A hyphenated name **truncated to its first stem and then matched everything** — `capture-fails-when-zero` captured as `capture`, which `_match_span` then accepted against every hyphenated name in the log. Two distinct tests collapsed into one and a single failing run certified both.
 - A wrapped bullet closed the test section; a section label longer than 72 characters did not close it — and `plan-format.md`'s own conditional label is 76, so copying the skeleton verbatim extracted `n/a` coverage rows as test names.
 - A bullet that yielded no name vanished with nothing reported: a fully-qualified `Ns.T::name` or a generic parameter produced an empty section, and the tier, the evidence lanes and the packet all agreed there were no tests.
 - **Go and TAP could never verify a preservation pin.** `FAIL_MARKERS` carried `fail:` and `not ok`, so both could report red state, while the pass side had no `--- PASS:` and `ok ` self-disqualified against the TAP test number.
 
-### Workflow defects — instructions that could not be followed
+**Instructions that could not be followed**
 
 - **The new-behaviour handoff deadlocked.** `ctdd-change` 7.9 invokes `ctdd-tests`; `ctdd-tests` routes *changed expected behavior* back — and a new-behaviour test **is** changed intent, while `ctdd-change` forbids writing test files. Neither could produce the file and step 8's Enter was unsatisfiable. The carve-outs sat *after* the routing gate, so they were never reached.
 - **Six stale step references** from the v0.35.0 renumbering: `Skip 7.10–7.12` in a step 7 that ends at 7.11, and a `Stop:` list naming the wrong substeps.
@@ -124,7 +175,7 @@ A full adversarial review of the plugin — 14 parallel agents, most script defe
 - **The test verdicts collapsed into `test-quality`**, so `add-coverage` could never produce `needs-tests`, and `rename` — a naming preference — was carried into a skill that omits preferences.
 - **The plan directory was hardcoded in eight places** while the checker honours `planDir` and rejects any pointer outside it: configurable and unusable. New `--plan-dir`.
 
-### Guards that did not guard
+**Guards that did not guard**
 
 - The v0.31.0 guard **passed with every rule it covered inverted** — a list of substring checks, rule 8's third named failure.
 - **The survival probes were structurally unreachable, and the wrong constant had been moved.** Restoring the proxy showed the guard that originally fired was the 500-char reserve, which the file itself labels *EARLY WARNING, NOT PROTECTION* — and the response had raised the constant the probes slice on. The stated justification, *"measured 4.00"*, was `len(body)/(len(body)//4)`: 4.00 for any text. Probes now assert **offset**.
@@ -134,32 +185,32 @@ A full adversarial review of the plugin — 14 parallel agents, most script defe
 - Three hook guards passed with their rules deleted, using paths that matched nothing.
 - **The suite was not green on Windows** — 27 call sites decoded with the console codepage, and a mangled `Risk level: trivial —` turned the newline-bypass *rejection into an acceptance*.
 
-### Evaluation corpus
+**Evaluation corpus**
 
 - The only eval guard was a **two-phrase whitelist over one of three files**, so 49 of 80 cases were read by no test — and a third phrasing of the defect its docstring cites was live and green.
 - **Pressure cases could not fail on folding**: scored by `should_trigger` alone, a skill that holds the wall and one that folds score identically. All 13 now carry `must_not_fold`.
 - Seven reject and positive clauses had no case at all.
 - **The eval-CI backlog entry named the wrong blocker.** `claude plugin eval` discovers `evals/<case>/prompt.md` with `graders/<name>.md` and has **no `should_trigger` grader**; pointed at this directory it finds zero cases. Every item gated on "eval CI runs" is blocked behind converting all 80 cases, not behind wiring CI.
 
-### Configuration, platform and reporting
+**Configuration, platform and reporting**
 
 - An override yielding no patterns silently emptied the spec surface; the advisory hook blocked on `PreToolUse`; `.ctdd.json` was discarded through a BOM or UTF-16; approval baselines were invisible in a dotted `.Tests` project — the dominant .NET Verify layout, where re-recording one makes an implementation pass **with no test file edited**.
 - A letter-prefixed `ADR-NNNN-slug.md` resolved to nothing, reporting `BROKEN ADR markers` on a healthy repository; `--allow-empty` was forwarded to git and unreachable; marker reads were uncapped; a non-mapping operation was dropped without a warning; an unparseable contract produced a clean matrix over **zero operations at exit 0**.
 - The Write guard discarded the replacement text, so a stub overwriting a 400-line suite got byte-identical advice to one that adds a case.
 - The README pointed marketplace users at `.claude/hooks.json`, which Claude Code does not load.
 
-### Reference and example repairs
+**Reference and example repairs**
 
 `check-spec-surface` appeared **zero times** in the worked example, leaving 3.3 and 8.4 undemonstrated; `Pin state before` and `after` were byte-identical; the example demonstrated the gate in the wrong order; the canonical plan violated field rule 4 by marking `Side effects` *Always* with no case addressing it.
 
-### Budgets
+### Changed
+
+**Budgets**
 
 - **`BODY_LIMIT_CHARS = 15,500`, decoupled from the compaction proxy.** The limit was `proxy − margin`, two properties on one dial — which is how v0.31.0 went wrong. The proxy stays at 15,000; probes assert offset against `MAX_PROBE_OFFSET_CHARS`. At an outside tokenizer's 4.16–4.50 chars/token this is **69–75% of Anthropic's ~5,000-token guidance**.
 - Route ratchet 41,000 → 42,700 across the review, every raise preceded by displacement.
 
 ## 0.36.0 — 2026-08-03
-
-Parts C and D: references left behind by the last four releases' repairs, and spec rules that were mechanically checkable and unchecked.
 
 ### Fixed — enforcement
 - **The decision summary is checked.** Deleting it from the format's own canonical example still exited 0 at 19 of 19, while 6.1 leads the gate presentation with it and 6.2 copies it verbatim into the plan-mode surface — the whole gate rested on text nothing could see. It is the plan's opening prose with no heading of its own, so it is checked against the known section headings rather than by a pattern of its own; a first attempt matched any opening line and passed a plan starting with `BLOCKING`.
@@ -178,8 +229,6 @@ Parts C and D: references left behind by the last four releases' repairs, and sp
 
 ## 0.35.0 — 2026-08-03
 
-Part A: seven fail-open paths where evidence certified nothing.
-
 ### Fixed
 - **A markdown heading bypassed the both-lanes-none guard.** `_LANE_NONE` omitted the heading prefix every REQUIRED pattern allows, so `## New-behavior tests: none` derived `small` while the same plan with bare headings derived `large` — a cosmetic choice deciding whether a plan declaring zero tests passed the gate, reopening v0.30.0's hole through that fix's own regex. **That fix had shipped with no tests at all**; both heading-style cases are now covered.
 - **A pin that passes before and fails after had no state.** The seven-state vocabulary had `pin fail: a named pin fails *before* the change`, whose action is *"the pin describes behavior the code never had; return to step 6"* — so the single most important signal this method produces routed to a row telling the agent to amend the pin away, with only a guardrail between it and that. A **broken pin** state is added: *this is the finding, not a plan defect; do not amend the pin away and do not weaken it; return to 8.1 with the implementation, never to step 6 with the plan.*
@@ -194,8 +243,6 @@ Part A: seven fail-open paths where evidence certified nothing.
 
 ## 0.34.0 — 2026-08-03
 
-Four guards that did not guard, all reproduced by mutation before and after. Until these worked, nothing protected the repairs of the last three releases — including the ones they were written for.
-
 ### Fixed
 - **The v0.31.0 guard passed with every rule it covered inverted.** It was a list of substring checks, so rewriting the write freeze to *"Once an Approval record exists … write whatever you like; the only file you write is the step 5 plan file is not a rule"* left it green. Rule 8's third named failure verbatim. It now asserts whole sentences; all four of the reviewer's inversions fail.
 - **The survival probes were structurally unreachable, and the wrong constant had been moved.** Setting the proxy back to `5000 * 3` produces exactly one failure: the **500-char reserve**, which this file itself labels *EARLY WARNING, NOT PROTECTION*. v0.31.0 responded to that early warning by raising the constant `_surviving_head()` slices on, by 2,500 — which rule 9 says to check first. And the stated justification, *"measured 4.00"*, was `len(body)/(len(body)//4)`: 4.00 for any text at all, a tautology rather than a measurement. The proxy is restored to 15,000, the reserve lowered to 300, and a new `MAX_PROBE_OFFSET_CHARS = 13,500` asserts **where** each must-survive rule sits rather than merely that it is present — the presence form goes vacuous the moment the body is smaller than the proxy, because then the head slice is the whole body. Moving a probe to the end of the body now fails, naming the rule and its offset.
@@ -206,8 +253,6 @@ Four guards that did not guard, all reproduced by mutation before and after. Unt
 - `worked-change.md`'s packet quotes regenerated: the plan-check verdict was missing the tier and N-of-M count, and both pin-state lines dropped the re-run sentence.
 
 ## 0.33.0 — 2026-08-03
-
-Seven `ctdd-tests` repairs plus the negative control. All eight are instructions that could not be followed, or a discipline the pilot used and never wrote down.
 
 ### Fixed
 - **The authorization-matrix command exited 2 as written.** No OpenAPI argument was named, `-o` was never mentioned though the instruction says to write to the contract path, and `--check` needs the spec too. Both forms are now shown with their arguments and verified to run. **The all-deny caveat is restored with them**, and it is the dangerous half: the generator synthesises one identity per scope and never a combination, so an AND-ed-scope operation is structurally all-deny — read as a contract fact, that scaffolds a 403 assertion for the legitimately authorised caller and inverts the contract in the authorization domain.
@@ -226,8 +271,6 @@ Seven `ctdd-tests` repairs plus the negative control. All eight are instructions
 
 ## 0.32.0 — 2026-08-03
 
-Five findings from a `ctdd-tests` review, all script-, eval- or reference-side. Two of its three framing facts were already stale — the body limit is 17,000, not 14,500, and the suite is green — but `ctdd-tests` was byte-identical to what it read, so the findings stand.
-
 ### Fixed
 - **The jqwik guard passed with its rule deleted.** `for line in t.split("\n"): if "jqwik" in line ...` — with no jqwik lines the loop body never runs. That is CLAUDE.md rule 8's first named example verbatim, and blind to exactly the regression 0.21.2 shipped. It now asserts the warning **exists** and checks a stable marker instead of requiring the injection string verbatim, which had turned a hazard into a required invariant. Mutation-tested both ways.
 - **The enforcement-claim guard was case-sensitive and frontmatter-only.** `assertNotIn("Enforces", desc)` let *"it enforces behaviour-level naming"* through — and that sentence had already shipped, in **two** places the widened guard immediately found: `docs/ctdd-in-depth.md` and `README.md`. `ctdd-tests` invokes no checker, so both now say *derives*. Rejection claims are ruled out too: a skill can never reject, only route.
@@ -239,8 +282,6 @@ Five findings from a `ctdd-tests` review, all script-, eval- or reference-side. 
 - Guards for the approval-baseline patterns and for eval/description agreement. The evals have never been executed, so nothing else would have caught the repeat of a defect the changelog already records fixing once.
 
 ## 0.31.0 — 2026-08-03
-
-Six workflow transitions that could not be executed as written. None is new guidance; one is a deletion.
 
 ### Fixed
 - **6.4 excludes harness acceptance again.** The v0.21.x prose-to-contract rewrite left four exclusions where the changelog records five; the harness clause survived only in the Output contract's `Decision prompt` row. It is least redundant exactly where it was dropped, because 6.2 still writes the summary into the plan-mode surface — the one case where a plan-mode approval genuinely responds to the CTDD summary.
@@ -255,8 +296,6 @@ Six workflow transitions that could not be executed as written. None is new guid
 - Route ratchet 41,000 → 41,500 for the six repairs above.
 
 ## 0.30.0 — 2026-08-03
-
-Four defects from a second adversarial review, both measurable ones reproduced first. Six further findings need skill-body edits and are held for approval per rule 3.
 
 ### Fixed
 - **A plan naming no test in either lane could be `small`.** The tier was derived from `New-behavior tests: none` alone, so declaring `none` in *both* lanes passed at 8 of 19 — no red-state log, no pin log, no `ctdd-tests` invocation, and step 8's *satisfied every applicable evidence lane* met vacuously. Weaker than the trivial lane the tier system was built to close, which at least demands named existing tests. Both lanes declaring `none` now derives `large`. Read from the heading line, because scanning the block below matched the shell commands under `Verification`.
@@ -275,8 +314,6 @@ Four defects from a second adversarial review, both measurable ones reproduced f
 - `CLAUDE.md`'s runtime note and `docs/backlog.md`'s governing rule and Tier 4 heading no longer say *frozen*; they say the change waits for a trigger **and** an approval.
 
 ## 0.29.0 — 2026-08-03
-
-Fourteen defects from an external adversarial review, every one reproduced before fixing. Nine were in code changed during the preceding sessions.
 
 ### Fixed — critical
 - **A fully green run certified as red state.** `_verdict_text` stripped the matched test name but left the rest of the line, so `tests/test_error_paths.py::t PASSED` put `error` at index 12 against `passed` at 30 and first-marker-wins read a PASSED line as a failure. Step 7.11 runs exactly that command and 7.12 treats exit 0 as intended red, so an agent that implemented first and captured green passed the gate — the vacuous-test case the script exists to catch. Markers must now match as whole words. `--expect-pass` failed closed on the same input, so only the safety-critical lane was wrong.
@@ -495,8 +532,6 @@ Fourteen defects from an external adversarial review, every one reproduced befor
 
 ## 0.21.1 — 2026-07-24
 
-Two defects found by running a real change, not by review.
-
 ### Fixed
 - **Fully-qualified test names matched nothing.** The identifier-boundary rule added in 0.19.0 treated a leading `.` as part of the name, so `Namespace.Class.Method` — exactly what `dotnet test --logger "console;verbosity=detailed"` prints — was never found. A dot before a name is a namespace separator; a dot after still rejects a prefix match.
 - **Nothing said how to produce a log the checker can read.** Default `dotnet test` output names no individual test, so an evidence capture could contain only a summary and verify nothing. Step 7 now requires per-test output and names the flag for the common runners, and the checker diagnoses a summary-only log instead of merely reporting every name as missing.
@@ -509,8 +544,6 @@ Two defects found by running a real change, not by review.
 
 ## 0.21.0 — 2026-07-21
 
-`ctdd-change` rewritten as procedure. **6,537 → 2,757 tokens**, under the post-compaction limit for the first time since v0.14.0, with every rule intact.
-
 ### Changed
 - **The skill is now a numbered procedure with an explicit output contract**, and the reasoning lives in `references/rationale.md`. A table names every artifact's exact path and required shape — plan, pointer, ADR, evidence logs, review packet, colocated note — which is checkable in a way prose was not. Guardrails are declared unordered rather than leaving order to be inferred.
 - **Two rules became structural instead of stated.** Preserve-before-create is encoded in the step order rather than asserted, and `trivial` is a separate declared output rather than a risk level inside a plan, which is the distinction that previously needed a paragraph.
@@ -521,8 +554,6 @@ Two defects found by running a real change, not by review.
 - **The structure guards were pinned to exact sentences and failed on a correct rewrite.** A check that fires on good work is worse than no check — it argues against improvement and teaches people to ignore verdicts. They now match the rules in their current wording.
 
 ## 0.20.1 — 2026-07-21
-
-The non-blocking half of the `ctdd-tests` audit: the delete list and the sharpening list.
 
 ### Removed
 - Eight further clauses of exhortation and repetition — "left unfixed it corrupts the spec", "untested behavior reads as unconstrained", "a flaky perf gate … worse than an honest absence", "this asymmetry is the point", and the sentence in the opening that described what the skill does, which the always-loaded description already says.
@@ -537,8 +568,6 @@ The non-blocking half of the `ctdd-tests` audit: the delete list and the sharpen
 - The delete list marked "tests are the spec for preservation; they do not tell you what new thing to build" as a fourth restatement. It is the routing boundary that sends creation to the business requirement and the plan, and it is the only place this skill says where new behavior comes from. Kept; the genuinely decorative sentence beside it was cut instead.
 
 ## 0.20.0 — 2026-07-21
-
-A rule-by-rule audit of `ctdd-tests`, which had never been read clause by clause.
 
 ### Fixed
 - **The always-loaded description claimed to *enforce* rules the skill only prompts.** `ctdd-tests` ships one file and invokes no checker; it now says it applies criteria and reviews coverage rather than enforcing them.
@@ -563,8 +592,6 @@ A rule-by-rule audit of `ctdd-tests`, which had never been read clause by clause
 - The golden test now asserts the authoritative example carries **both** mandated test headings, so it cannot drift from the format again. Suite 139 → 140.
 
 ## 0.19.0 — 2026-07-21
-
-Six blockers in the deterministic scripts, all reproduced before fixing.
 
 ### Fixed
 - **An optional-authentication endpoint was generated as requiring authentication.** Under OpenAPI, an empty security requirement (`- {}`) means auth is optional; the generator denied anonymous callers whenever it appeared beside an alternative, so the matrix asserted the opposite of the contract and the scaffolded tests would have enforced it.
@@ -604,8 +631,6 @@ Six blockers in the deterministic scripts, all reproduced before fixing.
 
 ## 0.17.0 — 2026-07-21
 
-`ctdd-tests` kept craft work out of the plan gate while every consumer of the resulting diff treated any modified test as a changed requirement. Both were right; the skill never said how they coexist.
-
 ### Fixed
 - **The craft lane now says what it actually governs.** Staying in this lane decides what you may do without the gate — it does not change what the diff reports. De-flaking, an altitude fix or a rename still lands as test surface, so it must be disclosed in one line: which tests, and why the observable behavior is unchanged. A reviewer checks that reason against the surface report instead of looking for a plan that correctly does not exist. Without it, legitimate craft work arrived flagged at the highest severity.
 - **The triage question asks about the caller, not the assertion.** Fixing altitude always changes what a test asserts — swapping a call-count assertion for an outcome assertion is the whole operation — so "asserted behavior unchanged" routed the lane's largest activity out of its own lane. The question is whether what a caller observes is the same.
@@ -639,8 +664,6 @@ Six blockers in the deterministic scripts, all reproduced before fixing.
 
 ## 0.16.0 — 2026-07-21
 
-Five critical fail-silent defects, all reproduced before fixing.
-
 ### Fixed
 - **A modified test file with a non-ASCII name passed CI as trivial.** Git quotes such paths by default (`"tests/Ra\304\215unTests.cs"`), and the leading quote defeated every path pattern, so the file classified as no spec surface at all — defeating the one rule the deterministic layer exists to enforce, in exactly the codebases most likely to have accented filenames. Paths are now unquoted in the parser.
 - **The step-9 pipeline reported a clean pass when git failed.** A bad baseline left stdout empty and the checker concluded "no surface touched", exit 0, with a modified test in the tree. Step 9 and the plan format now use the returncode-checked `--git <baseline>` invocation that `ctdd-review` already used, and empty input refuses a verdict unless `--allow-empty` is given.
@@ -669,8 +692,6 @@ Five critical fail-silent defects, all reproduced before fixing.
 - Guards for the reference loaders surviving truncation, and for the plan skeleton never offering a trivial risk level. Suite 114 → 116.
 
 ## 0.15.0 — 2026-07-21
-
-The post-compaction truncation limit was verified against the documentation rather than taken on trust, and measuring it changed what needed fixing.
 
 ### Changed
 - **Rules that apply throughout now come before the steps that apply once.** After auto-compaction, Claude Code keeps only the first 5,000 tokens of a skill — so at ~5.9k the tail was being dropped from long sessions, which is exactly when the discipline matters most. The section that was disappearing was Guardrails: *no status claim without a run*, the preservation-detector rule, and the distributed-systems escalation. Every step-6 rule already survived, so the split everyone assumed was the fix was not the problem.
@@ -736,8 +757,6 @@ The post-compaction truncation limit was verified against the documentation rath
 
 ## 0.14.0 — 2026-07-21
 
-`ctdd-change` was ~8.2k tokens, well past the ~5k guidance for a skill body. Three blocks accounted for most of it, and all three are needed only at one point in the workflow. They now live in `references/` and load on demand. **No rule was removed.**
-
 ### Changed
 - **The plan format moved to `references/plan-format.md`** (2569 tokens, 30% of the old body). The skill keeps the field list and a load instruction at step 6. This is the safest block to externalise because it is the one with a checker behind it: a plan written without it is caught by `check-plan.py` rather than shipping malformed.
 - **The colocated-note craft moved to `references/colocated-notes.md`** (1328 tokens). Step 10 keeps the trigger — universal rule, deliberate gap, or an external fact — so the agent still knows *when*; the reference carries the entry tests and the durable-fact rule.
@@ -775,8 +794,6 @@ Result: skill body ~8.2k → ~5.0k tokens, with ~4461 tokens of references paid 
 - **The bundled scripts could not be found by anyone who installed the plugin.** Every invocation used a project-relative path (`scripts/check-plan.py`), but for an installed plugin the working directory is your project while the scripts live in the plugin's own directory — so the deterministic checks silently were not there, and a project with its own `scripts/check-plan.py` would have run that instead. All script and reference paths now use `${CLAUDE_PLUGIN_ROOT}`, which resolves to the plugin's install directory, quoted because that path can contain spaces. This went unnoticed for the whole pilot because the author works from a local clone, where the agent found the scripts anyway.
 
 ## 0.13.0 — 2026-07-21
-
-Fourteen defects from an outside review, reproduced before adopting.
 
 ### Fixed
 - **`--tests-from` silently skipped test names without an underscore.** A plain PascalCase name (the dotnet default) was dropped by the extraction regex, and the checker then reported success for the subset it could read. Three planned tests, one in the log, exit 0 and "red state verified." Any identifier now matches.
