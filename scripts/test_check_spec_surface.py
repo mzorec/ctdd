@@ -348,7 +348,11 @@ class ChangeSkillStructureTests(unittest.TestCase):
     # structurally unreachable. Measured: the last probe sits at 12,961 of 14,660.
     # This ceiling is the real constraint and it can fail: move a must-survive rule
     # to the end of the body and this fires, where the presence checks do not.
-    MAX_PROBE_OFFSET_CHARS = 13_500
+    # 13,500 -> 13,700. The interpreter and variable fallback has to sit near the
+    # top, before any reference is loaded, which pushes everything after it down.
+    # Still 1,400 chars inside the 15,000 compaction proxy — the ceiling is a
+    # drift alarm, not the boundary, and three displacements were made first.
+    MAX_PROBE_OFFSET_CHARS = 13_700
 
     MUST_SURVIVE = {
             "no result claim without current-turn run": "Do not claim a test, build, gate, checker",
@@ -622,7 +626,10 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # non-independent, and conceded a subagent does not fix it. Keeping the
     # exception preserves the workflow; the packet's new `Review:` field stops the
     # independence claim being silently false when it is used.
-    MAX_PLAN_GATED_METHODOLOGY_CHARS = 43700
+    # 43,700 -> 43,800 for the Approval record's file destination: `--approval`
+    # was mandated at 8.6 against a record whose only destination was stdout, so
+    # the command could never succeed.
+    MAX_PLAN_GATED_METHODOLOGY_CHARS = 43800
     """ctdd-tests keeps craft work (de-flaking, altitude, renaming) out of the
     plan gate, while every consumer of the diff — this script, the hook, and
     ctdd-review — reads any modified test as a changed requirement. Both are
@@ -952,8 +959,12 @@ class CrossSkillAgreementTests(unittest.TestCase):
                 text=True, encoding="utf-8", errors="replace", timeout=15)
             self.assertIn("Planned but untouched", r.stdout)
             self.assertIn("openapi.yaml", r.stdout)
-            # report-only: the verdict must not change
-            self.assertEqual(r.returncode, 0, r.stdout)
+            # Not report-only: a file the plan approved and the diff never
+            # touched produced the same verdict a clean tree does — *no spec
+            # surface touched*, the string the trivial lane opens on — so an
+            # approved contract change that was never written read as nothing
+            # to see, in the packet and at the gate.
+            self.assertEqual(r.returncode, 1, r.stdout)
         finally:
             os.unlink(plan.name)
 
@@ -1266,6 +1277,75 @@ class CrossSkillAgreementTests(unittest.TestCase):
                  / "adr-rules.md").read_text(encoding="utf-8")
         self.assertIn("Set `Status` to `Accepted` when writing it at 7.3", rules)
         self.assertNotIn("once the change carrying it has shipped", rules)
+
+    def test_no_file_in_the_repository_is_duplicated(self):
+        """A botched restore during mutation testing left a second copy of the
+        whole `skills/` tree — and a second `check-spec-surface.py` — nested one
+        level down. It shipped in two packages and was committed before a grep for
+        something else caught it. Two files with the same name and different
+        contents mean a reader or a tool can load the wrong one."""
+        import hashlib, collections
+        root = self._skills().parent
+        seen = collections.defaultdict(list)
+        for f in root.rglob("*"):
+            if not f.is_file():
+                continue
+            parts = f.relative_to(root).parts
+            if any(p in {".git", "__pycache__", ".pytest_cache"} for p in parts):
+                continue
+            if f.suffix in {".md", ".py", ".json"}:
+                seen[f.name].append(f.relative_to(root))
+        # Exempt only names that legitimately repeat once per skill, and only at
+        # the depth a skill lives at. A copied tree repeats them at a deeper
+        # path, which is exactly what must fail — the first version of this guard
+        # exempted them unconditionally and passed a planted duplicate.
+        per_skill = {"SKILL.md", "rationale.md"}
+        dupes = {}
+        for n, ps in seen.items():
+            if len(ps) < 2:
+                continue
+            # `SKILL.md` is skills/<skill>/SKILL.md (3 parts);
+            # `rationale.md` is skills/<skill>/references/rationale.md (4).
+            depth = {"SKILL.md": 3, "rationale.md": 4}.get(n, 0)
+            if n in per_skill and all(len(x.parts) <= depth for x in ps):
+                continue
+            if n == "__init__.py":
+                continue
+            dupes[n] = ps
+        self.assertFalse(
+            dupes, f"the same filename appears in more than one place: "
+                   f"{ {n: [str(x) for x in ps] for n, ps in dupes.items()} }")
+
+    def test_the_worked_example_does_not_self_dispatch_the_review(self):
+        """9.4 says *never dispatch it yourself unless asked*, and the transcript —
+        the file that exists because agents copy it — read *`ctdd-review` is then
+        invoked on the final diff*, modelling the self-dispatch as routine."""
+        wc = (self._skills() / "ctdd-change" / "references"
+              / "worked-change.md").read_text(encoding="utf-8")
+        self.assertNotIn("`ctdd-review` is then invoked", wc)
+        self.assertIn("the human's to invoke", wc)
+
+    def test_the_approval_record_has_a_destination(self):
+        """8.6 runs `check-plan.py <plan> --approval <approval-path>` and the
+        Output contract gave the record one destination: `stdout`. There is no
+        path, so the command it mandates cannot succeed — 8.6 dead-ended where it
+        had previously only under-checked."""
+        body = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
+        row = [l for l in body.split("\n") if l.startswith("| Approval record |")]
+        self.assertEqual(len(row), 1, "the Approval record row moved")
+        self.assertIn(".approval.log", row[0],
+                      "`--approval` needs a file; stdout cannot be passed to it")
+
+    def test_the_interpreter_fallback_governs_the_reference_files(self):
+        """Nineteen literal `python3` invocations, nine of them in reference files
+        the one-line fallback never reached — and `python3` on PATH is a Store stub
+        on many Windows installs that exits without running. `${CLAUDE_PLUGIN_ROOT}`
+        has the same shape: substituted in SKILL.md, literal text everywhere else,
+        and never expanded by PowerShell."""
+        body = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("In every command here and in every reference file", body)
+        self.assertIn("py -3", body)
+        self.assertIn("expand `${CLAUDE_PLUGIN_ROOT}`", body)
 
     def test_every_checker_flag_is_invoked_by_some_step(self):
         """`--plan`, `--diff`, `--approval`, `--post-approval` and `--plan-dir`

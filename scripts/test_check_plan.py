@@ -474,6 +474,29 @@ class CheckPlanTests(unittest.TestCase):
         # a plan that claims nothing of the sort is unaffected
         self.assertEqual(run(FULL_PLAN).returncode, 0)
 
+    def test_a_prose_bullet_is_not_a_named_test(self):
+        """`_BULLET_NAME` matched the first word of any bullet, so *- We will add
+        coverage once the shape settles.* counted as a test named `We`: the plan
+        passed at 19 of 19, step 8's Enter then could not be met, and the packet
+        still rendered clean. The sentence exclusion added for the unparsed-bullet
+        check exempted it from being reported, too."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("cp_prose", SCRIPT)
+        cp = importlib.util.module_from_spec(spec); spec.loader.exec_module(cp)
+        cat = "Risk: normal · contract: none · ADR: none · hold-out: not required\n"
+        tail = "Preservation pins: none — n/a\n"
+        for prose in ("- We will add coverage once the shape settles.\n",
+                      "- The team agreed to defer this.\n"):
+            self.assertFalse(
+                cp._names_a_test(cat + "New-behavior tests\n" + prose + tail),
+                f"a sentence is not a test name: {prose!r}")
+        for real in ("- `capture_rejects_zero` — path: `t.cs`.\n",
+                     "- capture_rejects_zero\n",
+                     "- capture-rejects-zero — path: x.\n"):
+            self.assertTrue(
+                cp._names_a_test(cat + "New-behavior tests\n" + real + tail),
+                f"a real name must still count: {real!r}")
+
     def test_a_none_bullet_is_not_a_named_test(self):
         """`_BULLET_NAME` read the word `none` as an identifier, so the evidence-lane
         guard **rejected the form plan-format rule 4 mandates** (`Preservation

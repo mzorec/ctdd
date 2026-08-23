@@ -9,7 +9,7 @@ description: >-
   Reject pipeline, Dockerfile, deployment, build-tooling, and visual-only work.
 ---
 # CTDD: drive a backend change
-`python3` on PATH is a dead stub on many Windows installs; fall back to `py -3` or the full `python.exe` path. Load a reference only where a step below names it. Never load `references/rationale.md` during a change.
+In every command here and in every reference file: `python3` is a dead stub on many Windows installs — use `py -3` or the full `python.exe` path — and expand `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PROJECT_DIR}` yourself where your shell does not. Load a reference only where a step below names it. Never load `references/rationale.md` during a change.
 ## Routing
 - Route a task whose deliverable is only tests, with observable behavior unchanged, to `ctdd-tests`.
 - Route judging an existing diff, branch, commit, PR, or MR to `ctdd-review`. Implementing its feedback stays here.
@@ -35,7 +35,7 @@ Do not infer an order among these condition-triggered rules.
 | Plan pointer | PR/MR description when the plan dir is tracked | `CTDD-Plan: <plan-dir>/<name>.md` |
 | Decision prompt | interactive question when offered, else `stdout` | 2–4 exclusive options, one recommended with a one-line reason, free text always accepted. Recommend nothing at the step 6 approval gate: your voice is excluded there. A selection is a message from the human and counts as an answer; a harness accepting a plan is not. |
 | Gate presentation | `stdout` | `Plan: <path> (<tier>)`, the decision summary verbatim, the categorical `Risk:` line, then the `Hold-out` block in full. The summary names every other decision the human may refuse, one line each; offer those sections and print them on request. Then anything the human must act on. |
-| Approval record | `stdout` | `Approved by: <human message quoted>; plan: <plan-dir>/<name>.md@<checker revision>.` |
+| Approval record | `stdout` and `${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.approval.log` | `Approved by: <human message quoted>; plan: <plan-dir>/<name>.md@<checker revision>.` |
 | ADR | `<resolved ADR directory>/NNNN-<kebab-slug>.md` | `references/adr-template.md` rendered with Context, Decision, and Consequences. |
 | Contract change | Exact repo-relative contract path listed in the plan | Valid OpenAPI, JSON Schema, protobuf, AsyncAPI, Pact, or repository-native contract syntax. |
 | Test change | Exact repo-relative test path listed in the plan | Behavior-level test names and assertions produced under `ctdd-tests`. |
@@ -73,7 +73,7 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
    1. Read `references/plan-format.md`.
    2. Leave plan mode before writing or updating the canonical plan. Treat every harness plan file as non-authoritative.
    3. Write the Implementation plan to its exact path. Its tier is derived from what it declares, not chosen. For a bug fix, require a short complete plan whose `New-behavior tests` section names the regression test.
-   4. Resolve the plan directory with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" --plan-dir` — `docs/plans` unless `.ctdd.json` says otherwise, and the checker rejects a pointer outside it. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" "${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.md"`, fix every reported failure, and re-run until it exits `0`.
+   4. Resolve the plan directory with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" --plan-dir`; the checker rejects a pointer outside it. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" "${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.md"`, fix every reported failure, and re-run until it exits `0`.
    5. Add the Plan pointer and commit the plan file when the plan dir is tracked; paste the complete plan into the PR/MR description when it is ignored and one exists.
 6. **Gate.** Enter: step 5 exited `0`. Emit: Gate presentation, Approval record. Stop: mandatory, until 6.4 is satisfied.
    1. Print the Gate presentation outside a plan-mode approval surface. The plan file stays the complete artifact.
@@ -99,7 +99,7 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
    3. Run the contract validator, the focused tests, the broader suite, and the build in the current turn, saving each to the verification path; re-run every preservation pin named in the plan to the pin-state-after path; record `NOT RUN — <reason>` for anything absent, and never reuse an earlier turn's output.
    4. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <diff-base> --plan <plan-path>`.
    5. Act on what 8.4 reported; in the trivial lane take only 8.3's pin re-run and 8.6 as `n/a`.
-   6. Stop and reopen the gate when the approved specification is wrong, when 8.5 exceeds the plan, or when requested review feedback falls outside approved scope (feedback inside scope re-enters at the lowest invalidated step, no new plan): amend the plan file with the old and new form, re-run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" <plan-path> --approval <approval-path>`, return to step 6, and resume at the lowest invalidated step only after that reports the new revision approved.
+   6. Stop and reopen the gate when the approved specification is wrong, when 8.5 exceeds the plan, or when requested review feedback falls outside approved scope (inside scope re-enters at the lowest invalidated step, no new plan): amend the plan file with the old and new form, re-run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" <plan-path> --approval <approval-path>`, return to step 6, and resume only after that reports the new revision approved.
 9. **Produce the review packet.** Enter: step 8 produced current-turn results. Emit: Review packet. Stop: 9.1 when a plan exists. Changed test expectations are changed requirements and contract diffs are boundary changes: the packet presents them as the spec, not as code.
    1. Stop for the required sealed hold-out result from the named runner, asking write / decline as a Decision prompt. Resolve it to `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; only the human declines *or* confirms the runner is unavailable, so `NOT RUN` needs the same prompt a decline does; `failed` blocks.
    2. Set Back-translation to one sentence derived from the changed tests alone, beside the business requirement so the human compares prose to prose, or to `n/a — no test diff`.

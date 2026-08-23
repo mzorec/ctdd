@@ -32,6 +32,29 @@ _Docs and other non-runtime edits collect here and fold into the next runtime re
 
 - The status pin in `ctdd-in-depth.md` no longer lists what shipped — the changelog already says that. It keeps only the two things nothing else records: what the skills cost to run, and which mechanisms the document describes but hasn't built.
 
+## 0.40.0 — 2026-08-03
+
+### Fixed
+
+**Commands that could not run**
+
+- **`--approval` was mandated against a record with no path.** 8.6 runs `check-plan.py <plan-path> --approval <approval-path>`, and the Output contract gave the Approval record one destination: `stdout`. The command could never succeed, so 8.6 dead-ended where it had previously only under-checked. The record is now written to `<plan-dir>/<name>.approval.log` as well as stdout.
+- **The interpreter and variable fallback reached none of the reference files.** Nineteen literal `python3` invocations, nine of them in `execution.md`, `worked-change.md` and `adr-rules.md` — and on many Windows installs `python3` on PATH is a Store stub that exits without running, so the agent hits a silent no-op inside a file the one-line fallback never covered. `${CLAUDE_PLUGIN_ROOT}` has the same shape: substituted in `SKILL.md`, literal text everywhere else, and never expanded by PowerShell. The rule now says *in every command here and in every reference file*.
+
+**Gate bypasses**
+
+- **A sentence in an evidence lane passed the gate.** `_BULLET_NAME` matched the first word of any bullet, so `- We will add coverage once the shape settles.` counted as a test named `We`: the plan passed at 19 of 19, step 8's Enter then could not be met, and the packet still rendered clean. A test name is an identifier — no spaces before its separator.
+- **An approved contract change that was never written read as "no spec surface touched."** The planned-but-untouched comparison was report-only, so a diff missing a file the plan approved produced the same verdict a clean tree does — the string the trivial lane opens on. It now counts as surface. The comparison also had to run against every changed path rather than only classified surface, or a production file the plan named looked missing when it had been edited.
+- **The worked example modelled the self-dispatch 9.4 forbids.** *`ctdd-review` is then invoked on the final diff*, in the file that exists because agents copy it.
+
+**Guards**
+
+- **Nothing detected a duplicated file.** A botched restore left a second copy of the whole `skills/` tree — including a second `check-spec-surface.py` — nested one level down; it shipped in two packages and reached a commit before an unrelated grep caught it. Two files with the same name and different contents mean a reader or a tool can load the wrong one. The guard exempts only the names that legitimately repeat once per skill, and only at the depth a skill lives at.
+
+### Changed
+
+- Probe ceiling 13,500 → 13,700 and route ratchet 43,700 → 43,800. The interpreter fallback has to sit near the top, before any reference loads, which pushes everything after it down; three displacements were made first. Still 1,400 characters inside the compaction proxy.
+
 ## 0.39.0 — 2026-08-03
 
 ### Removed

@@ -132,4 +132,4 @@ Hold-out: passed
 Residual risk: The released remainder's expiry path is exercised only by the sealed hold-out.
 ```
 
-`ctdd-review` is then invoked on the final diff. Its verdict is not written here.
+The final diff is named and handed over; `ctdd-review` is the human's to invoke, not this session's. Its verdict is not written here.

@@ -461,7 +461,21 @@ def main():
 
     # Unknown content cannot clear the lane. SKILL.md 3.3 opens the trivial lane
     # on this exact verdict string, and a submodule bump can carry any change.
-    touched = any(findings.values()) or bool(unread)
+    # A file the plan approved and the diff never touched is not "no surface":
+    # the run produced the same verdict a clean tree does, so an approved contract
+    # change that was never written read as nothing to see.
+    # A file the plan approved and the diff never touched is not "no surface":
+    # the run produced the same verdict a clean tree does, so an approved contract
+    # change that was never written read as nothing to see.
+    untouched_planned = []
+    if plan_paths is not None:
+        # Compare against every changed path, not only classified surface: a
+        # production file the plan named is touched even though it classifies as
+        # nothing, and treating it as missing reported a healthy diff as a gap.
+        _seen = {q for _s, o, n in entries for q in (o, n) if q}
+        untouched_planned = sorted(q for q in plan_paths
+                                   if not any(q in s or s in q for s in _seen))
+    touched = any(findings.values()) or bool(unread) or bool(untouched_planned)
     if not text.strip() and "--allow-empty" not in sys.argv:
         print("check-spec-surface: empty input — nothing was inspected, so no "
               "verdict is given. If the diff really is empty, pass --allow-empty.")
@@ -492,7 +506,7 @@ def main():
             for q in untouched:
                 print(f"  - {q}")
             print("  An approved change that never reaches its file does not "
-                  "ship. Report-only: this does not change the verdict.")
+                  "ship.")
         if unplanned:
             print("\nUnplanned surface:")
             for s in unplanned:

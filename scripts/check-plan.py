@@ -235,7 +235,11 @@ _LANE_HEADING = {
 # <reason>`) while accepting `- none — <reason>` as a named test — the same
 # inversion the guard was written to close, reintroduced through the guard.
 _NOT_A_NAME = {"none", "n", "na", "tbd", "todo", "nothing"}
-_BULLET_NAME = re.compile(r"^\s*[-*]\s+[`'\"]?([A-Za-z_][\w.]*)", re.M)
+# A test name is an identifier: no spaces before its separator. `- We will add
+# coverage once the shape settles.` matched `We`, so a sentence in an evidence
+# lane passed the gate at 19 of 19 and step 8 then could not be entered.
+_BULLET_NAME = re.compile(
+    r"^\s*[-*]\s+[`'\"]?([A-Za-z_][\w.\-]*)[`'\"]?\s*(?:[—–:(]|\s-\s|$)", re.M)
 
 
 def _bullet_names_a_test(line):
