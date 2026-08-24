@@ -13,7 +13,7 @@ Load this file only at `SKILL.md` step 5.1.
 
 ```markdown
 <Decision summary: one to three sentences naming the proposed direction, the highest risk, and every unresolved decision.>
-Risk: <normal | high-risk> · contract: <none | additive | breaking> · ADR: <none | NNNN required> · red pause: <pause | skip> · hold-out: <not required | required: 1-3 sealed tests from human>
+Risk: <normal | high-risk> · contract: <none | additive | breaking> · ADR: <none | NNNN required> · red pause: <phased | pause | skip> · hold-out: <not required | required: 1-3 sealed tests from human>
 Business requirement:
 Intended behavior:
 
@@ -70,14 +70,14 @@ The complete example below is the operative instruction: anything it demonstrate
 4. Cover every applicable row of **Required case coverage** below, and record every row the change does not reach under `Case coverage not reached` as `<case> — n/a — <reason>`; never leave a row unaddressed.
 5. Require a hold-out for money, authorization, state-machine, rounding, inclusivity, timezone, fee-treatment, or other load-bearing boundary semantics.
 6. Present a required hold-out as a decision, not a notice: name the 1–3 assertions to write, each an observable input and *which* output to assert — never the value, which the human computes (rule 8); give `write` and `decline` with their consequences; recommend one with a reason. Contents stay outside the agent-readable tree.
-7. Use `result: pending` until the required hold-out runs. Before the packet, replace it with `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; `declined by human` is a waiver, not a neutral outcome — record it as one and expect the review to report it; unavailability is never a decline.
+7. Use `result: pending` until the required hold-out runs. Before the packet, replace it with `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; `declined by human` is a waiver, not a neutral outcome — record it as one; unavailability is never a decline.
 8. When the human declines a required hold-out, list the load-bearing expected values and ask them to recompute each one by hand from the business requirement, never by reading the code that produced it. Offer it as the fallback, never as the equivalent, and do not label it a hold-out result.
 9. Use exact file paths; never write wildcards, directories, `(+ tests)`, `TBD`, or unnamed future files.
 10. Pin the tests that already assert a decision recorded by any ADR this change touches.
 11. Capture the human's stated direction, not a competing one; a decision handed back unresolved returns to `BLOCKING` with their version as the default. Record every resolved BLOCKING answer under `Decisions confirmed in session` and replace the question with `none — answered before approval`; the answer must be findable without the chat. Re-run the checker after every plan edit; re-present when the answer changes any other presented decision.
 12. `Behavior flow` is two blocks in order, `Current flow` then `Flow after change`: one numbered walk per touched entry point, execution order, full sentences, a step per observable stage, no step ceiling. Derive `Current flow` from the reading `Existing behavior` cites, never from the implementation; write `Current flow: none — greenfield` after a greenfield step 2. That section owns *where* behavior is pinned, this one owns *what happens*, and `Implementation slices` owns the code delta: name no function or file here, and enumerate no boundary values — the test lanes own those.
 
-13. Set the red pause: `pause` stops after step 7 verifies the evidence, prints the pre-implementation diff and intended changes, and waits; `skip` implements at once. Draft `pause` at the large tier and `skip` at small; the human flips it at the gate. The field is required on the line, and the tier never reads it.
+13. Set the red pause: `pause` stops after step 7, prints the pre-implementation diff and intended changes, and waits; `phased` adds a stop after each implementation group with its diff and evidence; `skip` implements at once. Draft `skip` at small, `pause` at medium, and `phased` at large or when the planned files form three or more groups; the human flips it at the gate. The field is required on the line, and the tier never reads it.
 
 `ctdd-tests` owns test naming, altitude, assertion form, and what may not be asserted. Do not restate them here.
 

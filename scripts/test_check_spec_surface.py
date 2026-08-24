@@ -637,7 +637,14 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # were compressed ~30% and the worked-change cross-reference dropped before
     # the ratchet moved; the raise restores the same ~450-char margin the
     # previous ceiling held.
-    MAX_PLAN_GATED_METHODOLOGY_CHARS = 46000
+    # Raised 46000 -> 47000 in v0.42.0 for phased implementation — the first
+    # raise, and the bar any future raise must clear: recorded pain (the
+    # pilot's huge-change miss), subtraction exhausted (7 chars left after
+    # fourteen rationale cuts), and the feature fully specified in the
+    # backlog before the space existed. Reference discounting was rejected:
+    # these files load at least once per plan-gated change, so route total
+    # approximates real context cost wherever the text lives.
+    MAX_PLAN_GATED_METHODOLOGY_CHARS = 47000
     """ctdd-tests keeps craft work (de-flaking, altitude, renaming) out of the
     plan gate, while every consumer of the diff — this script, the hook, and
     ctdd-review — reads any modified test as a changed requirement. Both are

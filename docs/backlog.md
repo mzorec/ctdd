@@ -85,6 +85,7 @@ Each is already written into `ctdd-in-depth.md` tagged *(Proposed — not yet bu
 
 ---
 
+
 ## Tier 3 — integration ideas, coherent but unproven
 
 ### SDD-style requirements decomposition, upstream of the plan gate (weakness: creation vs. preservation)
@@ -341,7 +342,7 @@ These were proposed (several more than once, by different reviewers) and rejecte
 |---|---|---|
 | Bash command-string scanning | False-fires on every test *run* (`dotnet test tests/X.cs` matches the same path pattern as an edit). Half-right determinism gets disabled; a disabled check that looks like coverage is the named anti-pattern. | A scanner could distinguish a test *run* from a test *edit* with near-zero false positives — non-trivial. |
 | In-repo `tests/HoldOut/<ticket>/` convention | A well-known path in the working repo makes hold-outs *more* discoverable to the agent while labeling them sealed — sealing theater, worse than nothing. The trait is CI's selector from a *separate* location only. | Never, while the agent has repo read access. Structural, not tunable. |
-| Post-red `.code.md` (composed code-shape artifact) | Superseded the day it was filed: the pilot reported the approach-blind failure had already occurred, so the disclosure ships as intended-change lines spoken at the 7.12 pause (v0.42.0) — same information, same moment, no fourth artifact to parse, drift, or maintain (finding #29). | Spoken lines prove too thin in practice — repeated Deviations entries on changes whose pause stated the approach and was released. |
+| Post-red `.code.md` (composed code-shape artifact) | Superseded the day it was filed: the pilot reported the approach-blind failure had already occurred, so the disclosure ships as intended-change lines spoken at the 7.12 pause (v0.42.0) — same information, same moment, no fourth artifact to parse, drift, or maintain (finding #29). | Lines now carry copied current code (v0.42.0, after the second pilot pause). Reopens only if before/after lines still miss — repeated Deviations entries on changes whose pause was released. |
 | Plan YAML frontmatter | Plans live in PR descriptions and plan-mode output, often never as files; frontmatter there is ceremony parseable by nobody. The stable-headings contract already exists in `check-plan.py`. | Weakness #8 archiving gives plans a canonical file path (see Tier 3) — and v0.8.0's `docs/plans/` output is the first move in that direction. |
 | Second-opinion review by a second agent | Same model, same prior, same blind spot — two green artifacts agreeing proves nothing. Back-translation replaced it by reading *artifact → prose* instead of re-deriving *intent → artifact*. | A genuinely independent checker exists (different model family, or a human) — at which point it's just "the human reviews," already in the method. |
 | Coverage *quantifier* (vs. reader) | Per-ecosystem coverage-tooling maintenance is a rabbit hole. | Superseded by the coverage-report *reader* (Tier 2), which reads an existing report instead of computing coverage. |
