@@ -629,7 +629,15 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # 43,700 -> 43,800 for the Approval record's file destination: `--approval`
     # was mandated at 8.6 against a record whose only destination was stdout, so
     # the command could never succeed.
-    MAX_PLAN_GATED_METHODOLOGY_CHARS = 43800
+    # 43,800 -> 46,000 for v0.41.0's `Behavior flow` section (rule 12, three
+    # skeleton lines, the example's paired flows). The gap it closes: a plan
+    # carried behavior as one `Intended behavior` sentence plus test bullets,
+    # so the gate reader could not reconstruct the runtime sequence or see how
+    # it changes. Displacement first, per this message: the rule and example
+    # were compressed ~30% and the worked-change cross-reference dropped before
+    # the ratchet moved; the raise restores the same ~450-char margin the
+    # previous ceiling held.
+    MAX_PLAN_GATED_METHODOLOGY_CHARS = 46000
     """ctdd-tests keeps craft work (de-flaking, altitude, renaming) out of the
     plan gate, while every consumer of the diff — this script, the hook, and
     ctdd-review — reads any modified test as a changed requirement. Both are

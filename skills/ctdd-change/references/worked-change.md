@@ -41,7 +41,7 @@ The plan is written to `docs/plans/PAY-123-partial-capture.md` using `plan-forma
 
 ```
 $ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" "${CLAUDE_PROJECT_DIR}/docs/plans/PAY-123-partial-capture.md"
-check-plan: all mandatory sections present for a large plan (19 of 19; presence, not quality — the review still owns quality).
+check-plan: all mandatory sections present for a large plan (22 of 22; presence, not quality — the review still owns quality).
 ```
 
 `docs/plans/` is tracked here, so the plan file is committed and the MR description carries one line:
@@ -122,7 +122,7 @@ Business requirement: The merchant is allowed one capture below the authorized a
 Back-translation: Capture accepts any amount from one cent to the authorized amount, emits exactly one event carrying that amount, and rejects a second capture with 409.
 Plan: docs/plans/PAY-123-partial-capture.md
 Approval: "release the remainder when the authorization expires. Approved."
-Plan check: check-plan: all mandatory sections present for a large plan (19 of 19; presence, not quality — the review still owns quality).
+Plan check: check-plan: all mandatory sections present for a large plan (22 of 22; presence, not quality — the review still owns quality).
 Red state: check-redstate: all 4 new test(s) observed failing — red state verified. (That they failed for the *right* reason is still the reviewer's read.)
 Pin state before: 7.6 · `…partial-capture.pinstate.log` · check-redstate: all 4 pin test(s) observed PASSING against the current implementation — preservation baseline captured. Re-run the same tests after the change; they must still pass.
 Pin state after: 8.3 · `…partial-capture.pinstate-after.log` · check-redstate: all 4 pin test(s) observed PASSING against the current implementation — preservation baseline captured. Re-run the same tests after the change; they must still pass.

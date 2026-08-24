@@ -62,6 +62,15 @@ REQUIRED = [
     ("decision summary: proceeding", r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*proceed(ing)?\s+unless\b"),
     ("risk level",            r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*risk\s*(level)?\s*[:—-]"),
     ("existing behavior",     r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*existing\s+behaviou?r\b"),
+    # v0.41.0: the flow narrative. A plan carried behavior as one `Intended
+    # behavior` sentence plus test bullets, so the reader at the gate could not
+    # reconstruct the runtime sequence or see how it changes. Three anchored
+    # patterns, not one: finding #39 is the standing evidence that a subheading
+    # required by format prose alone is a subheading plans omit and the gate
+    # never misses.
+    ("behavior flow",         r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*behaviou?r\s+flow\b"),
+    ("current flow",          r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*current\s+flow\b"),
+    ("flow after change",     r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*flow\s+after\s+change\b"),
     ("assumptions",           r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*assumptions?\b"),
     ("uncovered/ambiguous",   r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*(uncovered|ambiguous)\b"),
     # Both test headings, always — even when one is empty. One pattern used to
@@ -202,6 +211,10 @@ SMALL_SECTIONS = {
 MEDIUM_SECTIONS = SMALL_SECTIONS | {
     "assumptions", "uncovered/ambiguous", "implementation slices",
     "hold-out decision", "residual risk",
+    # All three flow headings, or the medium tier re-derives the finding-#39
+    # shape: the parent heading present, the two blocks the reader actually
+    # compares silently absent.
+    "behavior flow", "current flow", "flow after change",
 }
 
 
@@ -708,8 +721,13 @@ def main():
     # a plan could claim a decision record and never write one — or say `ADR: none`
     # while the diff rewrites one. The `--diff` path already classifies surface, so
     # both directions are checkable there; here, only that the field exists.
-    for field in ("contract", "hold-out", "ADR"):
-        if not re.search(rf"{field.replace('-', '.?')}\s*[:=—–-]", cat, re.I):
+    # `red pause` joined the line in v0.42.0. Absent, step 7.12 has no
+    # instruction and the pause silently never fires — a decision nobody made,
+    # which is the finding-#2/#21/#28 shape (the mechanism exists and is not
+    # invoked). Existence-only, like `ADR:`: the workflow reads the value.
+    for field, fpat in (("contract", "contract"), ("hold-out", "hold.?out"),
+                        ("ADR", "ADR"), ("red pause", "red[ -]?pause")):
+        if not re.search(rf"{fpat}\s*[:=—–-]", cat, re.I):
             print(f"check-plan: the categorical line names no `{field}:` field — "
                   f"{cat.strip()[:70]!r}")
             print("An absent field is not a declared one; it silences the check "

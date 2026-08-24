@@ -25,7 +25,7 @@ Do not infer an order among these condition-triggered rules.
 - Require property tests, boundary contract tests, and human review for retries, ordering, eventual consistency, async messaging, or partial failure.
 - Stop on incompatible claims about the same observable constraint.
 - Resolve an artifact conflict against the business requirement through an approved amendment.
-- Do not approve your own plan, and do not issue the `ctdd-review` verdict on your own diff — loading its procedure here is still you.
+- Do not approve your own plan, and do not issue the `ctdd-review` verdict on your own diff.
 ## Output contract
 | Output name | Exact path | Required shape |
 |---|---|---|
@@ -33,8 +33,8 @@ Do not infer an order among these condition-triggered rules.
 | Trivial-risk declaration | `stdout` and PR/MR description | `Risk: trivial — <reason>. Skipping the plan gate.` Emit only through step 3.6. |
 | Implementation plan | `${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.md`, and PR/MR description when it is ignored | Every section and field rule of `references/plan-format.md`, in the order that file displays. |
 | Plan pointer | PR/MR description when the plan dir is tracked | `CTDD-Plan: <plan-dir>/<name>.md` |
-| Decision prompt | interactive question when offered, else `stdout` | 2–4 exclusive options, one recommended with a one-line reason, free text always accepted. Recommend nothing at the step 6 approval gate: your voice is excluded there. A selection is a message from the human and counts as an answer; a harness accepting a plan is not. |
-| Gate presentation | `stdout` | `Plan: <path> (<tier>)`, the decision summary verbatim, the categorical `Risk:` line, then the `Hold-out` block in full. The summary names every other decision the human may refuse, one line each; offer those sections and print them on request. Then anything the human must act on. |
+| Decision prompt | interactive question when offered, else `stdout` | 2–4 exclusive options, one recommended with a one-line reason, free text always accepted. Recommend nothing at the step 6 approval gate or the 7.12 pause: your voice is excluded there. A selection is a message from the human and counts as an answer; a harness accepting a plan is not. |
+| Gate presentation | `stdout` | `Plan: <path> (<tier>)`, the decision summary verbatim, the categorical `Risk:` line, then the `Hold-out` block in full. The summary names every other decision the human may refuse, one line each. Then anything the human must act on. |
 | Approval record | `stdout` and `${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.approval.log` | `Approved by: <human message quoted>; plan: <plan-dir>/<name>.md@<checker revision>.` |
 | ADR | `<resolved ADR directory>/NNNN-<kebab-slug>.md` | `references/adr-template.md` rendered with Context, Decision, and Consequences. |
 | Contract change | Exact repo-relative contract path listed in the plan | Valid OpenAPI, JSON Schema, protobuf, AsyncAPI, Pact, or repository-native contract syntax. |
@@ -45,7 +45,7 @@ Do not infer an order among these condition-triggered rules.
 ## Ordered change workflow
 Execute steps 0–10 in ascending order. Until an Approval record exists for the current plan revision, the only file you write is the step 5 plan file; an amendment voids the previous one. An amendment re-enters at the lowest invalidated step.
 0. **Establish the baseline.** Enter: a change request exists. Emit: Baseline statement. Stop: unresolvable base, contamination.
-   1. Record the current branch, target branch, and staged, unstaged, and untracked files. Report it when the current branch is the target branch: the change is landing where it would be reviewed from.
+   1. Record the current branch, target branch, and staged, unstaged, and untracked files. Report it when the current branch is the target branch.
    2. Set `diff-base` to `HEAD` for uncommitted work and to the target-branch merge-base for branch, PR, or MR work.
    3. Stop and ask which base to use when the target branch is absent, disputed, or has no merge-base.
    4. Treat an intentional review diff as input, and stop and report unrelated target-file edits as contamination.
@@ -54,7 +54,7 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
 2. **Read the existing slice.** Enter: step 1 has an unambiguous requirement. Emit: Current-behavior reading. Continue: always.
    1. Read the relevant contract, tests, changed files, routes, messages, and domain terms, plus every ADR named by an `ADR-NNNN` marker in them.
    2. Derive current behavior from the contract and tests; use the implementation only for behavior neither states. Offer the reading for correction, never as ground truth.
-   3. Use the greenfield bullet when nothing exists. Scan this repository's ADR titles when the change adds contract surface: new surface carries no markers.
+   3. Use the greenfield bullet when nothing exists. Scan this repository's ADR titles when the change adds contract surface.
 3. **Classify the change.** Enter: step 2 printed the reading. Emit: Trivial-risk declaration, or nothing. Continue: to step 4 unless 3.6 fires.
    1. Treat the change as plan-gated unless every condition in 3.2–3.5 holds.
    2. Require a diff that already exists against `diff-base`, that you did not write in this session, and that contains the complete requested change; anything still to be written is plan-gated.
@@ -81,7 +81,7 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
    3. Stop for explicit approval. Ask it as a Decision prompt: approve, approve with changes, reject. Amend the plan, re-run the checker and re-present on changes; stop on reject. Write no contract, test, ADR, or production file, and execute no later step, until 6.4 is satisfied.
    4. Require an affirmative message from the human approving this plan. Your own restatement, silence, a subagent verdict, a passing checker, and harness acceptance of a plan-mode surface are not approval.
    5. Treat approval as authorization to execute the plan file.
-7. **Apply approved artifacts and create test evidence.** Enter: step 6 printed the Approval record. Emit: contract, ADR, tests, pin-state logs, red-state log. Stop: 7.2, 7.7, 7.11.
+7. **Apply approved artifacts and create test evidence.** Enter: step 6 printed the Approval record. Emit: contract, ADR, tests, pin-state logs, red-state log. Stop: 7.2, 7.7, 7.11, 7.12.
    1. Re-check the working tree against step 0.
    2. Stop when a target file changed outside the approved plan.
    3. Write each approved contract or ADR artifact to its exact planned path.
@@ -93,7 +93,8 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
    9. Invoke `ctdd-tests` to write the new-behavior tests.
    10. Run them before implementing new behavior, save the complete run to the red-state path. Verify red state with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" <red-log> --tests-from <plan-path>`.
    11. Stop on any state other than intended red; read `references/execution.md`.
-8. **Implement and verify.** Enter: step 7 satisfied every applicable evidence lane, and at least one lane named a test — pin pass for every preservation pin the plan names, intended red for every new-behavior test the plan names — or step 3.6 fired. Emit: verification results. Stop: 8.6.
+   12. Stop when the approved line says `red pause: pause`; read `references/execution.md`. Continue on `skip`.
+8. **Implement and verify.** Enter: step 7 satisfied every applicable evidence lane, and at least one lane named a test — pin pass for every preservation pin the plan names, intended red for every new-behavior test the plan names — and 7.12 released any pause, or step 3.6 fired. Emit: verification results. Stop: 8.6.
    1. Implement only the behavior approved at step 6, or nothing beyond the declared diff in the trivial lane. Replace any compile-only stub from step 7 with that implementation, and add no other production code.
    2. Do not weaken, delete, skip, or retarget an assertion to obtain green.
    3. Run the contract validator, the focused tests, the broader suite, and the build in the current turn, saving each to the verification path; re-run every preservation pin named in the plan to the pin-state-after path; record `NOT RUN — <reason>` for anything absent, and never reuse an earlier turn's output.
@@ -104,7 +105,7 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
    1. Stop for the required sealed hold-out result from the named runner, asking write / decline as a Decision prompt. Resolve it to `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; only the human declines *or* confirms the runner is unavailable, so `NOT RUN` needs the same prompt a decline does; `failed` blocks.
    2. Set Back-translation to one sentence derived from the changed tests alone, beside the business requirement so the human compares prose to prose, or to `n/a — no test diff`.
    3. Read `references/execution.md` now even if read earlier; re-run its checkers and assemble its exact packet.
-   4. Stop and hand the `ctdd-review` verdict to the human: name the final diff and wait. Never load `ctdd-review` here, and never dispatch it yourself unless asked — a review this session commissions and frames is not independent, whichever context runs it. When asked, record it in the packet's `Review:` field.
+   4. Stop and hand the `ctdd-review` verdict to the human: print `git diff <diff-base> --stat`, name the final diff, and wait. Never load `ctdd-review` here, and never dispatch it yourself unless asked. When asked, record it in the packet's `Review:` field.
 
 10. **Write a colocated note only when triggered.** Enter: step 9 printed the packet, and before 9.4 hands over the diff. Emit: Colocated note, or nothing.
    1. Write no note for behavior already expressed by a test or contract.

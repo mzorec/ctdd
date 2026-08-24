@@ -15,7 +15,7 @@ from pathlib import Path
 SCRIPT = str(Path(__file__).resolve().parent / "check-plan.py")
 
 FULL_PLAN = """Allow one capture below the authorized amount while preserving over-capture rejection.
-Risk: normal · contract: none · ADR: none · hold-out: not required
+Risk: normal · contract: none · ADR: none · red pause: skip · hold-out: not required
 BLOCKING — I will not guess:
 - auth hold on the released remainder? (recommend: expires with the auth)
 Proceeding unless you object:
@@ -25,6 +25,11 @@ Intended behavior: capture accepts 0 < amount <= authorized and moves to CAPTURE
 Risk level: normal — money path
 Existing behavior (openapi.yaml; CaptureTests.cs):
 - x
+Behavior flow:
+Current flow:
+1. capture requires amount == authorized
+Flow after change:
+1. (changed) capture accepts 0 < amount <= authorized
 Assumptions:
 - y
 Uncovered / ambiguous:
@@ -66,9 +71,51 @@ class CheckPlanTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0)
         self.assertIn("all mandatory sections present", r.stdout)
 
+    def test_the_flow_narrative_is_mandatory_above_small(self):
+        """v0.41.0: a plan carried behavior as one Intended-behavior sentence
+        plus test bullets, so the gate reader could not reconstruct the runtime
+        flow or see how it changes. All three headings are checked - parent and
+        both blocks - because a subheading required by format prose alone is
+        the finding-#39 failure shape."""
+        for gone, named in (("Behavior flow:\n", "behavior flow"),
+                            ("Current flow:\n", "current flow"),
+                            ("Flow after change:\n", "flow after change")):
+            broken = FULL_PLAN.replace(gone, "")
+            r = run(broken)
+            self.assertEqual(r.returncode, 1, f"{named}: {r.stdout}")
+            self.assertIn("MISSING sections", r.stdout)
+            self.assertIn(named, r.stdout)
+
+    def test_the_flow_accepts_british_spelling_and_the_greenfield_escape(self):
+        brit = FULL_PLAN.replace("Behavior flow:", "Behaviour flow:")
+        self.assertEqual(run(brit).returncode, 0, run(brit).stdout)
+        green = FULL_PLAN.replace(
+            "Current flow:\n1. capture requires amount == authorized\n",
+            "Current flow: none — greenfield\n")
+        self.assertEqual(run(green).returncode, 0, run(green).stdout)
+
+    def test_a_small_plan_omits_the_flow_narrative(self):
+        """Tiers shrink documentation, never evidence: small means no new
+        behavior, so there is no after-flow to narrate and the section is
+        conditional, like the other five the small tier drops."""
+        small = FULL_PLAN.replace(
+            "New-behavior tests — must be observed failing first:\n- t\n",
+            "New-behavior tests: none — behavior preserved\n")
+        small = small.replace(
+            "Preservation pins — must pass before and after: none\n",
+            "Preservation pins — must pass before and after:\n- keeps_capture_shape\n")
+        for line in ("Behavior flow:\n", "Current flow:\n",
+                     "1. capture requires amount == authorized\n",
+                     "Flow after change:\n",
+                     "1. (changed) capture accepts 0 < amount <= authorized\n"):
+            small = small.replace(line, "")
+        r = run(small)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("small plan", r.stdout)
+
     def test_missing_sections_fail_and_are_named(self):
         r = run("A summary line long enough to read as the decision summary.\n"
-                "Risk: normal · contract: none · ADR: none · hold-out: not required\n"
+                "Risk: normal · contract: none · ADR: none · red pause: skip · hold-out: not required\n"
                 "Risk level: normal — x\nExisting behavior: y\nAssumptions: z\n"
                 "Uncovered: q\nNew-behavior tests — must be observed failing first:\n- t\n"
                 "Preservation pins — must pass before and after: none\nContract changes: none\n"
@@ -289,7 +336,10 @@ class CheckPlanTests(unittest.TestCase):
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("MISSING the categorical line", r.stdout)
         for partial in ("Risk: normal · contract: none · ADR: none",
-                        "Risk: normal · ADR: none · hold-out: not required"):
+                        "Risk: normal · ADR: none · red pause: skip · hold-out: not required",
+                        # The full pre-v0.42.0 line: only `red pause:` is absent,
+                        # so a silently-never-pausing plan is the rejected shape.
+                        "Risk: normal · contract: none · ADR: none · hold-out: not required"):
             r2 = run(_re.sub(r"(?m)^Risk: .*·.*$", partial, FULL_PLAN))
             self.assertEqual(r2.returncode, 1, f"{partial!r} accepted:\n{r2.stdout}")
             self.assertIn("names no", r2.stdout)
@@ -358,10 +408,10 @@ class CheckPlanTests(unittest.TestCase):
         self.assertTrue(cp.TRIVIAL.search("Risk: trivial — one-line typo fix"))
 
         # 2/3. tier and hold-out read the categorical line, whatever the order.
-        for line in ("Risk: normal · contract: none · hold-out: not required",
-                     "Risk: normal · hold-out: not required · contract: none"):
+        for line in ("Risk: normal · contract: none · red pause: skip · hold-out: not required",
+                     "Risk: normal · red pause: skip · hold-out: not required · contract: none"):
             self.assertTrue(cp.CATEGORICAL_LINE.search(line), line)
-        prose = ("Risk: normal · contract: additive · hold-out: not required\n"
+        prose = ("Risk: normal · contract: additive · red pause: skip · hold-out: not required\n"
                  "The wire contract: none of it changes shape.\n"
                  "New-behavior tests:\n- t\n")
         self.assertEqual(cp.plan_tier(prose), "large",
@@ -390,7 +440,7 @@ class CheckPlanTests(unittest.TestCase):
 
         # 6. the duplicate scan reads a final line with no trailing newline.
         one = ("A summary long enough to read as a decision summary.\n"
-               "Risk: normal · contract: none · ADR: none · hold-out: not required\n"
+               "Risk: normal · contract: none · ADR: none · red pause: skip · hold-out: not required\n"
                "Residual risk: none")   # deliberately unterminated
         self.assertNotIn("DUPLICATED", run(one).stdout)
 
@@ -483,7 +533,7 @@ class CheckPlanTests(unittest.TestCase):
         import importlib.util
         spec = importlib.util.spec_from_file_location("cp_prose", SCRIPT)
         cp = importlib.util.module_from_spec(spec); spec.loader.exec_module(cp)
-        cat = "Risk: normal · contract: none · ADR: none · hold-out: not required\n"
+        cat = "Risk: normal · contract: none · ADR: none · red pause: skip · hold-out: not required\n"
         tail = "Preservation pins: none — n/a\n"
         for prose in ("- We will add coverage once the shape settles.\n",
                       "- The team agreed to defer this.\n"):
@@ -506,7 +556,7 @@ class CheckPlanTests(unittest.TestCase):
         import importlib.util
         spec = importlib.util.spec_from_file_location("cp_none", SCRIPT)
         cp = importlib.util.module_from_spec(spec); spec.loader.exec_module(cp)
-        cat = "Risk: normal · contract: none · ADR: none · hold-out: not required\n"
+        cat = "Risk: normal · contract: none · ADR: none · red pause: skip · hold-out: not required\n"
         head = cat + "New-behavior tests: none — refactor\n"
         for pins in ("Preservation pins: none — no existing tests.\n",
                      "Preservation pins\n- none — the touched area has none.\n",
@@ -528,7 +578,7 @@ class CheckPlanTests(unittest.TestCase):
         import importlib.util
         spec = importlib.util.spec_from_file_location("cp_inv", SCRIPT)
         cp = importlib.util.module_from_spec(spec); spec.loader.exec_module(cp)
-        cat = "Risk: normal · contract: none · ADR: none · hold-out: not required\n"
+        cat = "Risk: normal · contract: none · ADR: none · red pause: skip · hold-out: not required\n"
         honest = cat + ("New-behavior tests: none — pure refactor\n"
                         "Preservation pins: none — covered by the suite\n")
         empty = cat + "New-behavior tests\nPreservation pins\n"
@@ -594,7 +644,7 @@ class CheckPlanTests(unittest.TestCase):
         import importlib.util
         spec = importlib.util.spec_from_file_location("cp_lanes", SCRIPT)
         cp = importlib.util.module_from_spec(spec); spec.loader.exec_module(cp)
-        base = ("Risk: normal · contract: none · ADR: none · hold-out: not required\n"
+        base = ("Risk: normal · contract: none · ADR: none · red pause: skip · hold-out: not required\n"
                 "{p}New-behavior tests — must be observed failing: none — refactor\n"
                 "{p}Preservation pins — must pass before and after: none — covered\n")
         for prefix in ("", "## ", "### ", "- ", "* ", "**"):
@@ -608,7 +658,7 @@ class CheckPlanTests(unittest.TestCase):
         import importlib.util
         spec = importlib.util.spec_from_file_location("cp_lanes2", SCRIPT)
         cp = importlib.util.module_from_spec(spec); spec.loader.exec_module(cp)
-        base = ("Risk: normal · contract: none · ADR: none · hold-out: not required\n"
+        base = ("Risk: normal · contract: none · ADR: none · red pause: skip · hold-out: not required\n"
                 "## New-behavior tests — must be observed failing: none — refactor\n"
                 "## Preservation pins — must pass before and after:\n"
                 "- `capture_rounds_half_up` — path: `t.cs`; case: legacy behavior.\n")
@@ -626,7 +676,7 @@ class CheckPlanTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("cp_tier", SCRIPT)
         cp = importlib.util.module_from_spec(spec); spec.loader.exec_module(cp)
 
-        base = ("Risk: normal · contract: none · ADR: none · hold-out: not required\n"
+        base = ("Risk: normal · contract: none · ADR: none · red pause: skip · hold-out: not required\n"
                 "New-behavior tests — must be observed failing:\n- t\n")
         # `small` means behaviour-preserving, which still has to name the pins it
         # preserves — the earlier fixture declared `none` in the new-behaviour lane
@@ -700,7 +750,7 @@ class CheckPlanTests(unittest.TestCase):
         self.assertIn("assumptions", r.stdout)
 
     def test_the_categorical_line_is_not_counted_as_a_duplicate_risk_section(self):
-        """`Risk: ... · contract: ... · hold-out: ...` is matched by the `risk level`
+        """`Risk: ... · contract: ... · red pause: skip · hold-out: ...` is matched by the `risk level`
         pattern too, because that pattern makes `level` optional on purpose. Every
         correct plan has both lines, so counting it would fail every plan."""
         r = run(FULL_PLAN)
@@ -900,7 +950,7 @@ class ComposedCheckerTests(unittest.TestCase):
         import subprocess, sys, os, tempfile
         plan = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8")
         plan.write("A summary line long enough to read as the decision summary.\n"
-                   "Risk: normal · contract: none · ADR: none · hold-out: not required\n"
+                   "Risk: normal · contract: none · ADR: none · red pause: skip · hold-out: not required\n"
                    "Risk level: normal.\n"
                    "Nothing here is blocking and I am proceeding unless something breaks.\n"
                    "Existing behavior: x\nAssumptions: none\n"

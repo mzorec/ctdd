@@ -13,7 +13,7 @@ Load this file only at `SKILL.md` step 5.1.
 
 ```markdown
 <Decision summary: one to three sentences naming the proposed direction, the highest risk, and every unresolved decision.>
-Risk: <normal | high-risk> · contract: <none | additive | breaking> · ADR: <none | NNNN required> · hold-out: <not required | required: 1-3 sealed tests from human>
+Risk: <normal | high-risk> · contract: <none | additive | breaking> · ADR: <none | NNNN required> · red pause: <pause | skip> · hold-out: <not required | required: 1-3 sealed tests from human>
 Business requirement:
 Intended behavior:
 
@@ -22,6 +22,9 @@ Proceeding unless you object
 Decisions confirmed in session (conditional: include only when a BLOCKING question was answered before approval)
 Risk level: <normal | high-risk> - <one-line reason>
 Existing behavior
+Behavior flow (conditional: omitted at the small tier)
+Current flow (conditional: with Behavior flow)
+Flow after change (conditional: with Behavior flow)
 Known gaps (conditional: omitted at the small or medium tier)
 Assumptions (conditional: omitted at the small tier)
 Uncovered or ambiguous (conditional: omitted at the small tier)
@@ -47,17 +50,15 @@ Name the plan file `<TICKET>-<kebab-slug>.md`, or `<YYYY-MM-DD>-<kebab-slug>.md`
 
 ## Gate-visible sections
 
-The plan file is the complete artifact; the terminal is where the human decides. The summary and the `Hold-out` block go to `stdout` in full at step 6.1.
-
-The hold-out is printed in full because it is the one item asking the human to leave the terminal and do something.
+The summary and the `Hold-out` block go to `stdout` in full at step 6.1.
 
 The summary names — one line each, not the sections — every decision the human may refuse other than the `Hold-out`, printed in full above: `Business requirement`, `Assumptions`, `Uncovered or ambiguous`, `Known gaps`, `NFR budgets`, `Residual risk`, and an `ADR draft` when one exists. Offer those sections; print them when asked.
 
 ## Plan tiers
 
-`check-plan.py` requires a different section set per tier and names the tier it applied on every run. The tier is **derived, never written**: `small` needs `contract: none`, `risk: normal`, `hold-out: not required`, `New-behavior tests: none`, and at least one named test in the other lane; any contract delta, `high-risk`, a required hold-out, or **no named test in either lane** is `large`; everything else is `medium`. So `small` cannot be claimed over a contract delta the way `trivial` was once claimed over an absent diff.
+`check-plan.py` requires a different section set per tier and names the tier it applied on every run. The tier is **derived, never written**: `small` needs `contract: none`, `risk: normal`, `hold-out: not required`, `New-behavior tests: none`, and at least one named test in the other lane; any contract delta, `high-risk`, a required hold-out, or **no named test in either lane** is `large`; everything else is `medium`.
 
-Tiers shrink **documentation**, never **evidence**. Both test headings, the risk line, the verification commands, and the approval gate are required at every tier — a tier that could drop one would rebuild the triviality hole under a friendlier name.
+Tiers shrink **documentation**, never **evidence**. Both test headings, the risk line, the verification commands, and the approval gate are required at every tier.
 
 ## Field rules
 
@@ -68,14 +69,17 @@ The complete example below is the operative instruction: anything it demonstrate
 3. Put each changed existing assertion in `Changed existing assertions` with its old and new forms.
 4. Cover every applicable row of **Required case coverage** below, and record every row the change does not reach under `Case coverage not reached` as `<case> — n/a — <reason>`; never leave a row unaddressed.
 5. Require a hold-out for money, authorization, state-machine, rounding, inclusivity, timezone, fee-treatment, or other load-bearing boundary semantics.
-6. Present a required hold-out as a decision, not a notice: name the 1–3 assertions to write, each an observable input and *which* output to assert — never the value, which the human computes (rule 8); give `write` and `decline` with their consequences; recommend one with a reason. "Write some sealed tests" has been declined six times; a named assertion with a number to compute is a five-minute task. Contents stay outside the agent-readable tree.
+6. Present a required hold-out as a decision, not a notice: name the 1–3 assertions to write, each an observable input and *which* output to assert — never the value, which the human computes (rule 8); give `write` and `decline` with their consequences; recommend one with a reason. Contents stay outside the agent-readable tree.
 7. Use `result: pending` until the required hold-out runs. Before the packet, replace it with `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; `declined by human` is a waiver, not a neutral outcome — record it as one and expect the review to report it; unavailability is never a decline.
 8. When the human declines a required hold-out, list the load-bearing expected values and ask them to recompute each one by hand from the business requirement, never by reading the code that produced it. Offer it as the fallback, never as the equivalent, and do not label it a hold-out result.
 9. Use exact file paths; never write wildcards, directories, `(+ tests)`, `TBD`, or unnamed future files.
-10. Pin the tests that already assert a decision recorded by any ADR this change touches; a decision no test protects is a decision this change can silently reverse.
-11. Capture the human's stated direction, not a competing one; a decision handed back unresolved returns to `BLOCKING` with their version as the default. Record every resolved BLOCKING answer under `Decisions confirmed in session` and replace the question with `none — answered before approval`; the section is required, so removing it fails the re-run, and the answer must be findable without the chat. Re-run the checker after every plan edit; re-present when the answer changes any other presented decision.
+10. Pin the tests that already assert a decision recorded by any ADR this change touches.
+11. Capture the human's stated direction, not a competing one; a decision handed back unresolved returns to `BLOCKING` with their version as the default. Record every resolved BLOCKING answer under `Decisions confirmed in session` and replace the question with `none — answered before approval`; the answer must be findable without the chat. Re-run the checker after every plan edit; re-present when the answer changes any other presented decision.
+12. `Behavior flow` is two blocks in order, `Current flow` then `Flow after change`: one numbered walk per touched entry point, execution order, full sentences, a step per observable stage, no step ceiling. Derive `Current flow` from the reading `Existing behavior` cites, never from the implementation; write `Current flow: none — greenfield` after a greenfield step 2. That section owns *where* behavior is pinned, this one owns *what happens*, and `Implementation slices` owns the code delta: name no function or file here, and enumerate no boundary values — the test lanes own those.
 
-`ctdd-tests` owns test naming, altitude, assertion form, and what may not be asserted. Do not restate them here: two copies of a test rule drift, and the one in this file is the copy nobody checks.
+13. Set the red pause: `pause` stops after step 7 verifies the evidence, prints the pre-implementation diff and intended changes, and waits; `skip` implements at once. Draft `pause` at the large tier and `skip` at small; the human flips it at the gate. The field is required on the line, and the tier never reads it.
+
+`ctdd-tests` owns test naming, altitude, assertion form, and what may not be asserted. Do not restate them here.
 
 ## Required case coverage
 
@@ -93,7 +97,7 @@ Name the tests here; `ctdd-tests` owns how each one is written.
 | Side effects | The operation emits, publishes, or writes | Exactly the required effects and none of the forbidden ones | Both | Always |
 | Legacy behavior | Existing behavior must survive | Same observable result before and after | Preservation | Always |
 
-Add a row of your own for concurrency, idempotency, duplicate delivery, persistence, serialization, or cancellation when the change touches one; the seven above are the ones that recur, not the whole world.
+Add a row of your own for concurrency, idempotency, duplicate delivery, persistence, serialization, or cancellation when the change touches one.
 
 ## Complete example
 
@@ -101,7 +105,7 @@ Request: `Add partial capture to the payments service.`
 
 ```markdown
 One capture below the authorized amount; over-capture still rejected. BLOCKING: the remainder's hold lifetime. Assumed: it releases at once. Gap: `settlement-batch` unpinned. Not reached: authorization. NFR: none. Residual: the expiry path rides on the hold-out. No ADR.
-Risk: normal · contract: additive · ADR: none · hold-out: required: 2 sealed tests from human
+Risk: normal · contract: additive · ADR: none · red pause: pause · hold-out: required: 2 sealed tests from human
 Business requirement: The merchant is allowed one capture below the authorized amount.
 Intended behavior: `POST /payments/{id}/capture` accepts `0 < amount <= authorizedAmount`, moves the payment to `CAPTURED`, and rejects any later capture.
 
@@ -117,6 +121,20 @@ Risk level: normal — one service and one additive rule change on a money path.
 Existing behavior
 - `payments/contract/openapi.yaml` — `POST /payments/{id}/capture`: requires capture amount equal to the authorized amount.
 - `tests/payments/CaptureTests.cs::capture_fails_when_amount_exceeds_authorized_amount`: rejects over-capture.
+
+Behavior flow
+Current flow
+1. The merchant calls `POST /payments/{id}/capture` with an amount.
+2. The amount is accepted only when it equals the authorized amount exactly; anything else is rejected with no state change.
+3. On success the payment moves `AUTHORIZED` to `CAPTURED` and one `PaymentCaptured` is published.
+Flow after change
+1. (unchanged) The merchant calls `POST /payments/{id}/capture` with an amount.
+2. (changed) Validation accepts `0 < amount <= authorizedAmount`; before, only exact equality was accepted.
+3. (changed) On success the remainder is released — its hold lifetime is the BLOCKING question — and the one `PaymentCaptured` now carries both amounts.
+4. (new) A later capture, including of the released remainder, returns `409` with no state change and no second event.
+Unchanged adjacent paths
+- Zero, negative, and over-authorized amounts stay rejected; full capture at the exact amount stays accepted.
+
 Known gaps
 - `settlement-batch` has no consumer contract; only `checkout-web` is pinned.
 
