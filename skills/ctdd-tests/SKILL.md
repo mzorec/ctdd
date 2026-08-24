@@ -59,15 +59,16 @@ Do not start implementation from this skill.
    - Keep separate tests for distinct rules. Merge cases only when setup, action, observable rule, and side-effect assertions are identical; retain named boundary and error inputs as data rows.
 4. **Choose evidence direction. Precondition:** step 3 has no unresolved intent conflict.
    - Mark new behavior and bug regressions `must fail before implementation`.
-   - Read each failure's text, not just its verdict: a missing fixture, a typo or an unrelated defect is not the reason the test names. A bug-fix regression test is the spec of the fix and stays as long as that behavior is required; deleting it later removes the spec.
+   - Read each failure's text, not just its verdict: a missing fixture, a typo or an unrelated defect is not the reason the test names. A bug-fix regression test is the spec of the fix and stays as long as that behavior is required.
    - Mark confirmed preservation pins and `currently_*` characterization observations `must pass before refactor`.
 5. **Write tests only. Precondition:** step 4 assigned every test one evidence direction, or the craft lane entered with the pre-edit verdict recorded.
    - Write each test at the public boundary in the discovered framework and exact target path.
+   - Assert nothing whose only source is an artifact this change writes: reading configuration, constants, or annotations back against the diff's own literals restates the diff — red then green by construction, observing nothing the system does. Assert the behavior the value produces, or record `New-behavior tests: none`; parse and boot failures already fail any fixture that boots the host.
    - Name each test as an observable requirement; prefix only unconfirmed observations with `currently_`.
 6. **Run before implementation or refactor. Precondition:** only the declared test artifacts changed.
    - Run the exact focused command from step 2 and read the complete output.
    - Under an approved `ctdd-change` plan, save per-test output to its exact `.redstate.log` or `.pinstate.log` path and run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" <log> --tests-from <plan-path>` with the matching evidence direction, adding `--expect-pass` for pins. `python3` on PATH is a dead stub on many Windows installs; fall back to `py -3` or the full `python.exe` path.
-   - Standalone: save the run to a file anyway and verify each named test with `--test <name>`. Evidence you did not capture is evidence you cannot show.
+   - Standalone: save the run to a file anyway and verify each named test with `--test <name>`.
 7. **Resolve the result. Precondition:** step 6 produced executable test output.
    - Preserve a new-behavior test that fails for the planned observable reason.
    - Preserve a preservation pin or characterization observation that passes, and a craft edit whose verdict is unchanged: those are the required results of their lanes, not blocked states.
@@ -107,11 +108,11 @@ Render with step 2 conventions and path; carry an exact code and body into the p
 ## Test review
 Entered from the review lane above, or from `ctdd-review` for the test portion of a diff. For each test, report:
 1. **Altitude:** rewrite when a behavior-preserving refactor breaks it.
-2. **Name:** rename mechanisms into observable intent.
+2. **Name:** rename mechanisms into observable intent, and names claiming more than their assertion observes into what it checks.
 3. **Pinning power:** identify missing positive, negative, boundary, error, and forbidden-side-effect assertions, and cases asserted exhaustively at two boundaries at once.
 4. **No weakening:** flag any relaxed, deleted, skipped, or reclassified expectation as a spec amendment. An assertion moved to a smaller boundary is not weakened — but only when the destination test is named and observed passing; "I moved it" without a named destination is a deletion.
 5. **Interaction coupling:** replace internal interaction verdicts with observable outcomes; retain interactions that are themselves contractual; state **what determines the verdict**.
-6. **Determinism:** a flaky spec reads as an unreliable spec, to the agent and the human, so retrying around it is never the fix. State how many consecutive passes settle it and show them; one run cannot tell a fixed flake from a lucky pass. **Name the uncontrolled input**: clock, timezone, ID, random value, sleep, retry, shared fixture, external dependency, or order dependency.
+6. **Determinism:** a flaky spec reads as an unreliable spec, so retrying around it is never the fix. State how many consecutive passes settle it and show them. **Name the uncontrolled input**: clock, timezone, ID, random value, sleep, retry, shared fixture, external dependency, or order dependency.
 7. **Contract alignment:** stop on disagreement between test, API/consumer contract, and approved intent.
 8. **Artifact fit:** verify exact path, framework, naming, fixture, and assertion conventions; a mismatch is `rename` or `rewrite-altitude`, never a silent pass.
 Summarize each as keep / rename / rewrite-altitude / de-flake / add-coverage / reduce-interaction-coupling / contract-mismatch / spec-amendment, each with `file:start-end`, an evidence class and a one-line title: `ctdd-review` publishes all five parts and cannot synthesise what it was not given. When `ctdd-review` entered this section, map each verdict to its category: `contract-mismatch` and `spec-amendment` to `spec-change`, `add-coverage` to `needs-tests`, the rest to `test-quality`. `keep` is a non-finding and is never emitted. Emit `rename` only where the review's own bar is met — a triggering input and an observable consequence; a naming preference has neither, and that skill omits preferences.

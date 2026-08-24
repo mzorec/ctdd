@@ -511,7 +511,15 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # and review-lane clauses were written as prose where a clause would do.
     # At 4.0 chars/token this is ~4,000 tokens, 80% of Anthropic's ~5,000-token
     # guidance; MAX_PROBE_OFFSET_CHARS still owns what survives compaction.
-    BODY_LIMIT_CHARS = 16_000
+    # 16,000 -> 16,400 in v0.42.0: the diff-echo prohibition. A pilot change
+    # shipped CustomerProfileSettingsTests reading appsettings values back
+    # against the diff's own literals under a behavior-claiming name
+    # (IsBoundedByTheConfiguredTimeouts) — red-then-green by construction,
+    # observing nothing, implying a guarantee the residual risk had already
+    # disclaimed. The write-step rule and the reverse naming rule cost ~470;
+    # four rationale clauses paid ~175; the remainder is raised against a
+    # kept specimen, the same bar as the three raises above.
+    BODY_LIMIT_CHARS = 16_400
 
     # Kept as the early warning it always was, now against the proxy rather than
     # as the body limit itself.

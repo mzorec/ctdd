@@ -86,6 +86,13 @@ Each is already written into `ctdd-in-depth.md` tagged *(Proposed — not yet bu
 ---
 
 
+### ADR qualification test — Options as a required, three-way-fillable section
+**The problem.** The pilot reports a feeling that agents write ADRs that are not decisions — plans restated with a Status line. No specimen is on record yet.
+**What (drafted in full, ready to ship):** `## Options` becomes a required template section between Context and Decision, fillable three ways — a losing alternative (`keep current structure` counts), or `None viable — <constraint>` with its revisit condition, because constraints expire and a forced choice is still a decision. Rule 1 gains the test: when Options can name no loser, no rejected null option, and no forcing constraint, there is nothing to record — declare `ADR: none`. Rule 14 broadens to name restated plans and implementation details as the other fakes.
+**Trigger:** a specimen. Keep the next ADR the pilot judges fake; test it against this draft. Ship the day one would have been caught; record the diagnosis as wrong the day one passes.
+**Why not now:** built on a feeling — the plausible-story shape this repo rejects — and forced fields invite ritual filling (findings #24/#27): a manufactured loser launders a fake with fake tradeoffs, which is worse than the bare fake the reviewer's adequacy line already names.
+**Cost:** ~540 chars in adr-rules.md, ~180 in the template, both outside the route ratchet.
+
 ## Tier 3 — integration ideas, coherent but unproven
 
 ### SDD-style requirements decomposition, upstream of the plan gate (weakness: creation vs. preservation)
