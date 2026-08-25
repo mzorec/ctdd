@@ -6,7 +6,12 @@
 
 ## Context
 
-<Describe the situation, constraints, and considered options in two to five sentences.>
+<Describe the situation and constraints in two to five sentences.>
+
+## Options
+
+- **<losing option>** — <one line: why it lost>
+- *(forced choice)* **None viable** — <the constraint; revisit if it lifts>
 
 ## Decision
 

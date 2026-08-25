@@ -519,6 +519,7 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # disclaimed. The write-step rule and the reverse naming rule cost ~470;
     # four rationale clauses paid ~175; the remainder is raised against a
     # kept specimen, the same bar as the three raises above.
+    # Pilot intent (backlog.md, the owner's override) also clears the bar.
     BODY_LIMIT_CHARS = 16_400
 
     # Kept as the early warning it always was, now against the proxy rather than
@@ -652,6 +653,7 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # backlog before the space existed. Reference discounting was rejected:
     # these files load at least once per plan-gated change, so route total
     # approximates real context cost wherever the text lives.
+    # Pilot intent (backlog.md, the owner's override) also clears the bar.
     MAX_PLAN_GATED_METHODOLOGY_CHARS = 47000
     """ctdd-tests keeps craft work (de-flaking, altitude, renaming) out of the
     plan gate, while every consumer of the diff — this script, the hook, and

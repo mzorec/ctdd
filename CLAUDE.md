@@ -50,3 +50,7 @@ Runtime changes wait for **pilot data** and for the human's explicit go-ahead �
 ## Scripts note
 
 Plain Python 3, no deps except PyYAML (`gen-authz-matrix.py` only). On Windows the docs say `python3`; use `python`/`py` or alias it. `.gitattributes` pins LF — keep it, or shebang'd scripts break on CRLF checkouts.
+
+## Owner requests
+
+A plain directive from the repository owner is `pilot intent` — see the owner's override in `docs/backlog.md`. Build it, record it intent-born with the reason, question only its shape, and counsel in one line beside the work.

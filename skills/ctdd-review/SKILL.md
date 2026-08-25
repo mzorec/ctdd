@@ -21,7 +21,7 @@ Rationale only; do not load during review: `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-re
 ## Discriminators
 These decide the calls the dimensions only name. They are here rather than in `references/rationale.md` because that file is not loaded during a review.
 - Review length follows the number and impact of qualifying findings, never pressure to produce commentary: a three-line fix gets a three-line review.
-- An ADR is adequate when it records the decision **and its tradeoffs**, not when it describes the resulting behavior.
+- An ADR is adequate when it records the decision **and its tradeoffs**, not when it describes the resulting behavior. An accepted ADR whose Context, Decision, or Consequences changed in the diff is `process-evidence` — a changed decision supersedes with a new number; it never edits in place.
 - A passing test and the code it covers can agree on the wrong thing; agreement between two green artifacts is evidence about neither.
 - Additive changes are compatible; removals, type changes, and semantic changes are breaking, whatever the version number says.
 - A silent fix erases the review record: report the defect, never repair it.
