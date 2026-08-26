@@ -101,7 +101,7 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
    4. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <diff-base> --plan <plan-path>`.
    5. Act on what 8.4 reported; in the trivial lane take only 8.3's pin re-run and 8.6 as `n/a`.
    6. Stop and reopen the gate when the approved specification is wrong, when 8.5 exceeds the plan, or when requested review feedback falls outside approved scope (inside scope re-enters at the lowest invalidated step, no new plan): amend the plan file with the old and new form, re-run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" <plan-path> --approval <approval-path>`, return to step 6, and resume only after that reports the new revision approved.
-   7. With `red pause: phased`, implement one group at a time; stop after each and read `references/execution.md`.
+   7. With `red pause: phased`, implement one phase at a time; stop after each and read `references/execution.md`.
 9. **Produce the review packet.** Enter: step 8 produced current-turn results. Emit: Review packet. Stop: 9.1 when a plan exists. Changed test expectations are changed requirements and contract diffs are boundary changes: the packet presents them as the spec, not as code.
    1. Stop for the required sealed hold-out result from the named runner, asking write / decline as a Decision prompt. Resolve it to `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; only the human declines *or* confirms the runner is unavailable, so `NOT RUN` needs the same prompt a decline does; `failed` blocks.
    2. Set Back-translation to one sentence derived from the changed tests alone, beside the business requirement so the human compares prose to prose, or to `n/a — no test diff`.

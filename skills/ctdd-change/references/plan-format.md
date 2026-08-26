@@ -52,7 +52,7 @@ Name the plan file `<TICKET>-<kebab-slug>.md`, or `<YYYY-MM-DD>-<kebab-slug>.md`
 
 The summary and the `Hold-out` block go to `stdout` in full at step 6.1.
 
-The summary names — one line each, not the sections — every decision the human may refuse other than the `Hold-out`, printed in full above: `Business requirement`, `Assumptions`, `Uncovered or ambiguous`, `Known gaps`, `NFR budgets`, `Residual risk`, and an `ADR draft` when one exists. Offer those sections; print them when asked.
+The summary names — one line each, not the sections — every decision the human may refuse other than the `Hold-out`: `Business requirement`, `Assumptions`, `Uncovered or ambiguous`, `Known gaps`, `NFR budgets`, `Residual risk`, and an `ADR draft` when one exists. One line, one decision, refusable alone — never lettered groups or paragraphs bundling several. Offer those sections; print them when asked.
 
 ## Plan tiers
 
@@ -77,7 +77,7 @@ The complete example below is the operative instruction: anything it demonstrate
 11. Capture the human's stated direction, not a competing one; a decision handed back unresolved returns to `BLOCKING` with their version as the default. Record every resolved BLOCKING answer under `Decisions confirmed in session` and replace the question with `none — answered before approval`; the answer must be findable without the chat. Re-run the checker after every plan edit; re-present when the answer changes any other presented decision.
 12. `Behavior flow` is two blocks in order, `Current flow` then `Flow after change`: one numbered walk per touched entry point, execution order, full sentences, a step per observable stage, no step ceiling. Derive `Current flow` from the reading `Existing behavior` cites, never from the implementation; write `Current flow: none — greenfield` after a greenfield step 2. That section owns *where* behavior is pinned, this one owns *what happens*, and `Implementation slices` owns the code delta: name no function or file here, and enumerate no boundary values — the test lanes own those.
 
-13. Set the red pause: `pause` stops after step 7, prints the pre-implementation diff and intended changes, and waits; `phased` adds a stop after each implementation group with its diff and evidence; `skip` implements at once. Draft `skip` at small, `pause` at medium, and `phased` at large or when the planned files form three or more groups; the human flips it at the gate. The field is required on the line, and the tier never reads it.
+13. Set the red pause: `pause` stops after step 7, prints the pre-implementation diff and intended changes, and waits; `phased` adds a stop after each implementation phase with its diff and evidence; `skip` implements at once. Draft `skip` at small, `pause` at medium, and `phased` at large or when the planned files form three or more phases; the human flips it at the gate. The field is required on the line, and the tier never reads it.
 
 `ctdd-tests` owns test naming, altitude, assertion form, and what may not be asserted. Do not restate them here.
 

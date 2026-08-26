@@ -654,7 +654,21 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # these files load at least once per plan-gated change, so route total
     # approximates real context cost wherever the text lives.
     # Pilot intent (backlog.md, the owner's override) also clears the bar.
-    MAX_PLAN_GATED_METHODOLOGY_CHARS = 47000
+    # 47000 -> 47200 in v0.42.0, intent-born: the pilot compared two real
+    # pause presentations and chose the wide scannable table over the
+    # flow-ordered snippet blocks, phases as its headings. Owner's
+    # override (backlog.md) — no specimen required beyond the comparison.
+    # 47200 -> 47300 in v0.42.0, intent-born: the decision summary came back
+    # from a real gate bundled into lettered groups A-D, several decisions
+    # per bullet, which coarsens refusal to all-or-nothing. Owner's
+    # override. Third presentation fix in one release on a route with no
+    # slack: the filed steps-7-10 refactor is now overdue, not optional.
+    # 47300 -> 47400 in v0.42.0, intent-born: two real surfaces came back
+    # as label-prefixed vertical blocks plus a thin second phase table,
+    # losing the descriptive column. The row now fixes the shape exactly:
+    # two columns, full sentences, phases as headings over that same
+    # table. Owner's override.
+    MAX_PLAN_GATED_METHODOLOGY_CHARS = 47400
     """ctdd-tests keeps craft work (de-flaking, altitude, renaming) out of the
     plan gate, while every consumer of the diff — this script, the hook, and
     ctdd-review — reads any modified test as a changed requirement. Both are
