@@ -1120,6 +1120,149 @@ class CrossSkillAgreementTests(unittest.TestCase):
         self.assertIn("fh.read(200_000)", src)
         self.assertRegex(hook, r"read\(200")
 
+    def test_supersession_stays_flat_and_its_step_citation_cannot_rot(self):
+        """Rule 16 is the whole supersession protocol and nothing held any of it.
+        Asked from real use whether a superseding ADR should be `0011-2` — the
+        rule says the opposite in as many words, *numbers stay flat and
+        chronological, never sub-numbered*, and it had been prose-only since the
+        clause was written. Three surfaces have to agree or the rule decides
+        nothing:
+
+        The Output contract's ADR path is the mechanism that makes flat numbering
+        real; a path template admitting a sub-number would contradict the rule
+        while both read fine alone. The template's `Status` enum is where an
+        `Amended` value would appear, which rule 16 forbids outright — *there is
+        no amended status*. And rule 16 cites the step that flips the old ADR's
+        status, which is the citation most likely to rot: steps renumber, and a
+        stale pointer still reads like an instruction. Parse the number the rule
+        actually cites rather than hardcoding it, so the assertion follows an
+        edited citation to whatever it now points at, and fails when that is no
+        longer the step writing ADR artifacts. That is the same defect class as
+        the `9.1 moved` locator repaired in this release."""
+        import re as _re
+        base = self._skills() / "ctdd-change"
+        rules = (base / "references" / "adr-rules.md").read_text(encoding="utf-8")
+        skill = (base / "SKILL.md").read_text(encoding="utf-8")
+        tmpl = (base / "references" / "adr-template.md").read_text(encoding="utf-8")
+
+        rule16 = [l for l in rules.split(chr(10)) if l.startswith("16.")]
+        self.assertEqual(len(rule16), 1, "adr-rules rule 16 moved or was renumbered")
+        rule16 = rule16[0]
+
+        # Flat numbering, and the path template that has to agree with it.
+        self.assertIn("never sub-numbered", rule16,
+                      "rule 16 no longer forbids sub-numbered supersession")
+        adr_row = [l for l in skill.split(chr(10)) if l.startswith("| ADR |")]
+        self.assertEqual(len(adr_row), 1, "the Output contract lost its ADR row")
+        self.assertIn("NNNN-<kebab-slug>.md", adr_row[0],
+                      "the declared ADR path no longer pins one flat number")
+
+        # Lineage lives in the title, which is why a sub-number is not needed.
+        self.assertIn("(supersedes NNNN)", rule16,
+                      "the superseding ADR no longer carries its lineage in the title")
+
+        # `There is no amended status` — the template is where one would appear.
+        status = [l for l in tmpl.split(chr(10)) if l.startswith("- **Status:**")]
+        self.assertEqual(len(status), 1, "the ADR template lost its Status field")
+        self.assertIn("Superseded by NNNN", status[0],
+                      "the template offers no superseded status for rule 16 to set")
+        self.assertNotIn("mended", status[0],
+                         "rule 16 says there is no amended status; the template "
+                         "offers one, so the two surfaces disagree")
+
+        # The citation that rots. Follow what the rule says, not what it said.
+        cited = _re.search(r"at step (\d+)\.(\d+)", rule16)
+        self.assertIsNotNone(cited, "rule 16 no longer cites the step that flips "
+                                    "the superseded status")
+        step, item = cited.group(1), cited.group(2)
+        # Structural, not textual. The first version asserted `"ADR" in line` and
+        # a probe walked straight through it: 2.1 says *read every ADR named by a
+        # marker*, so a citation moved to a pure read step still passed. A step
+        # header's `Emit:` list is what actually says an ADR is produced there,
+        # and it does not depend on any sub-item's wording.
+        header, items, cur = None, set(), None
+        for line in skill.split(chr(10)):
+            top = _re.match(r"^(\d+)\. \*\*", line)
+            if top:
+                cur = top.group(1)
+                if cur == step:
+                    header = line
+                continue
+            sub = _re.match(r"^\s+(\d+)\. ", line)
+            if sub and cur == step:
+                items.add(sub.group(1))
+        self.assertIsNotNone(header, f"rule 16 cites step {step}, which does not exist")
+        self.assertIn(item, items,
+                      f"rule 16 cites step {step}.{item}, which does not exist")
+        self.assertRegex(header, r"Emit:[^.]*\bADR\b",
+                         f"rule 16 flips the superseded status at step {step}.{item}, "
+                         f"but step {step} emits no ADR: {header.strip()[:90]!r}")
+
+    def test_every_question_moment_is_bound_to_the_prompt_form(self):
+        """Reported from real use, and a different defect from the sibling test
+        below: at step 2 the agent surfaced two design questions as prose with no
+        options to pick from. It was right to. Step 2's header says `Continue:
+        always` — it is specified never to stop — and its only output is the
+        reading on stdout, so nothing bound its questions to a form. Step 1.1
+        could not catch them either: it is scoped to *the business requirement*
+        and runs before the code is read, while the ambiguity that matters is
+        discovered by reading it. 0.3's `Stop and ask which base to use` was
+        unbound for the same reason.
+
+        Fixing step 2 alone would have left 0.3 and every future moment open, so
+        the binding is one order-free guardrail instead of a fourth per-site
+        repetition — which also paid for itself by retiring the three that
+        existed. It only reaches unbound moments while it stays in the
+        condition-triggered section: moved into a step it becomes ordered, and
+        step 2 stops being covered. That is what the section assertion holds."""
+        body = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
+        rails = body.split("## Unordered guardrails", 1)
+        self.assertEqual(len(rails), 2, "the unordered guardrails section is gone")
+        rails = rails[1].split(chr(10) + "## ", 1)[0]
+        self.assertIn("Ask every question as a Decision prompt", rails,
+                      "the binding rule is not in the order-free section, so a "
+                      "question moment outside a step is unbound again")
+        # The moments it exists to cover. If one is renamed away the rule may
+        # still read fine while covering nothing, which is how this shipped.
+        for site in ("Stop and ask which base to use",
+                     "Offer the reading for correction",
+                     "Stop for explicit approval",
+                     "Stop for the required sealed hold-out result"):
+            self.assertIn(site, body, f"the question moment {site!r} is gone; "
+                                      "confirm the binding rule still covers it")
+
+    def test_the_decision_prompt_has_no_unconditional_stdout_fallback(self):
+        """Reported from real use: the approval gate stopped offering options and
+        had to be answered by typing. Two defects stacked. The destination column
+        read `interactive question when offered, else stdout` since v0.24.0 — and
+        *when offered* is not a condition the agent can check, so the fallback was
+        always reachable and always defensible. v0.37.0 then added `Recommend
+        nothing at the step 6 approval gate` to a shape whose three clauses include
+        *one recommended with a one-line reason*, making the stated shape
+        unsatisfiable at exactly the gate. An unsatisfiable shape plus a sanctioned
+        exit resolves to prose on stdout.
+
+        The fix closes the exit rather than rewording the shape: with the
+        interactive form unconditional, the only way left to resolve the conflict
+        is to emit the options and omit the recommendation, which is the wanted
+        behavior. `none exists` is checkable where `offered` was not. Keep the two
+        assertions apart: the sibling test owns the recommendation exclusion, this
+        one owns the form, and 7.12's two pause rows delegate to the same row."""
+        body = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
+        row = [l for l in body.split(chr(10)) if l.startswith("| Decision prompt |")]
+        self.assertEqual(len(row), 1, "the Decision prompt row moved")
+        dest = row[0].split("|")[2].strip()
+        self.assertTrue(dest.startswith("interactive question"),
+                        f"the interactive form is no longer the destination: {dest!r}")
+        self.assertNotIn("when offered", dest,
+                         "`when offered` is not a condition the agent can check, so "
+                         "the stdout fallback becomes unconditional")
+        self.assertNotIn("else `stdout`", dest,
+                         "`else stdout` offers stdout as a peer alternative rather "
+                         "than a fallback conditional on a checkable absence")
+        self.assertIn("if none exists", dest,
+                      "stdout must stay conditional on a checkable absence")
+
     def test_the_approval_gate_asks_for_no_recommendation(self):
         """The Decision prompt row requires *one recommended with a one-line
         reason*, and 6.3 makes the approval gate a Decision prompt — with no
@@ -1210,8 +1353,10 @@ class CrossSkillAgreementTests(unittest.TestCase):
         the one mitigation a decline still carries. `plan-format` rule 6 already
         mandated write and decline only; 9.1 was the outlier."""
         body = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
-        line = [l for l in body.split("\n") if "sealed hold-out result" in l
-                and "Decision prompt" in l]
+        # Located by `sealed hold-out result` alone since v0.43.0: the per-site
+        # `as a Decision prompt` retired into one order-free guardrail, and
+        # this locator was silently carrying it as a second condition.
+        line = [l for l in body.split(chr(10)) if "sealed hold-out result" in l]
         self.assertEqual(len(line), 1, "9.1 moved")
         self.assertIn("write / decline", line[0])
         self.assertNotIn("defer", line[0])

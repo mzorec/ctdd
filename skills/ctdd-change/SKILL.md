@@ -19,6 +19,7 @@ In every command here and in every reference file: `python3` is a dead stub on m
 Do not infer an order among these condition-triggered rules.
 - Do not claim a test, build, gate, checker, or subagent result without a run completed and read in the current turn; inspect a subagent diff before accepting its result.
 - Treat the business requirement as the source of intent.
+- Ask every question as a Decision prompt, at any step.
 - Do not change uncovered behavior silently.
 - Name the tests that detect every behavior you claim to preserve.
 - Invoke `ctdd-tests` before creating, changing, renaming, or deleting any test file; never write a test file from this skill.
@@ -33,7 +34,7 @@ Do not infer an order among these condition-triggered rules.
 | Trivial-risk declaration | `stdout` and PR/MR description | `Risk: trivial — <reason>. Skipping the plan gate.` Emit only through step 3.6. |
 | Implementation plan | `${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.md`, and PR/MR description when it is ignored | Every section and field rule of `references/plan-format.md`, in the order that file displays. |
 | Plan pointer | PR/MR description when the plan dir is tracked | `CTDD-Plan: <plan-dir>/<name>.md` |
-| Decision prompt | interactive question when offered, else `stdout` | 2–4 exclusive options, one recommended with a one-line reason, free text always accepted. Recommend nothing at the step 6 approval gate or the 7.12 pause: your voice is excluded there. A selection is a message from the human and counts as an answer; a harness accepting a plan is not. |
+| Decision prompt | interactive question; `stdout` if none exists | 2–4 exclusive options, one recommended with a one-line reason, free text always accepted. Recommend nothing at the step 6 approval gate or the 7.12 pause: your voice is excluded there. A selection is a message from the human and counts as an answer; a harness accepting a plan is not. |
 | Gate presentation | `stdout` | `Plan: <path> (<tier>)`, the decision summary verbatim, the categorical `Risk:` line, then `Hold-out`, `Behavior flow`, `Known gaps`, `Assumptions` and `Uncovered or ambiguous` in full. The summary names every other decision the human may refuse, one line each. Then anything the human must act on. |
 | Approval record | `stdout` and `${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.approval.log` | `Approved by: <human message quoted>; plan: <plan-dir>/<name>.md@<checker revision>.` |
 | ADR | `<resolved ADR directory>/NNNN-<kebab-slug>.md` | `references/adr-template.md` rendered with Context, Decision, and Consequences. |
@@ -50,7 +51,7 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
    3. Stop and ask which base to use when the target branch is absent, disputed, or has no merge-base.
    4. Treat an intentional review diff as input, and stop and report unrelated target-file edits as contamination.
 1. **Confirm intent.** Enter: step 0 printed the Baseline statement. Emit: Intent statement. Stop: ambiguity.
-   1. Stop for an answer as a Decision prompt when the business requirement is ambiguous, and never proceed on an assumed answer.
+   1. Stop for an answer when the business requirement is ambiguous, and never proceed on an assumed answer.
 2. **Read the existing slice.** Enter: step 1 has an unambiguous requirement. Emit: Current-behavior reading. Continue: always.
    1. Read the relevant contract, tests, changed files, routes, messages, and domain terms, plus every ADR named by an `ADR-NNNN` marker in them.
    2. Derive current behavior from the contract and tests; use the implementation only for behavior neither states. Offer the reading for correction, never as ground truth.
@@ -78,7 +79,7 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
 6. **Gate.** Enter: step 5 exited `0`. Emit: Gate presentation, Approval record. Stop: mandatory, until 6.4 is satisfied.
    1. Print the Gate presentation outside a plan-mode approval surface. The plan file stays the complete artifact.
    2. Copy the canonical decision summary verbatim into any plan-mode surface, with its path.
-   3. Stop for explicit approval. Ask it as a Decision prompt: approve, approve with changes, reject. Amend the plan, re-run the checker and re-present on changes; stop on reject. Write no contract, test, ADR, or production file, and execute no later step, until 6.4 is satisfied.
+   3. Stop for explicit approval. Ask it: approve, approve with changes, reject. Amend the plan, re-run the checker and re-present on changes; stop on reject. Write no contract, test, ADR, or production file, and execute no later step, until 6.4 is satisfied.
    4. Require an affirmative message from the human approving this plan. Your own restatement, silence, a subagent verdict, a passing checker, and harness acceptance of a plan-mode surface are not approval.
    5. Treat approval as authorization to execute the plan file.
 7. **Apply approved artifacts and create test evidence.** Enter: step 6 printed the Approval record. Emit: contract, ADR, tests, pin-state logs, red-state log. Stop: 7.2, 7.7, 7.11, 7.12.
@@ -103,7 +104,7 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
    6. Stop and reopen the gate when the approved specification is wrong, when 8.5 exceeds the plan, or when requested review feedback falls outside approved scope (inside scope re-enters at the lowest invalidated step, no new plan): amend the plan file with the old and new form, re-run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" <plan-path> --approval <approval-path>`, return to step 6, and resume only after that reports the new revision approved.
    7. With `red pause: phased`, implement one phase at a time; stop after each and read `references/execution.md`.
 9. **Produce the review packet.** Enter: step 8 produced current-turn results. Emit: Review packet. Stop: 9.1 when a plan exists. Changed test expectations are changed requirements and contract diffs are boundary changes: the packet presents them as the spec, not as code.
-   1. Stop for the required sealed hold-out result from the named runner, asking write / decline as a Decision prompt. Resolve it to `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; only the human declines *or* confirms the runner is unavailable, so `NOT RUN` needs the same prompt a decline does; `failed` blocks.
+   1. Stop for the required sealed hold-out result from the named runner, asking write / decline. Resolve it to `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; only the human declines *or* confirms the runner is unavailable, so `NOT RUN` needs the same prompt a decline does; `failed` blocks.
    2. Set Back-translation to one sentence derived from the changed tests alone, beside the business requirement so the human compares prose to prose, or to `n/a — no test diff`.
    3. Read `references/execution.md` now even if read earlier; re-run its checkers and assemble its exact packet.
    4. Stop and hand the `ctdd-review` verdict to the human: print `git diff <diff-base> --stat`, name the final diff, and wait. Never load `ctdd-review` here, and never dispatch it yourself unless asked. When asked, record it in the packet's `Review:` field.
