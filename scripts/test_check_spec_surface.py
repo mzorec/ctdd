@@ -352,7 +352,19 @@ class ChangeSkillStructureTests(unittest.TestCase):
     # top, before any reference is loaded, which pushes everything after it down.
     # Still 1,400 chars inside the 15,000 compaction proxy — the ceiling is a
     # drift alarm, not the boundary, and three displacements were made first.
-    MAX_PROBE_OFFSET_CHARS = 13_700
+    # 13,700 -> 13,800 in v0.43.0, intent-born: the owner asked for `Behavior
+    # flow`, `Known gaps`, `Assumptions` and `Uncovered or ambiguous` printed in
+    # full at the gate, and naming that closed set in the always-loaded Output
+    # contract row costs 65 characters the body did not have. Checked first, per
+    # rule 9: this is the alarm, not the boundary — `test_load_bearing_rules_
+    # survive_conservative_compaction_proxy` still passes and the last probe sits
+    # at 13,752 of the 15,000 proxy, 1,248 chars of real margin. No displacement
+    # was taken: the two candidates were the summary-names echo, which the guard
+    # below records as a deliberate two-surface redundancy, and "anything the
+    # human must act on" at 36 chars, which is short of the 52 needed and would
+    # have been the cheapest-item deletion rule 9 forbids. Reversible: drop the
+    # four names back to a pointer and this returns under 13,700.
+    MAX_PROBE_OFFSET_CHARS = 13_800
 
     MUST_SURVIVE = {
             "no result claim without current-turn run": "Do not claim a test, build, gate, checker",
@@ -1154,10 +1166,18 @@ class CrossSkillAgreementTests(unittest.TestCase):
         statement the approver never saw."""
         fmt = (self._skills() / "ctdd-change" / "references"
                / "plan-format.md").read_text(encoding="utf-8")
-        line = [l for l in fmt.split("\n") if "the summary names" in l.lower()]
-        self.assertEqual(len(line), 1, "the gate-visible sentence moved")
+        sec = fmt.split("## Gate-visible sections", 1)[1].split("##", 1)[0]
+        # v0.43.0: reaching the gate now has two forms. `Assumptions` moved from
+        # named-in-one-line to printed-in-full, which is strictly more visible —
+        # so assert the property (the approver sees it) rather than the mechanism.
+        named = [l for l in sec.split(chr(10)) if "The summary names" in l]
+        in_full = [l for l in sec.split(chr(10)) if "go to `stdout` in full" in l]
+        self.assertEqual(len(named), 1, "the gate-visible sentence moved")
+        self.assertEqual(len(in_full), 1, "the printed-in-full sentence moved")
         for name in ("Business requirement", "Assumptions", "Residual risk"):
-            self.assertIn(f"`{name}`", line[0], f"{name} is not named at the gate")
+            self.assertTrue(
+                f"`{name}`" in named[0] or f"`{name}`" in in_full[0],
+                f"{name} neither prints at the gate nor is named there")
 
     def test_the_new_behaviour_handoff_is_not_a_deadlock(self):
         """`ctdd-change` 7.9 invokes `ctdd-tests` to write the new-behavior tests;
@@ -1232,11 +1252,23 @@ class CrossSkillAgreementTests(unittest.TestCase):
         summary; plan-format said the summary names *every* decision, which would
         include the one just printed. The Hold-out is the single exemption and
         both surfaces have to say so, or the agent has to guess which is right."""
+        import re as _re
         fmt = (self._skills() / "ctdd-change" / "references"
                / "plan-format.md").read_text(encoding="utf-8")
-        line = [l for l in fmt.split("\n") if "The summary names" in l]
+        sec = fmt.split("## Gate-visible sections", 1)[1].split("##", 1)[0]
+        line = [l for l in sec.split(chr(10)) if "The summary names" in l]
         self.assertEqual(len(line), 1, "the gate-visible sentence moved")
-        self.assertIn("other than the `Hold-out`", line[0])
+        # v0.43.0 grew the printed-in-full set from one to five, so naming the
+        # single exemption no longer states the rule. Assert the property the
+        # exemption existed for: the summary never re-names what already printed.
+        printed = [l for l in sec.split(chr(10)) if "go to `stdout` in full" in l]
+        self.assertEqual(len(printed), 1, "the printed-in-full sentence moved")
+        in_full = set(_re.findall(r"`([^`]+)`", printed[0].split("go to")[0]))
+        named = set(_re.findall(r"`([^`]+)`", line[0]))
+        self.assertTrue(in_full, "nothing is printed in full at the gate")
+        self.assertEqual(in_full & named, set(),
+                         f"the summary re-names what the gate already printed in "
+                         f"full: {sorted(in_full & named)}")
 
     def test_the_canonical_summary_names_every_refusable_decision(self):
         """The format requires the summary to name each decision the human may
@@ -1845,23 +1877,44 @@ class CrossSkillAgreementTests(unittest.TestCase):
         6.1 once said `print the complete plan verbatim` — unfollowable at 31,448
         chars, so agents compressed and the hold-out was the first thing lost. The
         fix then printed eight sections in full, which made the gate scale with the
-        plan and stop being a few-minute read. Now: summary plus the hold-out in
-        full, everything else named in one line and printed on request.
+        plan and stop being a few-minute read.
+
+        v0.43.0 reopened it, intent-born: the owner asked for `Behavior flow`,
+        `Known gaps`, `Assumptions` and `Uncovered or ambiguous` in full, so the
+        approver reads the reasoning at the gate instead of round-tripping for it.
+        Both failures above still stand as the bound — this is a *closed set of
+        four*, not a return to "print what is marked gate-visible", which is why
+        the set is asserted by equality below and adding a fifth fails. Three of
+        the four are bounded lists; `Behavior flow` is the one that scales, and it
+        is the one to watch. At the small tier all four are omitted by the format,
+        so the gate cost there is zero.
 
         The hold-out keeps its exemption because it is the one item asking the human
         to leave the terminal and do something, and it has been declined or deferred
         on seven consecutive changes."""
+        import re as _re
+        IN_FULL = {"Hold-out", "Behavior flow", "Known gaps", "Assumptions",
+                   "Uncovered or ambiguous"}
         skill = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("Gate presentation", skill)
-        self.assertIn("`Hold-out` block in full", skill)
-        self.assertNotIn("every section `plan-format.md` marks **gate-visible**, in full", skill)
+        row = [l for l in skill.split(chr(10)) if l.startswith("| Gate presentation")]
+        self.assertEqual(len(row), 1, "the Output contract lost its Gate presentation row")
+        for name in IN_FULL:
+            self.assertIn("`%s`" % name, row[0],
+                          f"the always-loaded row no longer names {name!r} as printed in full")
+        # A pointer to a growable set is what made the gate scale with the plan.
+        # The body names the closed set itself, so it cannot grow silently.
+        self.assertNotIn("marks **gate-visible**", row[0])
         fmt = (self._skills() / "ctdd-change" / "references"
                / "plan-format.md").read_text(encoding="utf-8")
         sec = fmt.split("## Gate-visible sections", 1)
         self.assertEqual(len(sec), 2, "plan-format.md lost the gate-visible section")
         listed = sec[1].split("##", 1)[0]
-        for name in ("Assumptions", "Uncovered or ambiguous", "Known gaps",
-                     "NFR budgets", "Residual risk", "ADR draft"):
+        in_full = listed.split("go to `stdout` in full", 1)[0]
+        self.assertEqual(set(_re.findall(r"`([^`]+)`", in_full)), IN_FULL,
+                         "the set printed in full at the gate changed; both recorded "
+                         "failures were caused by growing it")
+        for name in ("Business requirement", "NFR budgets", "Residual risk", "ADR draft"):
             self.assertIn(name, listed, f"the summary is no longer required to name {name!r}")
         self.assertIn("two readers", fmt)
         self.assertIn("approves from it alone", fmt)

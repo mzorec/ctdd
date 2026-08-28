@@ -53,9 +53,9 @@ Name the plan file `<TICKET>-<kebab-slug>.md`, or `<YYYY-MM-DD>-<kebab-slug>.md`
 
 ## Gate-visible sections
 
-The summary and the `Hold-out` block go to `stdout` in full at step 6.1.
+The summary, the `Hold-out` block, `Behavior flow`, `Known gaps`, `Assumptions` and `Uncovered or ambiguous` go to `stdout` in full at step 6.1.
 
-The summary names — one line each, not the sections — every decision the human may refuse other than the `Hold-out`: `Business requirement`, `Assumptions`, `Uncovered or ambiguous`, `Known gaps`, `NFR budgets`, `Residual risk`, and an `ADR draft` when one exists. One line, one decision, refusable alone — never lettered groups or paragraphs bundling several. Offer those sections; print them when asked.
+The summary names — one line each, not the sections — every remaining decision the human may refuse: `Business requirement`, `NFR budgets`, `Residual risk`, and an `ADR draft` when one exists. One line, one decision, refusable alone — never lettered groups or paragraphs bundling several. Offer those sections; print them when asked.
 
 ## Plan tiers
 
