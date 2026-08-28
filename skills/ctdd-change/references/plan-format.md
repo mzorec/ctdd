@@ -30,7 +30,10 @@ Assumptions (conditional: omitted at the small tier)
 Uncovered or ambiguous (conditional: omitted at the small tier)
 
 New-behavior tests
-- `<exact test name>` - path: `<path>`; case: <positive | negative | boundary | error path | authorization | side effect | legacy behavior>; <behavior>; expected pre-implementation failure: <what fails>.
+- `<exact test name>` — <positive | negative | boundary | error path | authorization | side effect | legacy behavior>
+  - covers: <behavior>.
+  - path: `<path>`.
+  - red: <expected pre-implementation failure>.
 Case coverage not reached (conditional: omitted at the small or medium tier)
 Preservation pins
 Changed existing assertions (conditional: include only when an existing assertion changes)
@@ -146,19 +149,39 @@ Uncovered or ambiguous
 - The released remainder's hold lifetime requires the BLOCKING answer.
 
 New-behavior tests
-- `capture_succeeds_when_amount_is_below_authorized` — path: `tests/payments/CaptureTests.cs`; case: positive, side effect; accepts `87.50` against `100.00`, returns `200`, and publishes exactly one `PaymentCaptured`; expected pre-implementation failure: current equality rule rejects the request.
-- `capture_succeeds_when_amount_is_one_cent` — path: `tests/payments/CaptureTests.cs`; case: boundary; accepts the smallest positive amount; expected pre-implementation failure: current equality rule rejects the request.
-- `capture_succeeds_when_amount_is_one_cent_below_authorized` — path: `tests/payments/CaptureTests.cs`; case: boundary; accepts the upper interior boundary; expected pre-implementation failure: current equality rule rejects the request.
-- `capture_fails_when_released_remainder_is_recaptured` — path: `tests/payments/CaptureTests.cs`; case: error path; starts from a fixture with a released remainder and returns `409` with no second `PaymentCaptured`; expected pre-implementation failure: no released-remainder guard exists.
+- `capture_succeeds_when_amount_is_below_authorized` — positive, side effect
+  - covers: accepts `87.50` against `100.00`, returns `200`, and publishes exactly one `PaymentCaptured`.
+  - path: `tests/payments/CaptureTests.cs`.
+  - red: current equality rule rejects the request.
+- `capture_succeeds_when_amount_is_one_cent` — boundary
+  - covers: accepts the smallest positive amount.
+  - path: `tests/payments/CaptureTests.cs`.
+  - red: current equality rule rejects the request.
+- `capture_succeeds_when_amount_is_one_cent_below_authorized` — boundary
+  - covers: accepts the upper interior boundary.
+  - path: `tests/payments/CaptureTests.cs`.
+  - red: current equality rule rejects the request.
+- `capture_fails_when_released_remainder_is_recaptured` — error path
+  - covers: starts from a fixture with a released remainder and returns `409` with no second `PaymentCaptured`.
+  - path: `tests/payments/CaptureTests.cs`.
+  - red: no released-remainder guard exists.
 
 Case coverage not reached
 - authorization — n/a — the capture policy on the route is unchanged.
 
 Preservation pins
-- `capture_succeeds_when_amount_equals_authorized_amount` — path: `tests/payments/CaptureTests.cs`; case: legacy behavior, side effect; full capture remains accepted before and after.
-- `capture_fails_when_amount_is_zero` — path: `tests/payments/CaptureTests.cs`; case: boundary; zero remains rejected before and after.
-- `capture_fails_when_amount_is_negative` — path: `tests/payments/CaptureTests.cs`; case: negative; negative amounts remain rejected before and after.
-- `capture_fails_when_amount_exceeds_authorized_amount` — path: `tests/payments/CaptureTests.cs`; case: boundary; over-capture remains rejected before and after.
+- `capture_succeeds_when_amount_equals_authorized_amount` — legacy behavior, side effect
+  - covers: full capture remains accepted before and after.
+  - path: `tests/payments/CaptureTests.cs`.
+- `capture_fails_when_amount_is_zero` — boundary
+  - covers: zero remains rejected before and after.
+  - path: `tests/payments/CaptureTests.cs`.
+- `capture_fails_when_amount_is_negative` — negative
+  - covers: negative amounts remain rejected before and after.
+  - path: `tests/payments/CaptureTests.cs`.
+- `capture_fails_when_amount_exceeds_authorized_amount` — boundary
+  - covers: over-capture remains rejected before and after.
+  - path: `tests/payments/CaptureTests.cs`.
 
 Contract changes
 - `payments/contract/openapi.yaml` — change the amount constraint to `0 < amount <= authorizedAmount`; compatibility: backward-compatible; consumers: checkout-web, settlement-batch; consumer pin: `pacts/checkout-web-payments.json` runs in CI — a break fails the build, not production; rollout: single deploy.

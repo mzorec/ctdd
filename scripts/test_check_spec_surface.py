@@ -1654,9 +1654,15 @@ class CrossSkillAgreementTests(unittest.TestCase):
                / "plan-format.md").read_text(encoding="utf-8")
         ex = _re.search(r"## Complete example.*?```markdown\n(.*?)```", fmt,
                         _re.S).group(1)
+        # v0.43.0 moved the category onto the first line of a multi-line bullet,
+        # so `case:\s*(...)` found nothing here and every row read as unaddressed.
+        # Backticks separate a test bullet from the `Case coverage not reached`
+        # rows. `test_check_plan.py` parses the same shape for the sibling check
+        # (categories cited vs categories defined) — keep the two regexes equal.
         cases = set()
-        for c in _re.findall(r"case:\s*([^;.\n]+)", ex):
-            cases |= {x.strip().lower() for x in c.split(",")}
+        for line in ex.split(chr(10)):
+            for found in _re.findall(r"^- `[^`]+` — (.+)$", line):
+                cases |= {x.strip().lower() for x in found.split(",")}
         waived = ex.lower().split("case coverage not reached", 1)[-1][:400]
         for row in ("positive", "negative", "boundary", "error path", "side effect"):
             self.assertTrue(row in cases or row in waived,

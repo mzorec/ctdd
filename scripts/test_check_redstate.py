@@ -446,6 +446,34 @@ class GoldenExampleTests(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_example_pin_names_are_all_extracted(self):
+        """The pin lane had no example-backed extraction test, so only the
+        new-behavior bullets were pinned to the parser. v0.43.0 reshaped both
+        lanes into multi-line bullets — pins to a three-line form with no `red:`
+        — and a reshape only half-covered is a reshape half-verified. `--tests
+        -from` reads the pin section only under `--expect-pass`, which is the
+        path this exercises."""
+        ex = self._example()
+        names = (
+            "capture_succeeds_when_amount_equals_authorized_amount",
+            "capture_fails_when_amount_is_zero",
+            "capture_fails_when_amount_is_negative",
+            "capture_fails_when_amount_exceeds_authorized_amount",
+        )
+        with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False,
+                                         encoding="utf-8") as fh:
+            fh.write(ex)
+            plan = fh.name
+        log = write("".join(f"  Passed {n} [1 ms]\n" for n in names))
+        try:
+            r = run(log, "--expect-pass", "--tests-from", plan)
+            self.assertEqual(r.returncode, 0,
+                             f"parser did not extract the example's own pins:\n{r.stdout}")
+            for n in names:
+                self.assertIn(n, r.stdout, f"pin {n} was silently dropped")
+        finally:
+            os.unlink(plan); os.unlink(log)
+
     def test_example_test_names_are_all_extracted(self):
         ex = self._example()
         names = (

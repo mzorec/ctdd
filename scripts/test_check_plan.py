@@ -195,11 +195,33 @@ class CheckPlanTests(unittest.TestCase):
         defined = {c.strip().lower()
                    for c in _re.findall(r"^\| ([A-Z][a-z ]+) \|", table, _re.M)} - {"case"}
         self.assertGreater(len(defined), 3, "coverage table no longer parses")
-        used = set(_re.findall(r"case: ([a-z ]+);", fmt[fmt.find("## Complete example"):]))
+        # v0.43.0 moved the category from a mid-line `case: <x>;` field onto the
+        # first line of a multi-line bullet, so the old `case: ([a-z ]+);` regex
+        # found nothing and `assertTrue(used)` caught it. That regex also carried
+        # a hole worth not reproducing: `[a-z ]` excludes commas, so every
+        # multi-category bullet (`case: positive, side effect;`) matched nothing
+        # and was never checked at all. Parse by position and split on commas,
+        # which covers them.
+        used = set()
+        lines = fmt[fmt.find("## Complete example"):].split(chr(10))
+        for head in ("New-behavior tests", "Preservation pins"):
+            self.assertIn(head, lines, f"the example lost its `{head}` section")
+            for line in lines[lines.index(head) + 1:]:
+                if not line.strip():
+                    break
+                # Backticks separate a test bullet from the `Case coverage not
+                # reached` rows (`- authorization — n/a — ...`), which would
+                # otherwise contribute `n/a` as a category.
+                for cases in _re.findall(r"^- `[^`]+` — (.+)$", line):
+                    used |= {c.strip().lower() for c in cases.split(",")}
         self.assertTrue(used, "the example names no case categories")
-        self.assertEqual(used - defined, set(),
+        # The table names the class (`Side effects`); a bullet names one instance
+        # of it (`side effect`), which is also the value the schema line lists.
+        trim = lambda s: s.rstrip("s")
+        unknown = {c for c in used if trim(c) not in {trim(d) for d in defined}}
+        self.assertEqual(unknown, set(),
                          f"the example cites categories the table does not define: "
-                         f"{sorted(used - defined)}")
+                         f"{sorted(unknown)}")
 
     def test_required_covers_every_unconditional_section_of_the_format(self):
         """v0.22.0 made seven more sections mandatory in plan-format.md and left
