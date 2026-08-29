@@ -855,21 +855,65 @@ class CrossSkillAgreementTests(unittest.TestCase):
         """Existence on disk is not shipping. `worked-change.md` existed locally,
         was never added, and every guard passed — the skill ordered a read of a
         file no clone had. Writing this guard reproduced the bug immediately:
-        `execution.md` was untracked too. Skipped outside a git checkout so the
-        suite still runs from an export."""
+        `execution.md` was untracked too. Third instance 2026-08-29:
+        `docs/companions-routing.md`, announced in the changelog, outside the
+        `skills/` glob this guard used to walk. Skipped outside a git checkout
+        so the suite still runs from an export."""
         import subprocess
         root = self._skills().parent
         probe = subprocess.run(["git", "-C", str(root), "rev-parse", "--git-dir"],
                                capture_output=True, text=True, encoding="utf-8", errors="replace")
         if probe.returncode != 0:
             self.skipTest("not a git checkout")
-        for ref in sorted(self._skills().glob("*/references/*.md")):
-            rel = ref.relative_to(root).as_posix()
+        def tracked(rel):
             r = subprocess.run(["git", "-C", str(root), "ls-files", "--error-unmatch", rel],
                                capture_output=True, text=True, encoding="utf-8", errors="replace")
-            self.assertEqual(r.returncode, 0,
-                             f"{rel} is bundled and loaded but not tracked; it will "
-                             f"be absent for everyone but its author")
+            return r.returncode == 0
+
+        for ref in sorted(self._skills().glob("*/references/*.md")):
+            rel = ref.relative_to(root).as_posix()
+            self.assertTrue(tracked(rel),
+                            f"{rel} is bundled and loaded but not tracked; it will "
+                            f"be absent for everyone but its author")
+
+        # Widened after a third instance: `docs/companions-routing.md` was
+        # announced in the changelog and never added, and this guard could not
+        # see it because it globbed `skills/` alone — a guard written for a class
+        # and applied to one directory. The rule that catches all three without
+        # false alarms is *named somewhere, and present here, so it must ship*.
+        # Paths that name a file in the reader's own repository (the worked
+        # example's test files, `<plan-dir>/<name>.md`) do not exist here, so
+        # they are silently and correctly ignored.
+        # Extraction deliberately does not key on backticks. Pairing ``…`` spans
+        # across a document that also contains fenced blocks silently offsets
+        # every span after the first fence, and the first attempt here returned
+        # 834 spans from CHANGELOG.md containing not one real path. `is_file()`
+        # below is what prevents false positives, so the markup is not needed:
+        # a path naming a file in the reader's own repository (the worked
+        # example's test files, `<plan-dir>/<name>.md`) does not exist here and
+        # is silently and correctly ignored.
+        named = set()
+        candidate = re.compile(
+            r"[A-Za-z0-9_][\w./-]*\.(?:md|py|json|ya?ml|sh|txt|cfg|toml)\b")
+        sources = [root / "CHANGELOG.md", root / "README.md"]
+        sources += sorted((root / "docs").glob("*.md"))
+        sources += sorted(self._skills().glob("*/SKILL.md"))
+        sources += sorted(self._skills().glob("*/references/*.md"))
+        for src in sources:
+            if not src.exists():
+                continue
+            for hit in candidate.findall(src.read_text(encoding="utf-8")):
+                if (root / hit).is_file():
+                    named.add(hit)
+        self.assertGreaterEqual(
+            len(named), 6,
+            f"path extraction found only {sorted(named)}; the widened check would "
+            "pass vacuously")
+        for rel in sorted(named):
+            self.assertTrue(tracked(rel),
+                            f"{rel} is named in a shipped document and exists here, "
+                            f"but is not tracked; a fresh clone gets the reference "
+                            f"and not the file")
 
     def test_every_script_reference_is_anchored_to_the_plugin_root(self):
         """The scripts live in Claude Code's plugin directory, not the repository
@@ -1119,6 +1163,92 @@ class CrossSkillAgreementTests(unittest.TestCase):
                 / "spec-edit-guard.py").read_text(encoding="utf-8")
         self.assertIn("fh.read(200_000)", src)
         self.assertRegex(hook, r"read\(200")
+
+    def test_the_pause_row_fires_for_every_value_that_stops_at_712(self):
+        """Reported from real use: a `phased` plan stopped at 7.12 and improvised
+        the presentation in prose — no `Flow | File | Intended change` table, so
+        the pause never said what would be implemented. 7.12 stops for every value
+        that is not `skip`, but the row carrying the whole presentation triggered
+        on the literal `red pause: pause`, so a `phased` plan matched no row at
+        all: the sibling row wants *a phase's implementation is complete*, and at
+        the initial stop nothing is implemented. Worse, the one clause written for
+        that lane — *Under `phased`, follow it with the phase list* — lives inside
+        the row `phased` could not reach.
+
+        The trigger is now the same predicate 7.12 routes on, stated as the same
+        exclusion rather than an enumeration of the values that are not `skip`.
+        An enumeration is what rotted: it has to be revisited whenever a value is
+        added, and nothing would have caught the omission. Assert the coupling,
+        not the wording — 7.12's predicate and the row's must name the same
+        excluded value, and the phased clause must still be in the row that
+        fires."""
+        import re as _re
+        skill = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
+        ex = (self._skills() / "ctdd-change" / "references"
+              / "execution.md").read_text(encoding="utf-8")
+
+        stop = [l for l in skill.split(chr(10)) if "12. Stop unless" in l]
+        self.assertEqual(len(stop), 1, "7.12 moved")
+        self.assertIn("`red pause: skip`", stop[0],
+                      "7.12 no longer routes on the skip exclusion")
+
+        rows = [l for l in ex.split(chr(10))
+                if l.startswith("|") and "Intended change" in l]
+        self.assertEqual(len(rows), 1, "the pause presentation row moved")
+        trigger = rows[0].split("|")[1]
+        self.assertIn("not `red pause: skip`", trigger,
+                      "the pause row triggers on something other than 7.12's own "
+                      "exclusion, so a value that stops at 7.12 can match no row")
+        # An enumeration here is the defect, not a stylistic choice.
+        for value in ("`red pause: pause`", "`red pause: phased`"):
+            self.assertNotIn(value, trigger,
+                             f"the trigger enumerates {value} instead of excluding "
+                             "`skip`; a value added later would match no row")
+        self.assertIn("Under `phased`", rows[0],
+                      "the phase-list clause is no longer in the row that fires")
+
+        # Disjointness. Both rows once matched at a phase checkpoint: the line is
+        # still not `skip` and step 7's evidence is still verified, so the initial
+        # presentation could reprint after every phase. Each row now names the
+        # breakpoint it is reached from, which is also how the agent arrives —
+        # 7.12 and 8.7 each say `read references/execution.md`. Verified against
+        # the skill so a renumbering cannot leave either citation pointing at a
+        # step that no longer routes here.
+        checkpoint = [l for l in ex.split(chr(10))
+                      if l.startswith("|") and "a phase's implementation is complete" in l]
+        self.assertEqual(len(checkpoint), 1, "the phase-checkpoint row moved")
+        cited = []
+        for label, row in (("pause", rows[0]), ("checkpoint", checkpoint[0])):
+            found = _re.match(r"\|\s*(\d+)\.(\d+)\b", row)
+            self.assertIsNotNone(
+                found, f"the {label} row names no breakpoint, so it cannot be told "
+                       f"apart from the other: {row.split('|')[1].strip()[:70]!r}")
+            cited.append(found.group(0).lstrip("| ").strip())
+            step, item = found.group(1), found.group(2)
+            line = [l for l in skill.split(chr(10))
+                    if _re.match(r"^\s+" + item + r"\. ", l)
+                    and self._owning_step(skill, l) == step]
+            self.assertEqual(len(line), 1,
+                             f"the {label} row cites {step}.{item}, which does not exist")
+            self.assertIn("references/execution.md", line[0],
+                          f"the {label} row is reached from {step}.{item}, but that "
+                          f"step does not read this file: {line[0].strip()[:70]!r}")
+        self.assertEqual(len(set(cited)), 2,
+                         f"both pause rows claim the same breakpoint {cited[0]!r}, "
+                         "so a checkpoint still matches the initial presentation")
+
+    @staticmethod
+    def _owning_step(skill, target):
+        """The top-level step number the given sub-item line sits under."""
+        import re as _re
+        cur = None
+        for line in skill.split(chr(10)):
+            top = _re.match(r"^(\d+)\. \*\*", line)
+            if top:
+                cur = top.group(1)
+            elif line == target:
+                return cur
+        return None
 
     def test_supersession_stays_flat_and_its_step_citation_cannot_rot(self):
         """Rule 16 is the whole supersession protocol and nothing held any of it.

@@ -28,7 +28,7 @@ companion whose upstream trigger was inverted on purpose: it demanded itself bef
 work, which would have paid for design exploration on every trivial change.
 
 **Exit:** a spec or design document, committed. **Handoff:** that document becomes
-`ctdd-change`'s business requirement at step 0.
+`ctdd-change`'s business requirement, confirmed at step 1.
 
 **The one discipline:** everything the change needs goes *in the document*. `ctdd-change` reads the
 spec, never the brainstorming conversation.
