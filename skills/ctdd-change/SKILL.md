@@ -46,10 +46,8 @@ Do not infer an order among these condition-triggered rules.
 ## Ordered change workflow
 Execute steps 0–10 in ascending order. Until an Approval record exists for the current plan revision, the only file you write is the step 5 plan file; an amendment voids the previous one. An amendment re-enters at the lowest invalidated step.
 0. **Establish the baseline.** Enter: a change request exists. Emit: Baseline statement. Stop: unresolvable base, contamination.
-   1. Record the current branch, target branch, and staged, unstaged, and untracked files. Report it when the current branch is the target branch.
-   2. Set `diff-base` to `HEAD` for uncommitted work and to the target-branch merge-base for branch, PR, or MR work.
-   3. Stop and ask which base to use when the target branch is absent, disputed, or has no merge-base.
-   4. Treat an intentional review diff as input, and stop and report unrelated target-file edits as contamination.
+   1. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gen-baseline.py"` and print its Baseline line. Exit `1` is the base decision: stop and ask, then re-run with `--target <branch>`. Exit `2` leaves step 0 unestablished.
+   2. Treat an intentional review diff as input, and stop and report unrelated target-file edits as contamination.
 1. **Confirm intent.** Enter: step 0 printed the Baseline statement. Emit: Intent statement. Stop: ambiguity.
    1. Stop for an answer when the business requirement is ambiguous, and never proceed on an assumed answer.
 2. **Read the existing slice.** Enter: step 1 has an unambiguous requirement. Emit: Current-behavior reading. Continue: always.

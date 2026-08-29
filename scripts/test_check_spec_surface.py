@@ -1164,6 +1164,53 @@ class CrossSkillAgreementTests(unittest.TestCase):
         self.assertIn("fh.read(200_000)", src)
         self.assertRegex(hook, r"read\(200")
 
+    def test_the_phased_pause_keeps_the_table_as_well_as_the_phase_list(self):
+        """Reported from real use: a `phased` pause printed the stat, the diff
+        pointer and the phase list, and no `Flow | File | Intended change` table
+        — so it said what had been proved and never what would be built. The row
+        fired correctly this time; the sentence inside it read two ways. *Under
+        `phased`, follow it with the phase list rather than a table* was meant as
+        *the phase list is a list, not a table*, and parses just as well as *under
+        phased, the phase list replaces the table*. The agent took the second.
+
+        v0.42.0 settles which was meant: phases are a list `so the schedule is
+        legible without decoding the first table`, which only reads if the table
+        is still printed. Assert both halves — the table's three columns survive,
+        and the phased clause says to keep it — plus a ban on the exact
+        construction that misfired, since a positive assertion alone would pass
+        on a reworded ambiguity."""
+        ex = (self._skills() / "ctdd-change" / "references"
+              / "execution.md").read_text(encoding="utf-8")
+        rows = [l for l in ex.split(chr(10))
+                if l.startswith("|") and "Intended change" in l]
+        self.assertEqual(len(rows), 1, "the pause presentation row moved")
+        row = rows[0]
+        for column in ("`File`", "`Intended change`"):
+            self.assertIn(column, row,
+                          f"the intended-change table lost its {column} column")
+        # v0.44.0 merged the two artifacts. The flow-ordered table and the phase
+        # list carried the same filenames with the descriptions on only one of
+        # them, so the reader cross-referenced to learn what a phase did — the
+        # cost v0.42.0 said the list existed to remove. One table per phase puts
+        # the description beside the file it belongs to. `Flow` went with it: on
+        # a real change seven of ten rows shared one step, so the column ordered
+        # almost nothing, and the coverage check it anchored now rests entirely
+        # on the unserved-steps line, which is asserted below.
+        self.assertIn("one such table per phase", row,
+                      "the phased pause no longer splits the table by phase")
+        self.assertIn("no separate file list", row,
+                      "without this the phase list returns beside the table and the "
+                      "filenames are duplicated with descriptions on one copy")
+        self.assertIn("behavior-flow step no row serves", row,
+                      "dropping `Flow` leaves this line as the only coverage check")
+        self.assertNotIn("follow it with the phase list rather than a table", row,
+                         "this is the construction that read as `the phase list "
+                         "replaces the table`")
+        self.assertNotIn("what it does, one sentence", row,
+                         "a phase heading has to say what changes and what is true "
+                         "afterwards; `what it does` produced headings like `let the "
+                         "shipped client ask for it`, which name no change at all")
+
     def test_the_pause_row_fires_for_every_value_that_stops_at_712(self):
         """Reported from real use: a `phased` plan stopped at 7.12 and improvised
         the presentation in prose — no `Flow | File | Intended change` table, so
@@ -1354,7 +1401,7 @@ class CrossSkillAgreementTests(unittest.TestCase):
                       "question moment outside a step is unbound again")
         # The moments it exists to cover. If one is renamed away the rule may
         # still read fine while covering nothing, which is how this shipped.
-        for site in ("Stop and ask which base to use",
+        for site in ("is the base decision: stop and ask",
                      "Offer the reading for correction",
                      "Stop for explicit approval",
                      "Stop for the required sealed hold-out result"):
@@ -2036,6 +2083,32 @@ class CrossSkillAgreementTests(unittest.TestCase):
                         f"which no script emits")
         self.assertGreater(checked, 0, "no quoted checker output was inspected")
 
+    def test_every_runtime_script_is_invoked_by_a_step(self):
+        """The flag guard's rule, one level up: a *script* nothing runs is a
+        checker the workflow does not have. That guard enumerates flags and so
+        only ever catches a dead flag on a live script; `gen-baseline.py` was
+        added in v0.44.0 and nothing structural required step 0 to call it —
+        reverting the step to prose failed one unrelated assertion, by accident
+        of a phrase being in its site list.
+
+        Deliberately a presence check, not a usage check: which step should run
+        a script is a design question, and asserting a particular step here
+        would freeze it. The property is only that the workflow names it at
+        all."""
+        scripts = Path(SCRIPT).resolve().parent
+        surfaces = chr(10).join(
+            f.read_text(encoding="utf-8")
+            for f in list(self._skills().glob("*/SKILL.md"))
+            + list(self._skills().glob("*/references/*.md")))
+        runtime = [f for f in sorted(scripts.glob("*.py"))
+                   if not f.name.startswith("test_")]
+        self.assertGreaterEqual(len(runtime), 5,
+                                f"runtime scripts not found: {[f.name for f in runtime]}")
+        for f in runtime:
+            self.assertIn(f.name, surfaces,
+                          f"{f.name} ships and is tested but no step or reference "
+                          f"names it; it is a checker the workflow does not have")
+
     def test_the_last_three_audit_losses_are_restored(self):
         """Closing out the v0.11.3-v0.20.1 audit. A flaky spec reads as an
         unreliable spec — the determinism dimension names the uncontrolled input
@@ -2047,8 +2120,18 @@ class CrossSkillAgreementTests(unittest.TestCase):
         tests = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("a flaky spec reads as an unreliable spec", tests)
         self.assertIn("is the spec of the fix", tests)
-        change = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("when the current branch is the target branch", change)
+        # v0.44.0 moved this one from prose into `gen-baseline.py`, so the guard
+        # follows it rather than being deleted with the sentence. It is a
+        # stronger position than the prose held: a sentence in the body can be
+        # read and not acted on, where a line the script always prints cannot.
+        scripts = Path(SCRIPT).resolve().parent
+        gen = (scripts / "gen-baseline.py").read_text(encoding="utf-8")
+        self.assertIn("the current branch IS the target", gen,
+                      "step 0 no longer remarks that the change is landing on the "
+                      "branch it will be reviewed from")
+        covered = (scripts / "test_gen_baseline.py").read_text(encoding="utf-8")
+        self.assertIn("the current branch IS the target", covered,
+                      "the remark is emitted but nothing tests that it is")
 
     def test_the_packet_states_its_purpose_and_the_back_translation_is_independent(self):
         """Both were lost in the 0.21.0-0.23.0 rewrites, which converted guidance
