@@ -1206,10 +1206,65 @@ class CrossSkillAgreementTests(unittest.TestCase):
         self.assertNotIn("follow it with the phase list rather than a table", row,
                          "this is the construction that read as `the phase list "
                          "replaces the table`")
-        self.assertNotIn("what it does, one sentence", row,
-                         "a phase heading has to say what changes and what is true "
-                         "afterwards; `what it does` produced headings like `let the "
-                         "shipped client ask for it`, which name no change at all")
+        # Three tries at this heading. `<what it does, one sentence>` produced
+        # `Phase 4 — let the shipped client ask for it`, which names no work;
+        # `<what changes, and what is true afterwards>` produced `the coding
+        # reaches the API boundary`, a state rather than a task, and the pilot
+        # could not read either. Both were invented here. The shipped Anthropic
+        # skills converge without exception on a short label plus an imperative
+        # body — `## Step 2 — Technology fingerprint` over `Identify, with file
+        # evidence:` — so that is what this now requires, and the two rejected
+        # forms are named so a fourth round argues with them rather than
+        # rediscovering them.
+        self.assertIn("label naming the work", row,
+                      "the phase heading is not a label; the two sentence-shaped "
+                      "forms tried before were both unreadable")
+        self.assertIn("imperative sentence", row,
+                      "a label alone says what the phase is called, not what it builds")
+        self.assertIn("turns nothing green", row,
+                      "the seam clause is what tells the approver a checkpoint will "
+                      "have no passing test to show")
+        self.assertIn("new files included", row,
+                      "`existing production file` strands new files, and the table is "
+                      "now the phase's whole contents rather than a list beside one")
+        for rejected in ("what it does, one sentence", "what is true afterwards"):
+            self.assertNotIn(rejected, row,
+                             f"`{rejected}` was tried and produced headings the pilot "
+                             "could not read")
+
+    def test_the_phase_checkpoint_shows_what_continuing_means(self):
+        """A checkpoint printed the finished phase's diff and evidence and then
+        asked whether to continue, with the thing being continued *to* last seen
+        at the pause, far up the scrollback. So the one decision the checkpoint
+        exists to take was the one it gave no material for.
+
+        It now reprints the next phase block, the same heading, imperative and
+        table the pause printed, or says none remains. The unit is named once, in
+        the pause row that specifies it, so the two surfaces cannot drift into two
+        descriptions of one artifact, which is how the pause itself ended up with a
+        table and a duplicate file list.
+
+        Displaced to pay for it: `The last phase's checkpoint may fold into 9.4`.
+        That permission existed for the moment the new clause now states outright,
+        so it is superseded rather than dropped for being cheap. It is still a real
+        removal, and reversible if the fold turns out to be missed."""
+        ex = (self._skills() / "ctdd-change" / "references"
+              / "execution.md").read_text(encoding="utf-8")
+        pause = [l for l in ex.split(chr(10))
+                 if l.startswith("|") and "Intended change" in l]
+        check = [l for l in ex.split(chr(10))
+                 if l.startswith("|") and "a phase's implementation is complete" in l]
+        self.assertEqual(len(pause), 1, "the pause row moved")
+        self.assertEqual(len(check), 1, "the phase-checkpoint row moved")
+        self.assertIn("one phase block", pause[0],
+                      "the unit the checkpoint reprints is not named where it is "
+                      "specified, so the checkpoint would have to describe it again")
+        self.assertIn("next phase block", check[0],
+                      "the checkpoint asks whether to continue without showing what "
+                      "continuing means")
+        self.assertIn("none remains", check[0],
+                      "at the last phase there is no next block, and silence there is "
+                      "the ambiguity that cost three rounds on the pause")
 
     def test_the_pause_row_fires_for_every_value_that_stops_at_712(self):
         """Reported from real use: a `phased` plan stopped at 7.12 and improvised
