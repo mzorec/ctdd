@@ -680,7 +680,24 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # losing the descriptive column. The row now fixes the shape exactly:
     # two columns, full sentences, phases as headings over that same
     # table. Owner's override.
-    MAX_PLAN_GATED_METHODOLOGY_CHARS = 47400
+    # 47400 -> 47900 in v0.44.0, intent-born: the owner asked for margin so the
+    # route stops shortening prose to fit. +500, deliberately modest, restoring
+    # the ~450-char margin the v0.41.0 note says the previous ceiling held.
+    #
+    # Counsel recorded beside the number, because the raise weakens something
+    # that was working: this ceiling is arbitrary in origin, but every time it
+    # fired across v0.43.0 and v0.44.0 it found a genuine restatement rather
+    # than forcing a cut — `no architecture assumed` duplicated a clause two
+    # words earlier, and two guidance sentences restated the worked example and
+    # a script's own exit-2 diagnostic. Nothing was lost to shortening; the
+    # search for redundancy is what the pressure bought. A larger raise would
+    # have stopped that search rather than unblocking it.
+    #
+    # This does not touch what actually binds elsewhere: `ctdd-tests` sits at
+    # 16,290 of BODY_LIMIT_CHARS 16,400 with no reference to move procedure
+    # into, and the filed steps-7-10 relocation is still the only change that
+    # moves the route number rather than the ceiling.
+    MAX_PLAN_GATED_METHODOLOGY_CHARS = 47900
     """ctdd-tests keeps craft work (de-flaking, altitude, renaming) out of the
     plan gate, while every consumer of the diff — this script, the hook, and
     ctdd-review — reads any modified test as a changed requirement. Both are
@@ -1231,6 +1248,40 @@ class CrossSkillAgreementTests(unittest.TestCase):
             self.assertNotIn(rejected, row,
                              f"`{rejected}` was tried and produced headings the pilot "
                              "could not read")
+
+    def test_a_phase_states_what_it_consumes_and_produces(self):
+        """Adapted from obra/superpowers `writing-plans`, which gives every task an
+        `Interfaces: Consumes / Produces` block. Its plan is an executable script
+        for a stranger and ours is a specification a human approves, so almost
+        nothing there transfers " this does.
+
+        A phase table says what each file does and never what the phase hands the
+        next one, so a reader infers the chain from prose or assumes there is one.
+        On the specimen that prompted this " a stored-gzip passthrough in four
+        phases " three chain and the fourth, the client registration, consumes
+        nothing from the others: it could run first, in parallel, or ship
+        separately, and the numbered list said the opposite.
+
+        It also makes the seam clause legible instead of asserted. Phases that
+        produce an interface " a field on a type " have no behaviour to assert, so
+        `turns nothing green` follows from what they produce rather than being a
+        claim the reader takes on trust.
+
+        Displaced to pay for it: `no architecture assumed`, which restated `in the
+        repo's own structure` two clauses earlier."""
+        ex = (self._skills() / "ctdd-change" / "references"
+              / "execution.md").read_text(encoding="utf-8")
+        rows = [l for l in ex.split(chr(10))
+                if l.startswith("|") and "Intended change" in l]
+        self.assertEqual(len(rows), 1, "the pause row moved")
+        for field in ("`Consumes:`", "`Produces:`"):
+            self.assertIn(field, rows[0],
+                          f"a phase no longer states {field}, so the chain between "
+                          "phases is left to be inferred")
+        self.assertIn("for none", rows[0],
+                      "a phase that consumes nothing must say so; blank reads as "
+                      "forgotten, and an independent phase is the finding this "
+                      "field exists to surface")
 
     def test_the_phase_checkpoint_shows_what_continuing_means(self):
         """A checkpoint printed the finished phase's diff and evidence and then
