@@ -1249,6 +1249,41 @@ class CrossSkillAgreementTests(unittest.TestCase):
                              f"`{rejected}` was tried and produced headings the pilot "
                              "could not read")
 
+    def test_every_breakpoint_rereads_execution_rather_than_trusting_context(self):
+        """A natural experiment, from a real session that presented the phased pause
+        as two prose bullets and the phase checkpoint in a looser format. The
+        agent reported afterwards that it first read `execution.md` during Phase
+        3 " after both breakpoints had already fired " because it had the skill
+        loaded and saw no reason to reopen a reference.
+
+        Five steps order that read. Four said `read references/execution.md.` and
+        9.3 said `Read ... now even if read earlier`. In that one session, on that
+        one file: the emphatic site was obeyed and the packet came out exactly to
+        spec, while the two plain sites that fired were not, and the presentation
+        they own was improvised. Same agent, same file, ~1,500 lines apart.
+
+        The clause does two things a bare `read` does not: `now` fixes the timing,
+        and `even if read earlier` answers the reasoning the agent actually gave.
+        Only the presentation degraded, because the evidence lanes are enforced by
+        scripts " which is why this survived releases.
+
+        Assert all five carry it, so an edit cannot quietly return the plain form
+        to the steps that most need it."""
+        body = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
+        # Only lines that *order* the read. The Output contract's `Review packet`
+        # row names the file without asking for it, and the standalone-ADR route
+        # reads it first thing, where `even if read earlier` means nothing.
+        ordered = [l for l in body.split(chr(10))
+                   if "ead `references/execution.md`" in l
+                   and "Standalone ADR" not in l]
+        self.assertGreaterEqual(len(ordered), 5,
+                                f"expected every step that reads execution.md; found "
+                                f"{len(ordered)}")
+        for line in ordered:
+            self.assertIn("now even if read earlier", line,
+                          "a breakpoint orders the read without the clause that made "
+                          f"9.3 the only one obeyed: {line.strip()[:80]!r}")
+
     def test_a_phase_states_what_it_consumes_and_produces(self):
         """Adapted from obra/superpowers `writing-plans`, which gives every task an
         `Interfaces: Consumes / Produces` block. Its plan is an executable script

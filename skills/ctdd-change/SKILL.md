@@ -90,12 +90,12 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
    4. Skip 7.5–7.7 when the plan's `Preservation pins` names no test.
    5. Invoke `ctdd-tests` to write the preservation pins against the current implementation.
    6. Run the pins before replacing preserved behavior, save the complete run to the pin-state path. Verify pins with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" <pin-log> --tests-from <plan-path> --expect-pass`.
-   7. Stop on any state other than pin pass; read `references/execution.md`.
+   7. Stop on any state other than pin pass; read `references/execution.md` now even if read earlier.
    8. Skip 7.9–7.11 when the plan's `New-behavior tests` names no test.
    9. Invoke `ctdd-tests` to write the new-behavior tests.
    10. Run them before implementing new behavior, save the complete run to the red-state path. Verify red state with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" <red-log> --tests-from <plan-path>`.
-   11. Stop on any state other than intended red; read `references/execution.md`.
-   12. Stop unless the approved line says `red pause: skip`; read `references/execution.md`.
+   11. Stop on any state other than intended red; read `references/execution.md` now even if read earlier.
+   12. Stop unless the approved line says `red pause: skip`; read `references/execution.md` now even if read earlier.
 8. **Implement and verify.** Enter: step 7 satisfied every applicable evidence lane, and at least one lane named a test — pin pass for every preservation pin the plan names, intended red for every new-behavior test the plan names — and 7.12 released any pause, or step 3.6 fired. Emit: verification results. Stop: 8.6, 8.7.
    1. Implement only the behavior approved at step 6, or nothing beyond the declared diff in the trivial lane. Replace any compile-only stub from step 7 with that implementation, and add no other production code.
    2. Do not weaken, delete, skip, or retarget an assertion to obtain green.
@@ -103,7 +103,7 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
    4. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <diff-base> --plan <plan-path>`.
    5. Act on what 8.4 reported; in the trivial lane take only 8.3's pin re-run and 8.6 as `n/a`.
    6. Stop and reopen the gate when the approved specification is wrong, when 8.5 exceeds the plan, or when requested review feedback falls outside approved scope (inside scope re-enters at the lowest invalidated step, no new plan): amend the plan file with the old and new form, re-run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" <plan-path> --approval <approval-path>`, return to step 6, and resume only after that reports the new revision approved.
-   7. With `red pause: phased`, implement one phase at a time; stop after each and read `references/execution.md`.
+   7. With `red pause: phased`, implement one phase at a time; stop after each and read `references/execution.md` now even if read earlier.
 9. **Produce the review packet.** Enter: step 8 produced current-turn results. Emit: Review packet. Stop: 9.1 when a plan exists. Changed test expectations are changed requirements and contract diffs are boundary changes: the packet presents them as the spec, not as code.
    1. Stop for the required sealed hold-out result from the named runner, asking write / decline. Resolve it to `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; only the human declines *or* confirms the runner is unavailable, so `NOT RUN` needs the same prompt a decline does; `failed` blocks.
    2. Set Back-translation to one sentence derived from the changed tests alone, beside the business requirement so the human compares prose to prose, or to `n/a — no test diff`.
