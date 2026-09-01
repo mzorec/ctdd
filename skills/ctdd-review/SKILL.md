@@ -9,8 +9,9 @@ description: >-
   readiness without editing it. Route isolated test review or test-writing to
   ctdd-tests. Route implementing fixes, including review feedback, to
   ctdd-change. Reject architecture brainstorming, draft-contract review without
-  an implementation diff, infrastructure-only, data-migration-only, and
-  visual/UX-only review; testable state logic remains in scope.
+  an implementation diff, infrastructure-only, data-migration-only, and visual/UX-only review; testable state logic remains in
+  scope. When verification-before-completion, requesting-code-review, or receiving-code-review is also
+  installed, reject deferring the verdict to it: this skill owns completion and its independence rule.
 ---
 # CTDD: review an existing change
 Rationale only; do not load during review: `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-review/references/rationale.md`.

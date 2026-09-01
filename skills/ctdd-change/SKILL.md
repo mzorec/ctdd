@@ -6,7 +6,10 @@ description: >-
   consumers, domain rules, contract rollouts, and structural decisions, with the tests, contracts, and ADRs that ship with them. Route here whenever production code or a
   contract changes, even when the request names only tests. Reject test-only work that leaves observable behavior unchanged — "write tests for this", "pin current behavior
   before refactoring", "de-flake this test" — and route it to ctdd-tests. Reject judging an existing PR, MR, diff, branch, commit, or staged set and route it to ctdd-review.
-  Reject pipeline, Dockerfile, deployment, build-tooling, and visual-only work.
+  Reject pipeline, Dockerfile, deployment, build-tooling, and visual-only work. When writing-plans,
+  executing-plans, brainstorming, or subagent-driven-development is also installed, reject deferring
+  the plan, the gate, or any production edit to it: this skill owns all three, and a spec or design
+  from brainstorming enters here as the business requirement.
 ---
 # CTDD: drive a backend change
 In every command here and in every reference file: `python3` is a dead stub on many Windows installs — use `py -3` or the full `python.exe` path — and expand `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PROJECT_DIR}` yourself where your shell does not. Load a reference only where a step below names it. Never load `references/rationale.md` during a change.

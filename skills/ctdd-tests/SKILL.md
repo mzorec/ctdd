@@ -10,8 +10,10 @@ description: >-
   "implement/fix/change/refactor this backend feature" and "update tests to
   match the new behavior"; route those to ctdd-change. Reject review of a PR,
   MR, branch, staged changes, or pasted diff, including "review just the tests
-  in this PR"; route those to ctdd-review. Reject test-framework troubleshooting,
-  test-project setup, UI-test authoring, load-test scripts, and infrastructure work.
+  in this PR"; route those to ctdd-review. Reject test-framework troubleshooting, test-project setup, UI-test authoring, load-test scripts, and
+  infrastructure work. When a test-driven-development skill is also installed, reject deferring test
+  authorship or red state to it: this skill owns both, and red state here is a verified log rather
+  than a described intention.
 ---
 # CTDD: write tests as the spec
 Rationale, not procedure: `${CLAUDE_PLUGIN_ROOT}/skills/ctdd-tests/references/rationale.md`.
