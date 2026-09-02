@@ -86,3 +86,81 @@ class ExitCodeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UnreadDiffTests(unittest.TestCase):
+    """A checker that cannot read its input must not claim a pass.
+
+    `read_diff` took `subprocess.run(...).stdout` and ignored the exit code. An
+    unresolvable base writes to stderr and leaves stdout empty; an empty diff
+    removes no marker; so `check-adr-drift --git nosuchref` printed *no ADR lost
+    its last marker* and exited 0. That is a pass claimed over input the checker
+    never read, which is the defect shape `ctdd-in-depth.md` records more often
+    than any other, and it shipped in the newest checker.
+
+    The other way to get this wrong is to fail always, so the clean-diff and
+    stdin paths are asserted here beside the failure.
+    """
+
+    def setUp(self):
+        import shutil
+        import subprocess
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
+        self.run_git = lambda *a: subprocess.run(
+            ["git", "-C", self.dir, *a], capture_output=True, text=True,
+            encoding="utf-8", errors="replace")
+        self.run_git("init", "-q", "-b", "main")
+        self.run_git("config", "user.email", "t@example.com")
+        self.run_git("config", "user.name", "T")
+        pathlib.Path(self.dir, "x.cs").write_text("// ADR-0002\n", encoding="utf-8")
+        self.run_git("add", "-A")
+        self.run_git("commit", "-q", "-m", "seed")
+
+    def _run(self, *args):
+        import subprocess
+        import sys
+        return subprocess.run(
+            [sys.executable,
+             os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "check-adr-drift.py"), *args],
+            cwd=self.dir, capture_output=True, text=True,
+            encoding="utf-8", errors="replace")
+
+    def test_an_unresolvable_base_is_unverified_not_a_pass(self):
+        r = self._run("--git", "definitely-not-a-ref")
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertNotIn("no ADR lost its last marker", r.stdout)
+        self.assertIn("not a pass", r.stdout)
+
+    def test_a_clean_diff_still_passes(self):
+        r = self._run("--git", "HEAD")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("no ADR lost its last marker", r.stdout)
+
+    def test_a_piped_diff_still_works(self):
+        import subprocess
+        import sys
+        r = subprocess.run(
+            [sys.executable,
+             os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "check-adr-drift.py"), "-"],
+            cwd=self.dir, input="--- a/x.cs\n+++ b/x.cs\n-// ADR-0002\n",
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.assertIn(r.returncode, (0, 1), r.stdout + r.stderr)
+        self.assertNotIn("not a pass", r.stdout)
+
+    def test_read_diff_reports_why_rather_than_returning_none_silently(self):
+        class Args:
+            stdin = False
+            git = "definitely-not-a-ref"
+            rest = []
+        import os as _os
+        cwd = _os.getcwd()
+        _os.chdir(self.dir)
+        try:
+            text, why = drift.read_diff(Args())
+        finally:
+            _os.chdir(cwd)
+        self.assertIsNone(text)
+        self.assertIn("exited", why)

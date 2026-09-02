@@ -103,10 +103,28 @@ def orphaned(diff_text, root="."):
 
 
 def read_diff(args):
+    """(diff_text, why). `why` is set only when no diff could be produced.
+
+    git's exit code is the whole point. An unresolvable base writes to stderr
+    and leaves stdout empty, an empty diff removes no marker, so ignoring the
+    code turned every bad base into `no ADR lost its last marker` at exit 0:
+    a pass claimed over input this checker never read, which is the failure
+    shape this plugin records more often than any other. Encoding is pinned
+    because a mis-decode would drop marker lines the same silent way.
+    """
     if args.stdin:
-        return sys.stdin.read()
+        return sys.stdin.read(), None
     cmd = ["git", "diff", args.git] + list(args.rest)
-    return subprocess.run(cmd, capture_output=True, text=True, check=False).stdout
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", check=False)
+    except OSError as exc:
+        return None, "git could not be run (%s)" % exc
+    if r.returncode != 0:
+        detail = [l for l in (r.stderr or "").splitlines() if l.strip()]
+        return None, "`git diff %s` exited %d: %s" % (
+            args.git, r.returncode, detail[0].strip() if detail else "no detail")
+    return r.stdout, None
 
 
 def main(argv=None):
@@ -125,7 +143,12 @@ def main(argv=None):
         if not args.git:
             print("check-adr-drift: pass --git <base> or pipe a diff and pass -")
             return 2
-    lost = orphaned(read_diff(args), args.root)
+    diff_text, why = read_diff(args)
+    if diff_text is None:
+        print("check-adr-drift: %s. Nothing was read, so nothing is "
+              "verified, and this is not a pass." % why)
+        return 2
+    lost = orphaned(diff_text, args.root)
     if not lost:
         print("check-adr-drift: no ADR lost its last marker in this change.")
         return 0

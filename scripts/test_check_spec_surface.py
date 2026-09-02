@@ -1318,6 +1318,37 @@ class CrossSkillAgreementTests(unittest.TestCase):
                       "forgotten, and an independent phase is the finding this "
                       "field exists to surface")
 
+    def test_the_pause_shows_the_evidence_lane_not_only_a_stat(self):
+        """The pause gave its two halves opposite altitudes. Work still to come got a
+        per-file table with a descriptive sentence, per phase, plus Consumes and
+        Produces. Work already written got one stat line and a diff in a file.
+
+        Backwards, because the already-written half is the evidence lane: in a real
+        phased run it was ten files, +330/-42, containing fourteen test retargets
+        and one replaced assertion. This method calls changed test expectations
+        changed requirements, so that is the most review-worthy content in the
+        pause, and it was a number. The human had to challenge it, and the agent
+        then produced exactly the right artifact retroactively: a File / what-it-
+        adds table tracing each row to its plan item.
+
+        Checked and not the cause: the plan named all of it. Its Changed existing
+        assertions section carries the one assertion change with old and new forms
+        and enumerates the fourteen retargets as verbatim-assertion renames. So
+        this is a presentation gap, not a planning one, which is why the fix is
+        here and not in plan-format."""
+        ex = (self._skills() / "ctdd-change" / "references"
+              / "execution.md").read_text(encoding="utf-8")
+        rows = [l for l in ex.split(chr(10))
+                if l.startswith("|") and "Intended change" in l]
+        self.assertEqual(len(rows), 1, "the pause row moved")
+        self.assertIn("evidence lane already written", rows[0],
+                      "the work step 7 has already written is shown only as a "
+                      "stat, while the work still to come gets a table per phase")
+        self.assertIn("plan item it serves", rows[0],
+                      "without traceability the table says what changed and not "
+                      "which approved item authorised it, which is the question "
+                      "the human actually asked")
+
     def test_the_phase_checkpoint_shows_what_continuing_means(self):
         """A checkpoint printed the finished phase's diff and evidence and then
         asked whether to continue, with the thing being continued *to* last seen
@@ -1345,9 +1376,21 @@ class CrossSkillAgreementTests(unittest.TestCase):
         self.assertIn("one phase block", pause[0],
                       "the unit the checkpoint reprints is not named where it is "
                       "specified, so the checkpoint would have to describe it again")
-        self.assertIn("next phase block", check[0],
-                      "the checkpoint asks whether to continue without showing what "
-                      "continuing means")
+        # `the next phase block` was the first wording and it was misread. In a
+        # real phased run the Phase-1 checkpoint printed a correctly formatted
+        # block (table, columns, Consumes/Produces) of Phase 1, the phase that
+        # had just finished, while asking to continue to Phase 2. That passes a
+        # glance, and the review then spent three exchanges reconciling the diff
+        # against the wrong table. The Phase-2 checkpoint printed no block at
+        # all. So `next` had to stop being an ordering word and start naming its
+        # referent, with the observed failure banned outright: checkpoint 1
+        # proved the agent renders the block correctly once it knows which one.
+        self.assertIn("being continued to", check[0],
+                      "the checkpoint does not say which phase block to print, and "
+                      "`next` was read as the phase just finished")
+        self.assertIn("never the one just finished", check[0],
+                      "the observed failure is not banned, and a correctly "
+                      "formatted block of the wrong phase passes a glance")
         self.assertIn("none remains", check[0],
                       "at the last phase there is no next block, and silence there is "
                       "the ambiguity that cost three rounds on the pause")

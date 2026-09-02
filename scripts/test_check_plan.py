@@ -802,6 +802,52 @@ class CheckPlanTests(unittest.TestCase):
         r = run(plan)
         self.assertEqual(r.returncode, 0, r.stdout)
 
+    ACTIONABLE_HOLDOUT = (
+        "Hold-out: required: 2 sealed tests\n"
+        "- request: assert the remaining authorized amount after capturing 33.33 of 100.00\n"
+        "- options: `write` ~5 minutes; `decline` recorded as declined by human\n"
+        "- recommended: `write` — the edge came from the same document the code reads\n"
+        "- result: {}")
+
+    def _holdout(self, result):
+        """Both edits are needed. `_holdout_required` reads the categorical line
+        alone, so replacing only the section leaves the check dormant and the
+        test green for the wrong reason — which is how the first draft of these
+        tests passed against a defect they were written to catch."""
+        return (FULL_PLAN
+                .replace("hold-out: not required",
+                         "hold-out: required: 2 sealed tests")
+                .replace("Hold-out: not required — read path",
+                         self.ACTIONABLE_HOLDOUT.format(result)))
+
+    def test_a_deferred_holdout_result_is_rejected(self):
+        """`defer` was struck from 9.1's options in v0.43.0 as the identical
+        escape under another name. A real session answered the prompt with
+        `Defer / NOT RUN` anyway, and the plan recorded `result: NOT RUN,
+        deferred by the human ... (not a decline)` — load-bearing boundary
+        evidence left neither owed nor waived, which is the state
+        `declined by human` exists to record. The prompt is prose and was
+        ignored; the result is written into the plan, so it is judged there."""
+        r = run(self._holdout("NOT RUN — deferred by the human at packet time"))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("defers", r.stdout)
+
+    def test_the_sanctioned_holdout_results_are_accepted(self):
+        """The other way to get this wrong is to reject everything. `NOT RUN`
+        stays legitimate for a runner that is genuinely unavailable."""
+        for value in ("pending", "passed", "declined by human",
+                      "NOT RUN — the sealed runner is not installed here"):
+            r = run(self._holdout(value))
+            self.assertEqual(r.returncode, 0,
+                             "%r was rejected:\n%s" % (value, r.stdout))
+
+    def test_an_unsanctioned_holdout_result_is_rejected(self):
+        """`maybe later` records neither an outcome nor a waiver, so the packet
+        cannot say what became of the evidence."""
+        r = run(self._holdout("maybe later"))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("not one of", r.stdout)
+
     def test_a_holdout_that_is_not_required_needs_no_options(self):
         r = run(FULL_PLAN)
         self.assertEqual(r.returncode, 0, r.stdout)

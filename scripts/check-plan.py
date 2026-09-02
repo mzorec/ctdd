@@ -781,6 +781,36 @@ def main():
                   "label, not a task.")
             return 1
 
+        # `defer` was struck from 9.1's options in v0.43.0 because it was the
+        # same escape under another name. A real session then answered the
+        # prompt with `Defer / NOT RUN` and the plan recorded `result: NOT RUN,
+        # deferred by the human ... (not a decline)`, leaving load-bearing
+        # boundary evidence neither owed nor waived, which is the state
+        # `declined by human` exists to record. The prompt is prose and was
+        # ignored; the result is written into the plan, so it is checked where
+        # it lands. Only a present `result:` is judged: an absent one is the
+        # actionability check's territory above, and two fixtures rely on that.
+        found = re.search(r"(?mi)^\s*[-*]?\s*result\s*:\s*(.+?)\s*$", block)
+        if found:
+            value = found.group(1)
+            allowed = ("pending", "passed", "failed", "declined by human",
+                       "not run")
+            if not value.lower().startswith(allowed):
+                print("check-plan: hold-out `result: %s` is not one of %s."
+                      % (value[:60], ", ".join(allowed)))
+                print("A value outside that set records neither an outcome nor "
+                      "a waiver, so the packet cannot say what became of the "
+                      "evidence.")
+                return 1
+            if "defer" in value.lower():
+                print("check-plan: the hold-out result defers (%s)."
+                      % value[:70])
+                print("Deferral is not an outcome. `NOT RUN` is for a runner "
+                      "that is unavailable; a human who will not run it now "
+                      "declines, and `declined by human` is what carries the "
+                      "waiver and the hand-computed expected values. Choose one.")
+                return 1
+
     # Count the same lines the duplicate scan counts. That scan excludes the
     # categorical `Risk: … · contract: … · hold-out: …` line because the `risk
     # level` pattern matches it too; this one did not, so the categorical line
