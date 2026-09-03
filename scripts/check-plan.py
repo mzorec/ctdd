@@ -184,6 +184,89 @@ HOLDOUT_BLOCK = re.compile(
 _HOLDOUT_FIELD = re.compile(r"hold.?out\s*[:=—–-]\s*([^\n·|]*)", re.I)
 
 
+# 7.12 mandates appending the intended-change table to the plan as
+# `## Intended change`, "dating it after approval - a record of what will be
+# built, never part of what was approved", and rules 7 and 8 mandate replacing
+# the hold-out `result:` and `human-verified expected values:` before the
+# packet. All three are post-approval by the skill's own instruction, and the
+# digest covered every byte - so obeying the skill invalidated the approval it
+# had just recorded. Two real changes each spent a turn writing a note
+# explaining that nothing approved had changed. The prose is the side with
+# stated intent, so the digest follows it: one of the two statements had to be
+# wrong, and "never part of what was approved" is the deliberate one.
+#
+# Values are NORMALISED, not dropped. The label stays in the digested text, so
+# an edit to the LABEL still reports STALE, which dropping the lines
+# outright would hide: these rules mandate replacing the VALUE, not
+# rewriting the field, and an agent regenerating the block can easily
+# emit a different casing or bullet. Deletion and duplication are caught
+# either way, because the blank line left behind is itself a difference -
+# two probes were vacuous before the real distinguishing case was found,
+# so the justification here is the one the tests actually establish. Excluding the whole line would have made the digest
+# blind to a deletion, which is the wrong trade for a check whose entire job
+# is detecting post-approval edits.
+_POST_APPROVAL_VALUE = (
+    re.compile(r"^(\s*(?:[-*]\s+)?[`*_]*human.verified\s+expected\s+values"
+               r"[`*_]*\s*:).*$", re.I | re.M),
+    re.compile(r"^(\s*(?:[-*]\s+)?[`*_]*result[`*_]*\s*:).*$", re.I | re.M),
+)
+_INTENDED_CHANGE = re.compile(
+    r"^(#{1,6}\s*[`*_]*intended\s+change\b).*\Z", re.I | re.M | re.S)
+
+
+def approved_region(text):
+    """The plan text the approval covers, with post-approval content normalised.
+
+    Both digest call sites use this. They must: computing one over the raw text
+    and the other over this would make every plan read stale, which is the
+    one-definition rule (CLAUDE.md rule 2) applied to a second pair.
+    """
+    m = _INTENDED_CHANGE.search(text)
+    if m:
+        # Heading included, unlike the hold-out fields below. Those lines exist
+        # at approval time, so their labels are approved and keeping them makes
+        # a deletion visible. This section does not exist at approval time at
+        # all - 7.12 appends it afterwards - so retaining the heading would mean
+        # the mandated append still moved the revision, which is the whole
+        # contradiction. `hidden_in_intended_change` carries the risk instead.
+        text = text[:m.start()]
+    hb = HOLDOUT_BLOCK.search(text)
+    if hb:
+        block = hb.group(0)
+        for rx in _POST_APPROVAL_VALUE:
+            block = rx.sub(lambda mm: mm.group(1), block)
+        text = text[:hb.start()] + block + text[hb.end():]
+    # 7.12 appends the section, so the append also introduces the blank-line
+    # separator before its heading. Without normalising the tail that separator
+    # alone moved the revision and the mandated append still read STALE - the
+    # defect surviving its own fix, one newline wide.
+    return text.rstrip() + chr(10)
+
+
+def plan_revision(text):
+    """The 12-hex revision the Approval record and the packet carry."""
+    return hashlib.sha256(
+        approved_region(text).encode("utf-8")).hexdigest()[:12]
+
+
+def hidden_in_intended_change(text, required):
+    """Required section headings sitting in the un-approved tail.
+
+    `## Intended change` runs to EOF because 7.12 appends it and, under
+    `phased`, its body carries `## Phase N` headings of its own - so bounding
+    it at the next heading would leave those inside the digest and defeat the
+    exemption. The cost is that anything appended after it is also exempt, so
+    check the one thing that would matter: a mandatory section cannot live
+    where the approval does not reach.
+    """
+    m = _INTENDED_CHANGE.search(text)
+    if not m:
+        return []
+    tail = m.group(0)[len(m.group(1)):]
+    return [name for name, pat in required
+            if re.search(pat, tail, re.IGNORECASE | re.MULTILINE)]
+
+
 def _holdout_required(text):
     r"""The categorical line reads `hold-out: <not required | required: ...>`.
 
@@ -648,7 +731,7 @@ def main():
                   "without it a resumed session cannot establish that 6.4 was "
                   "satisfied without inferring approval from artifacts.")
             return 1
-        want = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+        want = plan_revision(text)
         found = re.search(r"@([0-9a-f]{12})\b", rec)
         if not found:
             print(f"check-plan: the approval record names no plan revision. "
@@ -746,17 +829,76 @@ def main():
     # by the `risk level` pattern too, because that pattern makes `level` optional
     # on purpose. It is one line by construction, so exclude it from the count
     # rather than loosen the pattern that the gate depends on.
+    # Third instance of one defect: the count matched a section NAME anywhere a
+    # line began with it, so any line merely labelled with one read as a second
+    # section. (1) A categorical line ordering its fields differently counted as
+    # a second `risk level` - patched by excluding that one line, recorded in the
+    # comment above. (2) A decision-summary line labelled with a section name;
+    # the format's own example passes only because its labels are abbreviated
+    # far enough to evade this, which nothing recorded. (3) `Current flow,
+    # unchanged adjacent paths` - a heading the format's example demonstrates -
+    # rejected a valid plan as corrupt. Patching instances is what produced
+    # three of them, so the discriminator is the shape: this check counts
+    # SECTIONS, and a section heading is a line that is nothing but its own
+    # name. A line that continues into other words is a different label.
+    #
+    # A shape rule was tried first and deleted the check: `Existing behavior
+    # (openapi.yaml; CaptureTests.cs):` is a heading form the format's own
+    # example demonstrates, so "a heading is nothing but its own name"
+    # excluded the real headings along with the labels and a spliced duplicate
+    # passed. Its own control test caught that, which is why the control is
+    # written as the corruption that actually happened.
+    #
+    # What separates them is the text AFTER the name. Two lines are the same
+    # section when that text is the same; a line continuing into different
+    # words is a different label. The recorded corruption was a failed `sed`
+    # splicing a block in, which duplicates a heading verbatim.
+    #
+    # Known limit, stated rather than left to be found: two same-name headings
+    # with DIFFERENT trailing text are not flagged. Narrower than the four
+    # false-positive classes it replaces, and unlike them it cannot reject a
+    # valid plan.
     duplicated = []
     for name, pat in required:
-        # `find` returns -1 on a final line with no trailing newline, which
-        # sliced to text[start:-1] and dropped that line's last character.
-        lines = []
+        seen = {}
         for m in re.finditer(pat, text, re.IGNORECASE | re.MULTILINE):
-            end = text.find("\n", m.start())
-            lines.append(text[m.start():] if end < 0 else text[m.start():end])
-        real = [l for l in lines if not CATEGORICAL_LINE.search(l)]
-        if len(real) > 1:
-            duplicated.append((name, len(real)))
+            # Bounded from m.end(), never m.start(). Every pattern opens
+            # `^\s*` and `\s` matches newlines, so under MULTILINE a match
+            # can BEGIN on the blank line above, so m.start() is not on the
+            # name's line at all and the extracted line came out empty.
+            # m.end() is always inside the name.
+            #
+            # UNGUARDED, and said so rather than implied: `rest` already
+            # derives from m.end(), so every duplicate-count test passes
+            # with this reverted - a probe proved it. What it fixes is the
+            # CATEGORICAL_LINE filter reading an empty string whenever a
+            # blank line precedes the line it must exclude. No realistic
+            # plan makes that observable, because the excluded line then
+            # gets its own key and only collides if another line's text
+            # after the name is identical. Kept because it is correct;
+            # filed rather than claimed as guarded.
+            # `find` returns -1 on a final line with no trailing newline,
+            # which sliced to text[start:-1] and dropped its last character.
+            ls = text.rfind(chr(10), 0, m.end()) + 1
+            le = text.find(chr(10), m.end())
+            line = text[ls:] if le < 0 else text[ls:le]
+            if CATEGORICAL_LINE.search(line):
+                continue
+            rest = text[m.end():] if le < 0 else text[m.end():le]
+            key = " ".join(rest.split()).strip("`*_#:").strip().lower()
+            seen[key] = seen.get(key, 0) + 1
+        worst = max(seen.values()) if seen else 0
+        if worst > 1:
+            duplicated.append((name, worst))
+    hidden = hidden_in_intended_change(text, required)
+    if hidden:
+        print("check-plan: SECTION IN THE UN-APPROVED TAIL — "
+              + ", ".join(sorted(hidden)))
+        print("`## Intended change` is appended after approval and is excluded "
+              "from the plan revision, so a mandatory section written below it "
+              "is a section the approval never covered. Move it above.")
+        return 1
+
     if duplicated:
         print("check-plan: DUPLICATED sections — " +
               ", ".join(f"{n} (x{c})" for n, c in duplicated))
@@ -858,7 +1000,7 @@ def main():
     # something the Approval record can carry. 8.6 edits the plan in place at the
     # same path, so without one a pre-amendment approval is textually identical to
     # a current one — and one pilot plan ran to 28 amendment rounds.
-    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+    digest = plan_revision(text)
     print(f"check-plan: plan revision {digest} — carry it in the Approval record "
           f"and the packet as `plan: <path>@{digest}`.")
     print(f"check-plan: all mandatory sections present for a {tier} plan "

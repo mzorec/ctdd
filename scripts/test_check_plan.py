@@ -6,6 +6,7 @@ Run:  python3 scripts/test_check_plan.py   (or via pytest)
 """
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -1068,6 +1069,215 @@ class ComposedCheckerTests(unittest.TestCase):
                 "change, but defines none of them as sections.\n")
         r = run(plan)
         self.assertEqual(r.returncode, 1, f"prose mentions are not sections:\n{r.stdout}")
+
+
+
+def revision(plan_text):
+    """The 12-hex revision check-plan prints for a plan."""
+    r = run(plan_text)
+    m = re.search(r"plan revision ([0-9a-f]{12})", r.stdout)
+    assert m, "no revision printed:" + chr(10) + r.stdout
+    return m.group(1)
+
+
+HOLDOUT_PLAN = FULL_PLAN.replace(
+    "hold-out: not required", "hold-out: required: 1 sealed test").replace(
+    "Hold-out: not required " + chr(8212) + " read path",
+    "Hold-out" + chr(10)
+    + "- decision: required" + chr(10)
+    + "- reason: money-path boundary semantics" + chr(10)
+    + "- request: 1 sealed test asserting the response for a capture of 33.33."
+    + chr(10)
+    + "- options: `write` " + chr(8212) + " ~5 minutes; `decline` " + chr(8212)
+    + " recorded as a waiver." + chr(10)
+    + "- recommended: `write` " + chr(8212) + " the edge came from the same "
+    "document the implementation reads." + chr(10)
+    + "- storage: separate repository" + chr(10)
+    + "- runner: CI hold-out job" + chr(10)
+    + "- result: pending" + chr(10)
+    + "- human-verified expected values: n/a")
+
+
+class PlanRevisionTests(unittest.TestCase):
+    """The revision counted edits the skill itself mandates after approval.
+
+    7.12: append the intended-change table to the plan as `## Intended
+    change`, "dating it after approval " + a record of what will be built,
+    never part of what was approved". Rule 7: before the packet, replace
+    `result: pending`. Rule 8: on a decline, list the human-verified expected
+    values. All three land after the Approval record is written, and the
+    digest was sha256 over every byte " so obeying the skill invalidated the
+    approval it had just recorded, and two real changes each spent a turn
+    writing a note saying nothing approved had changed.
+
+    One of the two statements had to be wrong. "Never part of what was
+    approved" is the deliberate one, so the digest follows the prose.
+    """
+
+    def setUp(self):
+        self.assertEqual(run(HOLDOUT_PLAN).returncode, 0,
+                         "the hold-out fixture must pass before it can pin "
+                         "anything about revisions")
+
+    def test_appending_the_intended_change_table_keeps_the_approval(self):
+        before = revision(HOLDOUT_PLAN)
+        after = revision(
+            HOLDOUT_PLAN + chr(10) + "## Intended change" + chr(10)
+            + "Appended after approval; not part of what was approved."
+            + chr(10) + "| File | Intended change |" + chr(10) + "|---|---|"
+            + chr(10) + "| a.cs | Accept the lower amount. |" + chr(10))
+        self.assertEqual(after, before,
+                         "7.12 mandates this append and calls it no part of "
+                         "the approval, so it cannot invalidate the approval")
+
+    def test_the_mandated_holdout_field_edits_keep_the_approval(self):
+        before = revision(HOLDOUT_PLAN)
+        for label, edited in (
+            ("rule 7 result", HOLDOUT_PLAN.replace("- result: pending",
+                                                   "- result: declined by human")),
+            ("rule 8 values",
+             HOLDOUT_PLAN.replace("- human-verified expected values: n/a",
+                                  "- human-verified expected values: 33.33 "
+                                  "captures, state CAPTURED")),
+        ):
+            self.assertEqual(revision(edited), before,
+                             label + " is mandated after approval, so it "
+                             "cannot invalidate the approval")
+
+    def test_the_exemption_does_not_swallow_an_ordinary_edit(self):
+        """A region-scoped digest goes vacuous by exempting too much. This is
+        the assertion that keeps it honest, and it is the reason values are
+        normalised rather than lines dropped."""
+        before = revision(HOLDOUT_PLAN)
+        for label, edited in (
+            ("prose in an ordinary section",
+             HOLDOUT_PLAN.replace("Residual risk: none beyond the planned "
+                                  "verification",
+                                  "Residual risk: the expiry path is unpinned")),
+            ("the result LABEL deleted outright",
+             HOLDOUT_PLAN.replace("- result: pending" + chr(10), "")),
+            ("the expected-values LABEL deleted outright",
+             HOLDOUT_PLAN.replace(
+                 "- human-verified expected values: n/a" + chr(10), "")),
+            # These two are what distinguish normalising the value from
+            # dropping the line, and finding them took three tries. Deleting
+            # the line moves the revision either way, because the blank line it
+            # leaves behind is itself a difference; so does duplicating it, for
+            # the same reason. What only normalising catches is an edit to the
+            # LABEL - the rule mandates replacing the value, not rewriting the
+            # field, and an agent regenerating the block can easily emit a
+            # different casing or bullet.
+            ("the result LABEL re-cased",
+             HOLDOUT_PLAN.replace("- result: pending", "- Result: pending")),
+            ("the result line's bullet changed",
+             HOLDOUT_PLAN.replace("- result: pending", "* result: pending")),
+            ("the result line DUPLICATED by a splice",
+             HOLDOUT_PLAN.replace("- result: pending",
+                                  "- result: pending" + chr(10)
+                                  + "- result: passed")),
+            ("a test name in an evidence lane",
+             HOLDOUT_PLAN.replace("- t" + chr(10), "- t_renamed" + chr(10))),
+        ):
+            self.assertNotEqual(revision(edited), before,
+                                label + " is not a mandated post-approval "
+                                "edit and must still read STALE")
+
+    def test_both_digest_call_sites_agree(self):
+        """The printed revision and the one `--approval` compares against are
+        two call sites. Normalising one and not the other would make every
+        plan read stale for the opposite reason."""
+        with tempfile.TemporaryDirectory() as d:
+            plan = Path(d) / "p.md"
+            plan.write_text(HOLDOUT_PLAN, encoding="utf-8")
+            rev = revision(HOLDOUT_PLAN)
+            rec = Path(d) / "p.approval.log"
+            rec.write_text("Approved by: " + chr(34) + "approve" + chr(34)
+                           + "; plan: p.md@" + rev + "." + chr(10),
+                           encoding="utf-8")
+            # the mandated append lands after the record is written
+            plan.write_text(HOLDOUT_PLAN + chr(10) + "## Intended change"
+                            + chr(10) + "Dated after approval." + chr(10),
+                            encoding="utf-8")
+            r = subprocess.run(
+                [sys.executable, SCRIPT, str(plan), "--approval", str(rec)],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=15)
+            self.assertNotIn("APPROVAL STALE", r.stdout,
+                             "the two digest call sites disagree, so the "
+                             "mandated append still voids the approval:"
+                             + chr(10) + r.stdout)
+            self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_a_required_section_cannot_hide_in_the_unapproved_tail(self):
+        """`## Intended change` runs to EOF, because under `phased` its body
+        carries `## Phase N` headings that bounding at the next heading would
+        leave inside the digest. The cost is that anything below it is also
+        exempt, so the one thing that would matter is checked."""
+        r = run(HOLDOUT_PLAN + chr(10) + "## Intended change" + chr(10)
+                + "Dated after approval." + chr(10) + chr(10)
+                + "Residual risk: moved below the approval line." + chr(10))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("UN-APPROVED TAIL", r.stdout, r.stdout)
+
+
+class DuplicateSectionShapeTests(unittest.TestCase):
+    """Third instance of one defect: a NAME at the start of a line counted as
+    a section, so any line merely labelled with one read as a duplicate.
+
+    (1) A categorical line ordering its fields differently counted as a second
+    `risk level`, patched by excluding that one line. (2) A decision-summary
+    line labelled with a section name; the format's own example passes only
+    because its labels are abbreviated far enough to evade this, which nothing
+    recorded. (3) `Current flow, unchanged adjacent paths` " a heading the
+    format demonstrates " rejected a valid plan as corrupt.
+
+    Patching instances produced three of them, so the fix is the shape: this
+    check counts SECTIONS, and a section heading is a line that is nothing but
+    its own name. Latent fourth instance closed by the same rule: a plan with
+    two `BLOCKING` questions, which the format positively invites.
+    """
+
+    def test_a_heading_that_continues_into_other_words_is_not_a_duplicate(self):
+        r = run(FULL_PLAN.replace(
+            "Flow after change:",
+            "Current flow, unchanged adjacent paths:" + chr(10)
+            + "- the refund path is untouched." + chr(10)
+            + "Flow after change:"))
+        self.assertEqual(r.returncode, 0,
+                         "a compound heading beginning with a section name is "
+                         "a different label, not a second section:" + chr(10)
+                         + r.stdout)
+
+    def test_a_summary_line_labelled_with_a_section_name_is_not_a_duplicate(self):
+        r = run(FULL_PLAN.replace(
+            "Risk level: normal",
+            "- Existing behavior: unchanged on the read path." + chr(10)
+            + "Risk level: normal"))
+        self.assertEqual(r.returncode, 0,
+                         "the gate-visible summary names one line per "
+                         "refusable decision; labelling one with a section "
+                         "name is not a second section:" + chr(10) + r.stdout)
+
+    def test_two_blocking_questions_are_not_a_duplicate(self):
+        r = run(FULL_PLAN.replace(
+            "- auth hold on the released remainder? (recommend: expires with the auth)",
+            "- auth hold on the released remainder? (recommend: expires with the auth)"
+            + chr(10) + "BLOCKING: does the fee follow the partial amount?"))
+        self.assertEqual(r.returncode, 0,
+                         "a plan may carry more than one open question:"
+                         + chr(10) + r.stdout)
+
+    def test_a_genuinely_duplicated_heading_is_still_rejected(self):
+        """Rule 8's own test: the shape rule must not have deleted the check.
+        A corrupt plan spliced a duplicate section in and this checker passed
+        it 19 of 19 by only asking whether each heading appeared at least
+        once."""
+        spliced = "Existing behavior (openapi.yaml; CaptureTests.cs):"
+        self.assertIn(spliced, FULL_PLAN, "the heading to splice moved")
+        r = run(FULL_PLAN + chr(10) + spliced + chr(10)
+                + "- spliced in by a failed sed." + chr(10))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("DUPLICATED", r.stdout, r.stdout)
 
 
 if __name__ == "__main__":
