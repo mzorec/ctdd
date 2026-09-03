@@ -149,6 +149,64 @@ class GitModeTests(unittest.TestCase):
                       "an untracked new test must appear in --git output")
 
 
+class RoutingSkillStructureTests(unittest.TestCase):
+    """`ctdd-routing` decides which workflow owns a request; its spec contract says what a
+    spec must contain once `brainstorming` is the route. v0.50.0 moved the contract into a
+    conditional reference because it had grown to half the skill body. That move is only
+    safe while the routing decisions stay in the always-loaded skill — the v0.14.0 defect
+    in `ctdd-change` was this same move made wrongly, and nothing caught it. The last test
+    is the one that matters most: the contract's own elements are now enumerated, so a later
+    trim that drops one fails here instead of silently shipping a spec with a hole in it."""
+
+    ROUTES = ["Path 2 step 5 implements directly with no plan document",
+              "both hand off to `ctdd-change` instead",
+              "Approving the spec is not approving a plan either"]
+
+    ELEMENTS = ["The requirement in one or two sentences",
+                "Success stated as observable behavior",
+                "Constraints that bound the solution",
+                "Measured facts about the system being changed or replaced",
+                "Options considered and why each lost",
+                "What is explicitly out of scope, and why each item is out",
+                "the split and its dependency order",
+                "Keep out the shape of code that does not exist yet",
+                # The exemption, not just the prohibition. A probe showed the
+                # whole suite stays green with this sentence trimmed, and the
+                # keep-out then reverts to absolute - which is the hole v0.50.0
+                # closed by replacing the ambiguous `guessing` qualifier. It is
+                # what licenses a spec to name the code a constraint is about,
+                # so the rule is only survivable while it survives.
+                "Naming an existing artifact"]
+
+    def setUp(self):
+        self.base = Path(__file__).resolve().parents[1] / "skills" / "ctdd-routing"
+        self.skill = (self.base / "SKILL.md").read_text(encoding="utf-8")
+        self.contract = (self.base / "references" / "spec-contract.md").read_text(encoding="utf-8")
+
+    def test_routing_decisions_stay_in_the_always_loaded_skill(self):
+        for route in self.ROUTES:
+            self.assertIn(route, self.skill,
+                          f"{route} must stay in SKILL.md — it decides which lane runs")
+
+    def test_the_contract_reference_holds_no_routing(self):
+        for route in self.ROUTES:
+            self.assertNotIn(route, self.contract,
+                             f"{route} is workflow routing, not spec craft")
+
+    def test_the_skill_names_the_contract_and_every_reference_is_bundled(self):
+        refs = set(re.findall(r"(?<!/)\breferences/([A-Za-z0-9_.-]+\.md)", self.skill))
+        self.assertIn("spec-contract.md", refs,
+                      "SKILL.md must name the contract, or it is never loaded")
+        for rel in refs:
+            self.assertTrue((self.base / "references" / rel).exists(),
+                            f"routing points at references/{rel}, which is not bundled")
+
+    def test_the_contract_still_carries_every_element(self):
+        for element in self.ELEMENTS:
+            self.assertIn(element, self.contract,
+                          f"the spec contract lost: {element}")
+
+
 class ChangeSkillStructureTests(unittest.TestCase):
     """A restructure must not move load-bearing routing into a conditional
     reference. This exact defect shipped in v0.14.0: four workflow sections were
