@@ -25,7 +25,7 @@ Do not infer an order among these condition-triggered rules.
 - Ask every question as a Decision prompt, at any step.
 - Do not change uncovered behavior silently.
 - Name the tests that detect every behavior you claim to preserve.
-- Invoke `ctdd-tests` before creating, changing, renaming, or deleting any test file; never write a test file from this skill.
+- Invoke `ctdd-tests` before drafting a test path and before creating, changing, renaming, or deleting any test file; never write a test file from this skill.
 - Require property tests, boundary contract tests, and human review for retries, ordering, eventual consistency, async messaging, or partial failure.
 - Stop on incompatible claims about the same observable constraint.
 - Resolve an artifact conflict against the business requirement through an approved amendment.

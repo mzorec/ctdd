@@ -80,11 +80,13 @@ Do not start implementation from this skill.
    - Print exact paths, test names, the covered cases by the same names step 5 uses, command, result, any hand-off, and the craft-edit disclosure when required.
 
 ## When blocked
+Do not infer an order among these condition-triggered rules; check them at every step.
+
 | Signal | Required action |
 |---|---|
 | Expected behavior or public API is unclear | Stop; do not invent an API, result, or error contract. Report the unresolved decision to `ctdd-change`. |
 | A public-boundary test is hard, nearly every dependency needs a mock, or setup obscures the rule — and not a pure transformation (next row) | Use an existing higher public boundary and test helpers. If blocked, report coupling/design pressure to `ctdd-change`; do not expose internals, substitute call counts, or change production design here. |
-| The assertion is about a pure transformation — a lexical form, encoding, ordering, or null shape — and the boundary reached needs a database, network, or broker | Cover the matrix exhaustively at the smallest boundary that has a contract of its own. Keep one representative case at the outer boundary, plus anything only reachable there: it proves the wiring. Two exhaustive tiers is one tier of waste. |
+| The assertion is about a pure transformation — a lexical form, encoding, ordering, or null shape — and the path's boundary needs a database, network, or broker | Cover the matrix exhaustively at the smallest boundary that has a contract of its own. Keep one representative case at the outer boundary, plus anything only reachable there: it proves the wiring. Two exhaustive tiers is one tier of waste. |
 | The test cannot compile because a public type or member is absent | Do not count compilation failure as RED. If the member is planned, request a compile-only stub from `ctdd-change` returning a default, never throwing: a throwing stub reddens every test alike. If it is not planned, stop — the plan is incomplete. Resume at 6 once the test executes, the stub counting as a declared artifact. |
 | The harness, fixture, clock, random source, ordering, or environment fails | Fix test support without changing the expectation or the seeded inputs the assertion reads, then rerun. Changing those pins a different scenario. |
 | A `must fail before implementation` test passes | Stop; report whether the behavior already exists or the assertion fails to constrain it, and return the finding to `ctdd-change`, which owns the production tree and records a baseline before touching it. Never edit production here to tell the two apart. |

@@ -368,7 +368,7 @@ class ChangeSkillStructureTests(unittest.TestCase):
 
     MUST_SURVIVE = {
             "no result claim without current-turn run": "Do not claim a test, build, gate, checker",
-            "tests are delegated before edits": "Invoke `ctdd-tests` before creating",
+            "tests are delegated before edits": "Invoke `ctdd-tests` before drafting a test path and before creating",
             "artifact conflicts stop": "Stop on incompatible claims",
             "bug fix remains non-trivial": "For a bug fix, require a short complete plan",
             "preservation needs named tests": "Name the tests that detect every behavior",
@@ -2293,6 +2293,76 @@ class CrossSkillAgreementTests(unittest.TestCase):
                           f"{f.name} ships and is tested but no step or reference "
                           f"names it; it is a checker the workflow does not have")
 
+    def test_the_test_path_is_chosen_with_the_tier_rule_in_context(self):
+        """The altitude rule and the path decision were two steps apart.
+
+        `ctdd-tests` owns test-path discovery (its step 2 prints the exact
+        target file path) and owns the altitude rule: cover a pure
+        transformation exhaustively at the smallest boundary that has a
+        contract of its own, keep one representative case at the outer
+        boundary, two exhaustive tiers is one tier of waste. But
+        `ctdd-change` drafted the paths at 4.5 and did not invoke
+        `ctdd-tests` until 7.5, where its output contract binds it to *the
+        approved plan path*. The skill holding the rule was bound to a path
+        chosen by the skill without it.
+
+        Twice in real use that put pure-transformation assertions at an
+        integration tier. In one change eight of nine, each paying a
+        database round-trip for a rule that never touches the database,
+        while nine preservation pins for the same behavior already sat at
+        the unit tier. The human caught it after implementation both times,
+        and the repair relocated the tests post-hoc, so their red state had
+        to be mapped back to a pre-relocation run under the old names. That
+        retroactive evidence is what this guard exists to prevent.
+
+        No script can judge this. Whether an assertion is a pure
+        transformation is not derivable from anything the plan carries, and
+        a proxy over path distribution misclassifies the neighbouring
+        change in the same file. Having the rule in context when the path
+        is chosen is the only fix available, which is what 4.5 now does.
+
+        It rides the order-free guardrail rather than step 4.5, for two
+        reasons found by pricing both. The binding constraint here is not
+        the route ratchet but the 15,000-char compaction proxy: the
+        `colocated-notes.md` loader at step 10.2 ended at 14,940, so the
+        body had 60 characters of slack and the 4.5 clause needed 89 — it
+        pushed that loader off the end. And the guardrail is already a
+        MUST_SURVIVE probe, where a clause at 4.5 is not, so this is the
+        better-protected home for it. It also binds the 8.6 amendment that
+        retargets a test, which is where the relocation actually happened.
+
+        Probes: drop `drafting a test path`; drop the writing constraint,
+        which is what stops a pre-gate consult reading as authorization to
+        write against step 6.3; or move the rule out of the order-free
+        section into a step. Each fails one assertion."""
+        body = (self._skills() / "ctdd-change"
+                / "SKILL.md").read_text(encoding="utf-8")
+        section, rule = None, None
+        for line in body.split(chr(10)):
+            if line.startswith("## "):
+                section = line[3:].strip()
+                continue
+            if line.startswith("- Invoke `ctdd-tests`"):
+                rule = (section, line)
+        self.assertIsNotNone(rule, "the test-delegation rule is gone entirely")
+        section, line = rule
+        self.assertEqual(section, "Unordered guardrails",
+                         "the delegation rule left the order-free section; "
+                         "pinned to a step it can sit after the gate, where "
+                         "the path is already approved and moving it costs an "
+                         "amendment plus a retroactive red state")
+        self.assertIn("drafting a test path", line,
+                      "the rule fires on editing a test file but not on "
+                      "choosing where one goes, so every path is drafted "
+                      "without the skill that owns path discovery and the "
+                      "altitude rule")
+        self.assertIn("never write a test file from this skill", line,
+                      "the rule stopped saying this skill writes no test "
+                      "file, which is what makes delegation total rather "
+                      "than a preference; the pre-gate consult is held "
+                      "read-only by step 6.3 and by `ctdd-tests` writing "
+                      "only under an approved plan, not by this string")
+
     def test_the_last_three_audit_losses_are_restored(self):
         """Closing out the v0.11.3-v0.20.1 audit. A flaky spec reads as an
         unreliable spec — the determinism dimension names the uncontrolled input
@@ -2574,6 +2644,47 @@ class CrossSkillAgreementTests(unittest.TestCase):
         self.assertIn("not a pure transformation", up[0],
                       "the two altitude rows fire on the same input; the up-rule "
                       "must defer to the down-rule explicitly")
+
+    def test_the_altitude_rule_is_reachable_when_the_path_is_chosen(self):
+        """v0.48.0 moved the *invocation* earlier and would not have moved the
+        *rule*. `ctdd-change`'s guardrail now fires on drafting a test path, so
+        `ctdd-tests` is consulted while the path is still open rather than two
+        steps later bound to an approved one. But the altitude row read *the
+        boundary **reached** needs a database, network, or broker* " which
+        presumes a boundary already chosen, so at path-choice time it scanned as
+        not-yet-applicable " and it sits under a heading called `When blocked`
+        whose only pointer was step 7's run classification. An agent printing a
+        target path at step 2 is not blocked and had no reason to look.
+
+        Step 2 derives the path from convention: the nearest behavior-level
+        tests and the target test project configuration. Convention is what
+        produced the defect twice " the nearest tests for that behavior were the
+        integration ones, so convention said integration tier while altitude
+        said the projection unit tests.
+
+        The framing line also makes true a premise `test_the_two_altitude_rules_
+        cannot_fire_together` already states: its docstring says the section
+        forbids inferring an order among condition-triggered rules, and that
+        sentence existed only in `ctdd-change`.
+
+        Probes: restore `the boundary reached`, or delete the framing line."""
+        t = (self._skills() / "ctdd-tests" / "SKILL.md").read_text(encoding="utf-8")
+        rows = [l for l in t.split(chr(10))
+                if l.startswith("|") and "pure transformation " in l
+                and "smallest boundary" in l]
+        self.assertEqual(len(rows), 1, "the altitude row moved or split")
+        self.assertNotIn("boundary reached", rows[0],
+                         "the trigger presumes a boundary already chosen, so it "
+                         "cannot fire while the path is still being chosen")
+        self.assertIn("path's boundary", rows[0],
+                      "the trigger no longer names the path, which is the thing "
+                      "under decision at step 2")
+        head = t.split("## When blocked" + chr(10), 1)
+        self.assertEqual(len(head), 2, "the When blocked heading is gone")
+        self.assertTrue(head[1].startswith("Do not infer an order"),
+                        "`When blocked` leads straight into its table again, so "
+                        "its rules read as run-classification for step 7 rather "
+                        "than conditions live at every step")
 
     def test_the_case_vocabularies_agree(self):
         """Three lists named the required cases differently — the Output contract,
