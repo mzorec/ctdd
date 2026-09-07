@@ -78,9 +78,10 @@ The complete example below is the operative instruction: anything it demonstrate
 9. Use exact file paths; never write wildcards, directories, `(+ tests)`, `TBD`, or unnamed future files.
 10. Pin the tests that already assert a decision recorded by any ADR this change touches.
 11. Capture the human's stated direction, not a competing one; a decision handed back unresolved returns to `BLOCKING` with their version as the default. Record every resolved BLOCKING answer under `Decisions confirmed in session` and replace the question with `none — answered before approval`; the answer must be findable without the chat. Re-run the checker after every plan edit; re-present when the answer changes any other presented decision.
-12. `Behavior flow` is two blocks in order, `Current flow` then `Flow after change`: one numbered walk per touched entry point, execution order, full sentences, a step per observable stage, no step ceiling. Derive `Current flow` from the reading `Existing behavior` cites, never from the implementation; write `Current flow: none — greenfield` after a greenfield step 2. That section owns *where* behavior is pinned, this one owns *what happens*, and `Implementation slices` owns the code delta: name no function or file here, and enumerate no boundary values — the test lanes own those.
+12. `Behavior flow` is one numbered walk per touched entry point, no step ceiling; when steps apply only to some inputs, state the condition once before them rather than opening each step with it. Derive `Current flow` from the reading `Existing behavior` cites, never from the implementation; write `Current flow: none — greenfield` after a greenfield step 2. That section owns *where* behavior is pinned, this one owns *what happens*, and `Implementation slices` owns the code delta: name no function or file here, and enumerate no boundary values — the test lanes own those.
 
 13. Set the red pause: `pause` stops after step 7, prints the pre-implementation diff and intended changes, and waits; `phased` adds a stop after each implementation phase with its diff and evidence; `skip` implements at once. Draft `skip` at small, `pause` at medium, and `phased` at large or when the planned files form three or more phases; the human flips it at the gate. The field is required on the line, and the tier never reads it.
+14. Name each pin beside the behavior it protects; say in words when a behavior has none, and say nothing about gaps when every behavior is pinned.
 
 `ctdd-tests` owns test naming, altitude, assertion form, and what may not be asserted. Do not restate them here.
 
@@ -122,18 +123,20 @@ Proceeding unless you object
 Risk level: normal — one service and one additive rule change on a money path.
 
 Existing behavior
-- `payments/contract/openapi.yaml` — `POST /payments/{id}/capture`: requires capture amount equal to the authorized amount.
-- `tests/payments/CaptureTests.cs::capture_fails_when_amount_exceeds_authorized_amount`: rejects over-capture.
+One validation rule stands between a capture request and the payment state: the amount must equal the authorized amount exactly, and anything else is rejected with no state change. The contract states it — `payments/contract/openapi.yaml` constrains the amount on `POST /payments/{id}/capture` — and four tests in `tests/payments/CaptureTests.cs` hold it in place: `capture_succeeds_when_amount_equals_authorized_amount` pins the accepted case, and `capture_fails_when_amount_is_zero`, `capture_fails_when_amount_is_negative` and `capture_fails_when_amount_exceeds_authorized_amount` pin the three rejections.
+
+Nothing today releases a remainder, because no capture below the authorized amount can succeed. No test covers that path — it is the one behavior this change touches that has no pin.
 
 Behavior flow
+The request is one straight path: validate the amount, move the state, publish the event. The change loosens the validation and adds a guard against capturing the released remainder; the state move and the event are otherwise untouched.
 Current flow
 1. The merchant calls `POST /payments/{id}/capture` with an amount.
 2. The amount is accepted only when it equals the authorized amount exactly; anything else is rejected with no state change.
 3. On success the payment moves `AUTHORIZED` to `CAPTURED` and one `PaymentCaptured` is published.
 Flow after change
 1. (unchanged) The merchant calls `POST /payments/{id}/capture` with an amount.
-2. (changed) Validation accepts `0 < amount <= authorizedAmount`; before, only exact equality was accepted.
-3. (changed) On success the remainder is released — its hold lifetime is the BLOCKING question — and the one `PaymentCaptured` now carries both amounts.
+2. (changed from 2) Any amount in `0 < amount <= authorizedAmount` is now accepted; before, only exact equality was.
+3. (changed from 3) On success the remainder is released — its hold lifetime is the BLOCKING question — and the one `PaymentCaptured` now carries both amounts.
 4. (new) A later capture, including of the released remainder, returns `409` with no state change and no second event.
 Unchanged adjacent paths
 - Zero, negative, and over-authorized amounts stay rejected; full capture at the exact amount stays accepted.

@@ -207,6 +207,89 @@ class RoutingSkillStructureTests(unittest.TestCase):
                           f"the spec contract lost: {element}")
 
 
+class PlanFormatExampleTests(unittest.TestCase):
+    """The worked example in plan-format.md is the operative instruction - the
+    preamble says anything it demonstrates is not restated as a rule - so what
+    agents write is what the example shows. v0.51.0 rewrote its `Existing
+    behavior` and `Behavior flow` as explanation rather than inventory, after a
+    real plan followed the two-bullet example faithfully into nine by-file
+    bullets that read as a lookup table. These pin the three properties that
+    made the rewrite readable, because an example drifts back toward the shape
+    an agent finds easiest to emit, which is a list of files."""
+
+    def setUp(self):
+        fmt = (Path(__file__).resolve().parents[1] / "skills" / "ctdd-change"
+               / "references" / "plan-format.md").read_text(encoding="utf-8")
+        # the worked example, not the skeleton: both carry the section names
+        start = fmt.index("One capture below the authorized amount")
+        self.example = fmt[start:]
+        eb = self.example.index("Existing behavior" + chr(10))
+        bf = self.example.index("Behavior flow" + chr(10))
+        self.existing = self.example[eb:bf]
+        cf = self.example.index("Current flow" + chr(10))
+        self.framing = self.example[bf + len("Behavior flow" + chr(10)):cf]
+        pins_at = self.example.index("Preservation pins" + chr(10))
+        pins_end = self.example.index(chr(10) + chr(10), pins_at)
+        self.pins = re.findall(r"^- `([^`]+)`", self.example[pins_at:pins_end], re.M)
+
+    def test_existing_behavior_names_every_preservation_pin(self):
+        """The property that makes a pin gap visible: each current behavior
+        says what pins it, in the sentence describing it. A by-file inventory
+        cannot show a gap - five tests and four files, cross-referenced in the
+        reader's head. If every pin is named in the prose, the behavior with no
+        pin is the one sentence with no test in it."""
+        self.assertGreaterEqual(len(self.pins), 3, "the pins lane moved or emptied")
+        for pin in self.pins:
+            self.assertIn(pin, self.existing,
+                          f"`{pin}` is a preservation pin the example's Existing "
+                          f"behavior never names, so the example teaches an "
+                          f"inventory that hides what is and is not protected")
+
+    def test_existing_behavior_calls_out_the_unpinned_behavior_in_words(self):
+        self.assertIn("no pin", self.existing,
+                      "the example no longer shows how to say a behavior is "
+                      "unprotected; `Pinned: none` as a label was the mechanical "
+                      "form this rewrite replaced")
+
+    def test_behavior_flow_opens_with_a_framing_sentence(self):
+        """Explain, then enumerate. The old example dropped the reader straight
+        into numbered steps; a sentence naming the shape of the path - and what
+        the change does to it - is what let a seven-step flow be read once."""
+        framing = self.framing.strip()
+        self.assertTrue(framing and framing.endswith("."),
+                        "nothing between `Behavior flow` and `Current flow`: the "
+                        "example no longer frames the walk before starting it")
+        self.assertFalse(framing[0].isdigit(),
+                         "the framing text is a numbered step, not a sentence")
+
+    def test_the_rules_state_the_branch_the_example_cannot_show(self):
+        """The example shows one unpinned behavior called out in words. It cannot
+        show the other branch - every behavior pinned, so nothing to say about
+        gaps - and an example carrying a `no pin` sentence teaches a shape that
+        gets copied into plans where it is false. That is the one degradation a
+        prose example adds over bullets, named before it was observed. The
+        preamble puts two-branch decisions in the rules, so the branch lives in
+        rule 14 rather than in a second example."""
+        fmt = (Path(__file__).resolve().parents[1] / "skills" / "ctdd-change"
+               / "references" / "plan-format.md").read_text(encoding="utf-8")
+        rules = fmt[fmt.index("## Field rules"):fmt.index("## Required case coverage")]
+        self.assertIn("say nothing about gaps", rules,
+                      "the rules no longer state what to do when every behavior is "
+                      "pinned, so the example's `no pin` sentence has no "
+                      "counter-branch and becomes a ritual")
+
+    def test_changed_steps_name_the_step_they_replace(self):
+        """`(changed)` alone left the reader aligning two lists of different
+        length by counting. The real plan had five current steps against seven
+        after; `(changed from 4)` says which one."""
+        self.assertIn("(changed from ", self.example,
+                      "changed steps no longer say which current step they "
+                      "replace")
+        self.assertNotRegex(self.example, r"\(changed\)",
+                            "a bare `(changed)` tag is back; every changed step "
+                            "names the current step it replaces")
+
+
 class ChangeSkillStructureTests(unittest.TestCase):
     """A restructure must not move load-bearing routing into a conditional
     reference. This exact defect shipped in v0.14.0: four workflow sections were
@@ -755,7 +838,23 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # 16,290 of BODY_LIMIT_CHARS 16,400 with no reference to move procedure
     # into, and the filed steps-7-10 relocation is still the only change that
     # moves the route number rather than the ceiling.
-    MAX_PLAN_GATED_METHODOLOGY_CHARS = 47900
+    # 47,900 -> 48,700 in v0.51.0, intent-born: the owner asked that the canonical
+    # example's `Existing behavior` and `Behavior flow` be written the way a person
+    # explains them - a framing sentence first, plain words before identifiers,
+    # each pin named in the sentence it supports, the one unpinned behavior called
+    # out in words - after a real plan's by-file inventory (nine bullets, three
+    # opening with the same 107-character path) read as a lookup table. The example
+    # is the operative instruction, so the example is where agents learn the shape;
+    # a rule saying "write prose" would not have done it. +802 net.
+    #
+    # The search the counsel above asks for ran first and found one restatement:
+    # rule 12 described the two blocks, their order, full sentences and a step per
+    # stage, every one of which the example shows. That text came out and the fork
+    # convention the example cannot show (its flow has no branch) went in, netting
+    # -10. worked-change.md holds no copy of the example, and the gate-visible echo
+    # is the guarded deliberate one. Nothing else in the route restates the
+    # example, so the remainder is the example itself, and the limit moves.
+    MAX_PLAN_GATED_METHODOLOGY_CHARS = 48700
     """ctdd-tests keeps craft work (de-flaking, altitude, renaming) out of the
     plan gate, while every consumer of the diff — this script, the hook, and
     ctdd-review — reads any modified test as a changed requirement. Both are
