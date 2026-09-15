@@ -44,6 +44,7 @@ Exit 2 = usage or input error.
 
 import importlib.util
 import hashlib
+import os
 import re
 import sys
 from pathlib import Path
@@ -370,6 +371,134 @@ def _names_a_test(text):
                     return True
             break
     return False
+
+# ---------------------------------------------------------------- altitude
+# Every test's level follows from which production file turns it green, and
+# `Implementation slices` already carries that link as `turns green:`. A real
+# plan wrote it three times for nineteen tests, by wildcard - "every
+# `Discovery_*` test" - so nothing made the author say, per test, who owns the
+# behaviour. The agent's own diagnosis once the human asked: "my slices never
+# said who owns the batch bound; altitude follows ownership, so leaving
+# ownership vague left the altitude arbitrary." Several plans in a row needed
+# that question asked by hand after the plan was written. Two prose fixes
+# (v0.48.0's guardrail and the reachability rewrite of the altitude row) did
+# not stop it, so the question is asked here, of every test, before the gate.
+#
+# Reuses this file's own lane walker rather than importing check-redstate's
+# extractor, which has three recorded fail-silent defects and reads a path
+# rather than text. One definition of "the tests a lane names" in this file.
+_TURNS_GREEN = re.compile(r"turns\s+green\s*:", re.I)
+_TICK = re.compile(r"`([^`\n]+)`")
+_PATH_SUB = re.compile(r"^\s+[-*]\s+path\s*:\s*`([^`\n]+)`", re.I)
+
+
+def _lane_block(text, lane):
+    """The lines under one evidence-lane heading: bullets, their indented
+    continuations and interior blanks, ending at the next unindented
+    non-bullet line. `<lane>: none` yields nothing."""
+    lines = text.split("\n")
+    rx = _LANE_HEADING[lane]
+    for n, line in enumerate(lines):
+        if not rx.search(line):
+            continue
+        if re.search(r":\s*none\b", line, re.I):
+            return []
+        block = []
+        for follow in lines[n + 1:]:
+            if not follow.strip():
+                block.append(follow)
+                continue
+            if follow[:1].isspace() or follow.lstrip().startswith(("-", "*")):
+                block.append(follow)
+                continue
+            break
+        return block
+    return []
+
+
+def lane_tests(text, lane):
+    """[(name, path or None)] for every test the lane names, in order. Only an
+    unindented bullet names a test; `  - path:` is read as that test's path."""
+    out = []
+    for line in _lane_block(text, lane):
+        if not line.strip():
+            continue
+        if not line[:1].isspace() and _bullet_names_a_test(line):
+            out.append([_BULLET_NAME.match(line).group(1), None])
+            continue
+        m = _PATH_SUB.match(line)
+        if m and out and out[-1][1] is None:
+            out[-1][1] = m.group(1).strip()
+    return [(n, p) for n, p in out]
+
+
+def slice_claims(text):
+    """([(owner_path, [exact test names])], [(owner, clause, wildcards)]).
+
+    The second list is every `turns green:` clause that names no backticked
+    test or names one by wildcard. Those are rejected, not expanded: expanding
+    "every `Discovery_*` test" would hide exactly the vagueness this exists to
+    surface. Rule 9's exactness for paths applies to the tests a slice claims.
+    """
+    lines = text.split("\n")
+    pat = dict(REQUIRED)["implementation slices"]
+    start = next((n for n, l in enumerate(lines) if re.match(pat, l, re.I)), None)
+    if start is None:
+        return [], []
+    bullets, cur = [], None
+    for line in lines[start + 1:]:
+        if not line.strip():
+            continue
+        if not line[:1].isspace() and line.lstrip().startswith(("-", "*")):
+            cur = [line]
+            bullets.append(cur)
+            continue
+        if line[:1].isspace() and cur is not None:
+            cur.append(line)
+            continue
+        break
+    claims, bad = [], []
+    for b in bullets:
+        joined = " ".join(l.strip() for l in b)
+        m = _TURNS_GREEN.search(joined)
+        if not m:
+            continue
+        ticks = _TICK.findall(joined[:m.start()])
+        owner = ticks[0].strip() if ticks else joined.lstrip("-* ")[:60]
+        names = [t.strip() for t in _TICK.findall(joined[m.end():])]
+        wild = [t for t in names if re.search(r"[*?]", t)]
+        if not names or wild:
+            bad.append((owner, joined[m.end():].strip()[:80], wild))
+            continue
+        claims.append((owner, names))
+    return claims, bad
+
+
+def configured_layers(root):
+    """Ordered layer names, lowest first, from CTDD_LAYERS or .ctdd.json
+    `layers` (`;`-separated, like testPatterns). Empty when unconfigured."""
+    raw = os.environ.get("CTDD_LAYERS", "").strip()
+    if not raw:
+        try:
+            raw = _load_surface()._setting("CTDD_LAYERS", "layers", root)
+        except Exception:
+            raw = ""
+    return [l.strip() for l in raw.split(";") if l.strip()] if raw else []
+
+
+def layer_of(path, layers):
+    """Index of the longest layer name that appears in the path bounded by
+    non-identifier characters, so `Domain` matches `X.Domain/Rule.cs` and not
+    `DomainEvents.cs`, and `Infrastructure.Persistence` beats `Infrastructure`.
+    None when no layer matches."""
+    best = None
+    for i, layer in enumerate(layers):
+        rx = r"(?<![A-Za-z0-9])" + re.escape(layer) + r"(?![A-Za-z0-9])"
+        if re.search(rx, path or ""):
+            if best is None or len(layer) > len(layers[best]):
+                best = i
+    return best
+
 
 def plan_tier(text):
     """large | medium | small — derived, so it cannot be claimed.
@@ -749,6 +878,34 @@ def main():
                   "6.4 excludes your own restatement, silence, a subagent verdict "
                   "and harness acceptance.")
             return 1
+        # An interactive selector resolves on one keystroke, and a harness can
+        # resolve a pending one with its highlighted default while the human is
+        # typing something else entirely — so a record quoting the option label
+        # verbatim is indistinguishable from an approval nobody gave. That is not
+        # hypothetical: one landed, and the production edit ran on it. 6.3 now
+        # prints the options and ends the turn; this catches the label that shows
+        # a selector was used anyway. Only the three labels 6.3 prints, because a
+        # wider set would start judging how enthusiastic a real approval must be,
+        # which this script does not do.
+        _GATE_LABELS = {"approve", "approve with changes", "reject"}
+        said = re.search(r"approved\s+by\s*:\s*(.*?)\s*;\s*plan\s*:", rec, re.I | re.S) \
+            or re.search(r"approved\s+by\s*:\s*(.+)", rec, re.I)
+        if said is not None:
+            quoted = said.group(1).strip()
+            bare = re.sub(r'^["“‘\']+|["”’\']+$', "", quoted).strip()
+            spoken = bare.rstrip(".!,").strip().casefold()
+            if spoken in _GATE_LABELS:
+                print(f"check-plan: the approval record quotes the option label "
+                      f"{quoted}, not a typed message. A label is what an "
+                      f"interactive selector returns, and a selector resolves on "
+                      f"one keystroke or on a harness default — so this record "
+                      f"cannot establish that 6.4 was satisfied.")
+                print("6.3 prints the three options and ends the turn: re-present "
+                      "the gate and quote the human's own words. If they did type "
+                      "exactly this word, record where it came from — "
+                      f"`Approved by: \"{bare}, typed by the human at the gate\"` "
+                      "— rather than the bare label.")
+                return 1
         print(f"check-plan: approval record verified for revision {want}.")
 
     # 4.5 routes a changed existing assertion as an amendment and rule 3 gives it
@@ -972,6 +1129,75 @@ def main():
         print(f"check-plan: MISSING sections for a {tier} plan — " + ", ".join(missing))
         print("A plan that omits a section hasn't decided it; it has skipped it.")
         return 1
+
+    # Test altitude. Runs whenever `Implementation slices` is required (medium
+    # and large), which is exactly when a plan has new behaviour to place.
+    if any(n == "implementation slices" for n, _ in required):
+        tests = lane_tests(text, "new-behavior")
+        claims, vague = slice_claims(text)
+        if vague:
+            print("check-plan: VAGUE OWNERSHIP — `turns green:` must name each test "
+                  "exactly:")
+            for owner, clause, wild in vague:
+                print(f"  {owner} — turns green: {clause}"
+                      + (f"   [wildcard: {', '.join(wild)}]" if wild
+                         else "   [no test named]"))
+            print("Altitude follows ownership. A slice that names, exactly, the tests "
+                  "it turns green is the plan deciding which layer owns each "
+                  "behaviour; a wildcard defers that decision to implementation, "
+                  "which is where real plans have put tests at the wrong level.")
+            return 1
+        owners = {}
+        for owner, names in claims:
+            for nm in names:
+                owners.setdefault(nm, []).append(owner)
+        known = {n for n, _ in tests} | {n for n, _ in lane_tests(text, "preservation")}
+        unknown = sorted(set(owners) - known)
+        if unknown:
+            print("check-plan: UNKNOWN TEST in `turns green:` — " + ", ".join(unknown))
+            print("No test bullet names it. A misspelt claim orphans the real test "
+                  "silently; fix the name on one side.")
+            return 1
+        layers = configured_layers(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+        rows, orphans, misplaced = [], [], []
+        for name, path in tests:
+            own = owners.get(name, [])
+            if not own:
+                orphans.append(name)
+            t_idx = layer_of(path, layers) if layers else None
+            o_idx = [i for i in (layer_of(o, layers) for o in own) if i is not None] \
+                if layers else []
+            need = max(o_idx) if o_idx else None
+            t_lbl = layers[t_idx] if t_idx is not None else "?"
+            o_lbl = (", ".join(sorted({layers[i] for i in o_idx})) if o_idx
+                     else ("—" if not own else "?"))
+            rows.append((name, t_lbl, o_lbl))
+            if t_idx is not None and need is not None and t_idx != need:
+                misplaced.append((name, t_lbl, layers[need],
+                                  "above" if t_idx > need else "below"))
+        if tests:
+            print("check-plan: test altitude — test layer | owning layer")
+            for name, t_lbl, o_lbl in rows:
+                print(f"  {name}  {t_lbl} | {o_lbl}")
+            if not layers:
+                print("  (layers not configured — set `layers` in .ctdd.json, "
+                      "lowest;…;highest, or CTDD_LAYERS, to check placement)")
+        if orphans:
+            print("check-plan: NO OWNER — no slice turns these green: "
+                  + ", ".join(orphans))
+            print("Altitude follows ownership: name the file that turns each one "
+                  "green under `Implementation slices`, and the test's level "
+                  "follows from that file's layer.")
+            return 1
+        if misplaced:
+            print("check-plan: MISPLACED TESTS —")
+            for name, t_lbl, need, where in misplaced:
+                print(f"  {name} sits at {t_lbl}, {where} the {need} code that "
+                      f"turns it green")
+            print("A test above its owner pays for a boundary it does not assert; "
+                  "one below cannot reach the code. The lowest project that "
+                  "observes the behaviour is the owning layer's.")
+            return 1
     # Gate-reading cost, reported not enforced. Plans have run 5,432 (the canonical
     # example), 17,801, 31,448 and 57,321 characters; the last is ~31 minutes of
     # reading before a human can approve. Nobody chose that — it accrued over 28

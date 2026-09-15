@@ -2674,6 +2674,18 @@ class CrossSkillAgreementTests(unittest.TestCase):
         # A pointer to a growable set is what made the gate scale with the plan.
         # The body names the closed set itself, so it cannot grow silently.
         self.assertNotIn("marks **gate-visible**", row[0])
+        # v0.52.0 added one more thing printed in full, and it is not a sixth
+        # member of the set above: the altitude table check-plan prints at 5.4 is
+        # script output, categorically like `Plan: <path> (<tier>)` already in
+        # this row, not a plan section that scales with the plan. It is named
+        # here so that removing it fails, because the table had no consumer -
+        # 5.4 exits 0 and the agent moves on - and the within-layer case the
+        # script cannot judge is exactly the row a human reads correctly at a
+        # glance, and had been asking for by hand four or five plans running.
+        self.assertIn("5.4 altitude table", row[0],
+                      "the gate no longer prints check-plan's altitude table, so the "
+                      "one placement question the script cannot decide never reaches "
+                      "the reader who decides it correctly")
         fmt = (self._skills() / "ctdd-change" / "references"
                / "plan-format.md").read_text(encoding="utf-8")
         sec = fmt.split("## Gate-visible sections", 1)

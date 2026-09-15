@@ -152,9 +152,12 @@ An environment variable is set in one shell. It is absent on a fresh clone, on a
   "adrDir": "adr",
   "planDir": "docs/plans",
   "testPatterns": "(^|/)quality/;\\.robot$",
-  "contractPatterns": "(^|/)api-specs/"
+  "contractPatterns": "(^|/)api-specs/",
+  "layers": "Domain;Application;Infrastructure.Persistence;Infrastructure;Api"
 }
 ```
+
+`layers` lists the repository's layers lowest first, as they appear in project and folder names. With it set, `check-plan.py` checks that every new-behavior test sits at the layer of the production file that turns it green — a test one layer above pays for a boundary it does not assert. Without it the check still requires each test to be claimed, by exact name, in an `Implementation slices` `turns green:` clause, and prints the test/owner table without judging placement.
 
 Environment variables still win when set, for a single deliberate run. Everything else reads the file. A malformed or missing file is ignored rather than fatal — it is read on every hook invocation, and a typo in it must not break editing.
 

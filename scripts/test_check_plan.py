@@ -53,10 +53,13 @@ Residual risk: none beyond the planned verification
 """
 
 
-def run(plan_text, extra_args=None):
+def run(plan_text, extra_args=None, env=None):
+    merged = dict(os.environ)
+    merged.pop("CTDD_LAYERS", None)          # tests decide the layer config
+    merged.update(env or {})
     return subprocess.run([sys.executable, SCRIPT, "-"] + (extra_args or []),
                           input=plan_text, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                          timeout=15)
+                          timeout=15, env=merged)
 
 
 def diff_file(content):
@@ -1175,8 +1178,13 @@ class PlanRevisionTests(unittest.TestCase):
              HOLDOUT_PLAN.replace("- result: pending",
                                   "- result: pending" + chr(10)
                                   + "- result: passed")),
+            # Renamed in both places a real rename touches. Renaming only the
+            # lane left the slice claiming `t`, which the altitude check now
+            # rejects as an UNKNOWN TEST before any revision is printed - the
+            # first fixture it caught was this repo's own.
             ("a test name in an evidence lane",
-             HOLDOUT_PLAN.replace("- t" + chr(10), "- t_renamed" + chr(10))),
+             HOLDOUT_PLAN.replace("- t" + chr(10), "- t_renamed" + chr(10))
+                         .replace("turns green: `t`", "turns green: `t_renamed`")),
         ):
             self.assertNotEqual(revision(edited), before,
                                 label + " is not a mandated post-approval "
@@ -1191,7 +1199,9 @@ class PlanRevisionTests(unittest.TestCase):
             plan.write_text(HOLDOUT_PLAN, encoding="utf-8")
             rev = revision(HOLDOUT_PLAN)
             rec = Path(d) / "p.approval.log"
-            rec.write_text("Approved by: " + chr(34) + "approve" + chr(34)
+            # A typed message, not the bare option label: the label is now its
+            # own failure, and this test is about the two digest call sites.
+            rec.write_text("Approved by: " + chr(34) + "looks right, go" + chr(34)
                            + "; plan: p.md@" + rev + "." + chr(10),
                            encoding="utf-8")
             # the mandated append lands after the record is written
@@ -1218,6 +1228,62 @@ class PlanRevisionTests(unittest.TestCase):
                 + "Residual risk: moved below the approval line." + chr(10))
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("UN-APPROVED TAIL", r.stdout, r.stdout)
+
+
+class ApprovalProvenanceTests(unittest.TestCase):
+    """6.4 wants an affirmative typed message, and the record quotes it — but a
+    quoted option label satisfied that check, and an option label is what an
+    interactive selector returns. This is observed, not hypothetical: a gate was
+    resolved with the highlighted default while the human typed an unrelated
+    slash command, the agent quoted `"Approve"`, this checker said the record was
+    verified, and the production edit ran. 6.3 now prints the options and ends
+    the turn; the guard catches the label that shows a selector was used anyway.
+    """
+
+    def record(self, message, plan_text=None):
+        plan_text = FULL_PLAN if plan_text is None else plan_text
+        with tempfile.TemporaryDirectory() as d:
+            plan = Path(d) / "p.md"
+            plan.write_text(plan_text, encoding="utf-8")
+            rec = Path(d) / "p.approval.log"
+            rec.write_text("Approved by: " + chr(34) + message + chr(34)
+                           + "; plan: p.md@" + revision(plan_text) + "."
+                           + chr(10), encoding="utf-8")
+            return subprocess.run(
+                [sys.executable, SCRIPT, str(plan), "--approval", str(rec)],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=15)
+
+    def test_an_option_label_is_not_a_typed_approval(self):
+        """The exact record that shipped the unapproved edit."""
+        r = self.record("Approve")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("option label", r.stdout)
+
+    def test_every_label_6_3_prints_is_caught_however_it_is_cased(self):
+        for label in ("approve", "APPROVE", "Approve.", "Approve with changes",
+                      "reject"):
+            r = self.record(label)
+            self.assertEqual(r.returncode, 1,
+                             label + " reads as a typed message:" + chr(10)
+                             + r.stdout)
+            self.assertIn("option label", r.stdout)
+
+    def test_the_canonical_typed_approval_survives_the_guard(self):
+        """`worked-change.md` quotes a sentence that ends in the word Approved.
+        Stripping punctuation to catch `Approve.` must not reach into it."""
+        r = self.record("release the remainder when the authorization "
+                        "expires. Approved.")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("approval record verified", r.stdout)
+
+    def test_a_typed_message_that_merely_contains_a_label_survives(self):
+        for message in ("approve, but watch the rounding",
+                        "I approve", "looks right, go"):
+            r = self.record(message)
+            self.assertEqual(r.returncode, 0,
+                             message + " is a typed message and must pass:"
+                             + chr(10) + r.stdout)
 
 
 class DuplicateSectionShapeTests(unittest.TestCase):
@@ -1278,6 +1344,145 @@ class DuplicateSectionShapeTests(unittest.TestCase):
                 + "- spliced in by a failed sed." + chr(10))
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("DUPLICATED", r.stdout, r.stdout)
+
+
+
+LAYERS = {"CTDD_LAYERS": "Domain;Application;Persistence"}
+
+
+def layered_plan(test_path, owner_path, claim="`t`"):
+    """FULL_PLAN with the one test given a path and the one slice given an owner."""
+    return FULL_PLAN.replace(
+        "New-behavior tests — must be observed failing first:" + chr(10) + "- t",
+        "New-behavior tests — must be observed failing first:" + chr(10) + "- t"
+        + chr(10) + "  - path: `" + test_path + "`.").replace(
+        "- a.cs — accept the lower amount; turns green: `t`",
+        "- `" + owner_path + "` — accept the lower amount; turns green: " + claim)
+
+
+class TestAltitudeTests(unittest.TestCase):
+    """Every test's level follows from which production file turns it green.
+    `Implementation slices` already links them with `turns green:`, and a real
+    plan wrote that link three times for nineteen tests, by wildcard. Nothing
+    made the author say, per test, who owns the behaviour, and the altitude
+    was wrong until the human asked. This was the fourth or fifth plan in a
+    row where they had to. Two prose fixes preceded this and did not stop it.
+    """
+
+    def test_a_test_no_slice_turns_green_is_an_orphan(self):
+        r = run(FULL_PLAN.replace("turns green: `t`", "no test named here"))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("NO OWNER", r.stdout)
+        self.assertIn("`t`", r.stdout.replace("t  ", "`t` "), r.stdout)
+
+    def test_a_wildcard_claim_is_rejected_not_expanded(self):
+        for claim in ("every `t_*` test", "the three `t?` tests"):
+            r = run(FULL_PLAN.replace("turns green: `t`", "turns green: " + claim))
+            self.assertEqual(r.returncode, 1, r.stdout)
+            self.assertIn("VAGUE OWNERSHIP", r.stdout, r.stdout)
+            self.assertIn("wildcard", r.stdout, r.stdout)
+
+    def test_a_claim_naming_no_test_is_rejected(self):
+        r = run(FULL_PLAN.replace("turns green: `t`", "turns green: the boundary tests"))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("VAGUE OWNERSHIP", r.stdout)
+        self.assertIn("no test named", r.stdout)
+
+    def test_a_claim_on_a_test_no_lane_names_is_unknown(self):
+        """A misspelt claim would otherwise orphan the real test silently."""
+        r = run(FULL_PLAN.replace("turns green: `t`", "turns green: `t_typo`"))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("UNKNOWN TEST", r.stdout)
+        self.assertIn("t_typo", r.stdout)
+
+    def test_the_full_plan_and_a_claimed_pin_pass(self):
+        self.assertEqual(run(FULL_PLAN).returncode, 0, run(FULL_PLAN).stdout)
+        pinned = FULL_PLAN.replace(
+            "Preservation pins — must pass before and after: none",
+            "Preservation pins — must pass before and after:" + chr(10) + "- p_old").replace(
+            "turns green: `t`", "turns green: `t`, `p_old`")
+        r = run(pinned)
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_the_small_tier_has_no_slices_and_is_not_checked(self):
+        small = FULL_PLAN.replace(
+            "New-behavior tests — must be observed failing first:" + chr(10) + "- t",
+            "New-behavior tests: none — pure refactor").replace(
+            "Preservation pins — must pass before and after: none",
+            "Preservation pins — must pass before and after:" + chr(10) + "- p")
+        r = run(small)
+        self.assertNotIn("NO OWNER", r.stdout)
+        self.assertNotIn("VAGUE", r.stdout)
+
+    def test_the_table_prints_and_says_when_layers_are_unconfigured(self):
+        r = run(FULL_PLAN)
+        self.assertIn("test altitude", r.stdout)
+        self.assertIn("layers not configured", r.stdout)
+
+    def test_a_test_above_its_owner_is_misplaced(self):
+        r = run(layered_plan("tests/Shop.Application.Tests/T.cs",
+                             "src/Shop.Domain/Rule.cs"), env=LAYERS)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("MISPLACED", r.stdout)
+        self.assertIn("above the Domain code", r.stdout, r.stdout)
+
+    def test_a_test_below_its_owner_is_misplaced(self):
+        r = run(layered_plan("tests/Shop.Domain.Tests/T.cs",
+                             "src/Shop.Application/Handler.cs"), env=LAYERS)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("below the Application code", r.stdout, r.stdout)
+
+    def test_a_test_at_its_owners_layer_passes(self):
+        r = run(layered_plan("tests/Shop.Persistence.Tests/T.cs",
+                             "src/Shop.Persistence/Repo.cs"), env=LAYERS)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("Persistence | Persistence", r.stdout)
+
+    def test_two_owners_mean_the_higher_layer(self):
+        """A test turned green by a Domain rule and an Application handler must
+        sit where it can observe both."""
+        two = layered_plan("tests/Shop.Application.Tests/T.cs", "src/Shop.Domain/Rule.cs")
+        two = two.replace(
+            "Implementation slices:",
+            "Implementation slices:" + chr(10)
+            + "- `src/Shop.Application/Handler.cs` — wires the rule; turns green: `t`")
+        r = run(two, env=LAYERS)
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_layer_names_match_whole_segments_only(self):
+        """A layer name inside an identifier is not that layer. The first version
+        of this test used `DomainEvents.cs` under Application and was vacuous:
+        matched bare, `Domain` (6) still loses to `Application` (11) under
+        longest-match, so the boundary rule was masked and its probe did not
+        fire. The load-bearing case needs the false substring to be the longest
+        match: `PersistenceHelpers.cs` under Domain. Bounded, the owner is
+        Domain and the Domain test sits at its layer; bare, `Persistence` wins
+        and the same test reads as below its owner."""
+        r = run(layered_plan("tests/Shop.Domain.Tests/T.cs",
+                             "src/Shop.Domain/PersistenceHelpers.cs"), env=LAYERS)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("Domain | Domain", r.stdout, r.stdout)
+        # the original case, kept for intent; not what makes the probe fire
+        r = run(layered_plan("tests/Shop.Application.Tests/T.cs",
+                             "src/Shop.Application/DomainEvents.cs"), env=LAYERS)
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_an_unclassifiable_path_never_reads_as_placed(self):
+        r = run(layered_plan("tests/Misc/T.cs", "src/Shop.Domain/Rule.cs"), env=LAYERS)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("?", r.stdout)
+
+    def test_malformed_slices_do_not_pass_silently(self):
+        """Empty section, a slice with only prose, a lane with a bullet and no
+        slices at all - each must reach a verdict about `t`, not a clean exit."""
+        for broken in (
+            FULL_PLAN.replace("- a.cs — accept the lower amount; turns green: `t`", ""),
+            FULL_PLAN.replace("- a.cs — accept the lower amount; turns green: `t`",
+                              "- a.cs — accept the lower amount."),
+        ):
+            r = run(broken)
+            self.assertEqual(r.returncode, 1, r.stdout)
+            self.assertIn("NO OWNER", r.stdout)
 
 
 if __name__ == "__main__":
