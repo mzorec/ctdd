@@ -34,3 +34,9 @@ so a spec-time guess becomes a stale commitment the plan then has to contradict 
 also where a spec starts duplicating `Implementation slices`. Naming an existing artifact that
 a requirement, constraint, decision or measurement is *about* is not this: that identifies the
 subject rather than designing the solution.
+
+This altitude is the conversation's as well as the document's. Resolve observable behavior,
+constraints, measurements and rejected alternatives in the discussion; leave the shape of code
+to the plan gate and the red pause, which review it against code that exists. `brainstorming`'s
+own sectioned design approval is skipped for that reason, and because approving a design in chat
+is a second approval surface competing with the gate at step 6.

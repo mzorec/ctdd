@@ -14,6 +14,7 @@ import unittest
 from pathlib import Path
 
 SCRIPT = str(Path(__file__).resolve().parent / "check-plan.py")
+NL = chr(10)
 
 FULL_PLAN = """Allow one capture below the authorized amount while preserving over-capture rejection.
 Risk: normal · contract: none · ADR: none · red pause: skip · hold-out: not required
@@ -1100,6 +1101,134 @@ HOLDOUT_PLAN = FULL_PLAN.replace(
     + "- result: pending" + chr(10)
     + "- human-verified expected values: n/a")
 
+
+class GatePresentationTests(unittest.TestCase):
+    """`--gate` emits the step 6.1 presentation instead of prose describing it.
+
+    Written from a real session: across eleven consecutive gates the agent
+    printed the plan path, the summary and the risk line, and compressed every
+    other gate-visible section - `Behavior flow`'s seven-step walk became a
+    one-line prose arrow, the hold-out's nine fields became a sentence. The
+    human approved eleven changes on sections they had not seen in full. The
+    sections were reconstructed from memory each time; when the agent finally
+    read the file, the output was correct. Every other step of this workflow
+    has a mechanical check. What reached the terminal at the gate did not.
+    """
+
+    START = "---- gate presentation, print unaltered ----"
+    END = "---- end of gate presentation ----"
+
+    def _block(self, out):
+        self.assertIn(self.START, out)
+        return out[out.index(self.START) + len(self.START):out.index(self.END)]
+
+    def test_every_gate_visible_section_is_emitted_in_the_rows_order(self):
+        b = self._block(run(FULL_PLAN, ["--gate"]).stdout)
+        seen = [s for s in ("Hold-out", "Behavior flow", "Known gaps",
+                            "Assumptions", "Uncovered", "Test altitude")
+                if s in b]
+        self.assertEqual(["Hold-out", "Behavior flow", "Known gaps",
+                          "Assumptions", "Uncovered", "Test altitude"], seen)
+        self.assertLess(b.index("Hold-out"), b.index("Behavior flow"))
+        self.assertLess(b.index("Behavior flow"), b.index("Known gaps"))
+        self.assertLess(b.index("Known gaps"), b.index("Test altitude"))
+
+    def test_behavior_flow_carries_its_own_subheadings(self):
+        """Its body is a numbered walk under `Current flow` and `Flow after
+        change`. Cutting the section at the next heading would print the
+        narrative's title and none of the narrative - which is the compression
+        this flag exists to remove, reproduced by the flag itself."""
+        b = self._block(run(FULL_PLAN, ["--gate"]).stdout)
+        self.assertIn("Current flow", b)
+        self.assertIn("Flow after change", b)
+        self.assertIn("capture requires amount == authorized", b)
+        self.assertIn("(changed) capture accepts", b)
+
+    def test_the_summary_is_emitted_verbatim(self):
+        """The summary has no heading - it is the prose above the categorical
+        line - so it is the one gate-visible part with nothing marking it, and
+        6.2 copies it verbatim into any plan-mode surface."""
+        b = self._block(run(FULL_PLAN, ["--gate"]).stdout)
+        self.assertIn("Allow one capture below the authorized amount while "
+                      "preserving over-capture rejection.", b)
+        self.assertIn("Decision summary, verbatim:", b)
+
+    def test_the_categorical_line_is_emitted(self):
+        b = self._block(run(FULL_PLAN, ["--gate"]).stdout)
+        self.assertIn("Risk: normal", b)
+        self.assertIn("hold-out: not required", b)
+
+    def test_the_plan_path_and_derived_tier_lead_the_block(self):
+        b = self._block(run(FULL_PLAN, ["--gate"]).stdout)
+        self.assertRegex(b.strip(), r"^Plan: .*\((small|medium|large)\)")
+
+    def test_the_post_approval_tail_is_never_presented(self):
+        """`approved_region`, not the raw text: 7.12 appends `## Intended
+        change` after approval, so a re-gate reading the whole file would put
+        the un-approved tail in front of the human as though it were part of
+        what they are approving."""
+        # `Uncovered / ambiguous` is moved last so its slice runs to EOF.
+        # With the tail still in the text that slice swallows it; the section
+        # keeps its bounds only because the region rule cut the tail first.
+        moved = (FULL_PLAN.replace("Uncovered / ambiguous:" + NL + "- z" + NL, "")
+                 + "Uncovered / ambiguous:" + NL + "- z" + NL)
+        tail = (moved + "## Intended change" + NL + NL
+                + "| File | Intended change |" + NL + "| --- | --- |" + NL
+                + "| `a.cs` | Accepts the lower amount. |" + NL)
+        b = self._block(run(tail, ["--gate"]).stdout)
+        self.assertIn("- z", b)
+        self.assertNotIn("Intended change", b)
+        self.assertNotIn("Accepts the lower amount", b)
+
+    def test_a_tier_that_omits_a_section_is_not_reported_as_missing(self):
+        """Tiers shrink documentation. A small-tier plan correctly has no
+        `Known gaps`, and demanding it would make the flag reject plans the
+        checker itself accepts."""
+        r = run(FULL_PLAN, ["--gate"])
+        self.assertEqual(0, r.returncode)
+        self.assertNotIn("MISSING from the plan file", self._block(r.stdout))
+
+    def test_a_required_section_that_is_absent_is_named_as_missing(self):
+        """Silence would let the flag paper over the hole rather than show it."""
+        stripped = FULL_PLAN.replace("Assumptions:" + NL + "- y" + NL, "")
+        r = run(stripped, ["--gate"])
+        self.assertNotEqual(0, r.returncode)
+        self.assertNotIn(self.START, r.stdout)
+
+    def test_no_gate_block_is_printed_for_a_plan_that_fails_its_checks(self):
+        """A presentation for a plan the workflow has not cleared would put a
+        human in front of an approval surface that does not validate."""
+        r = run("too short" + NL, ["--gate"])
+        self.assertNotEqual(0, r.returncode)
+        self.assertNotIn(self.START, r.stdout)
+
+    def test_the_altitude_table_travels_inside_the_block(self):
+        """5.4 says re-run until this exits 0, so on 0 the table printed with
+        the checker's own diagnostics reached nobody - the defect v0.52.0 fixed
+        by naming it gate-visible. It stays fixed by travelling with the rest."""
+        b = self._block(run(FULL_PLAN, ["--gate"]).stdout)
+        self.assertIn("Test altitude", b)
+        self.assertIn("t  ? | ?", b)
+
+    def test_without_the_flag_nothing_changes(self):
+        """Report-shaped addition: the flag is opt-in, and 5.4's run must be
+        byte-identical to what it was before the flag existed."""
+        bare = run(FULL_PLAN)
+        self.assertEqual(0, bare.returncode)
+        self.assertNotIn(self.START, bare.stdout)
+        self.assertIn("check-plan: test altitude", bare.stdout)
+        self.assertIn("plan revision", bare.stdout)
+
+    def test_a_label_repeated_in_prose_does_not_replace_the_section(self):
+        """First occurrence wins. A later line mentioning `Known gaps` is a
+        cross-reference; taking it as the section would emit one stray line
+        where the gate needs the list."""
+        withref = FULL_PLAN.replace(
+            "Residual risk: none beyond the planned verification",
+            "Known gaps were listed above and are unchanged." + NL
+            + "Residual risk: none beyond the planned verification")
+        b = self._block(run(withref, ["--gate"]).stdout)
+        self.assertIn("Known gaps: none — the caller contract is covered", b)
 
 class PlanRevisionTests(unittest.TestCase):
     """The revision counted edits the skill itself mandates after approval.

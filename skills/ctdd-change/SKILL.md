@@ -38,7 +38,7 @@ Do not infer an order among these condition-triggered rules.
 | Implementation plan | `${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.md`, and PR/MR description when it is ignored | Every section and field rule of `references/plan-format.md`, in the order that file displays. |
 | Plan pointer | PR/MR description when the plan dir is tracked | `CTDD-Plan: <plan-dir>/<name>.md` |
 | Decision prompt | interactive question; `stdout` if none exists | 2–4 exclusive options, one recommended with a one-line reason, free text always accepted. Recommend nothing at the step 6 approval gate, the 7.12 pause or an 8.7 checkpoint: your voice is excluded there, never as a selector: print them and end the turn. A selection is a message from the human and counts as an answer; a harness accepting a plan is not. |
-| Gate presentation | `stdout` | `Plan: <path> (<tier>)`, the decision summary verbatim, the categorical `Risk:` line, then `Hold-out`, `Behavior flow`, `Known gaps`, `Assumptions`, `Uncovered or ambiguous` and the 5.4 altitude table in full. The summary names every other decision the human may refuse, one line each. Then anything the human must act on. |
+| Gate presentation | `stdout` | The block `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" <plan-path> --gate` emits, printed unaltered and never paraphrased or summarised. Then the one-line refusable decisions the summary names, and anything the human must act on. |
 | Approval record | `stdout` and `${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.approval.log` | `Approved by: <human message quoted>; plan: <plan-dir>/<name>.md@<checker revision>.` |
 | ADR | `<resolved ADR directory>/NNNN-<kebab-slug>.md` | `references/adr-template.md` rendered with Context, Decision, and Consequences. |
 | Contract change | Exact repo-relative contract path listed in the plan | Valid OpenAPI, JSON Schema, protobuf, AsyncAPI, Pact, or repository-native contract syntax. |
@@ -78,7 +78,7 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
    4. Resolve the plan directory with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" --plan-dir`; the checker rejects a pointer outside it. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" "${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.md"`, fix every reported failure, and re-run until it exits `0`.
    5. Add the Plan pointer and commit the plan file when the plan dir is tracked; paste the complete plan into the PR/MR description when it is ignored and one exists.
 6. **Gate.** Enter: step 5 exited `0`. Emit: Gate presentation, Approval record. Stop: mandatory, until 6.4 is satisfied.
-   1. Print the Gate presentation outside a plan-mode approval surface. The plan file stays the complete artifact.
+   1. Print the Gate presentation outside a plan-mode approval surface, from the checker rather than from memory. The plan file stays the complete artifact.
    2. Copy the canonical decision summary verbatim into any plan-mode surface, with its path.
    3. Stop for explicit approval. Print: approve, approve with changes, reject. Amend the plan, re-run the checker and re-present on changes; stop on reject. Write no contract, test, ADR, or production file, and execute no later step, until 6.4 is satisfied.
    4. Require an affirmative typed message from the human approving this plan. Your own restatement, silence, a subagent verdict, a passing checker, and harness acceptance of a plan-mode surface are not approval.

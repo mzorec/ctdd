@@ -5,6 +5,16 @@ Usage:
     git diff --name-status -M | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" -
     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" name-status.txt
     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git [extra git-diff args...]
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <base> --plan <plan-path>
+
+--plan compares the inventory against the plan in both directions and reports
+three things, none of which moves the verdict or the exit code: planned files
+the diff never touched, touched surface the plan never named, and production
+files with no row under the plan's `## Intended change`. That last one is
+silent when the plan has no such section, which is every plan before 7.12
+appends one and every plan in the `red pause: skip` lane. The plan's own
+artifacts beside it — the verify, red-state, pin-state and approval logs and
+the pre-implementation diff — are excluded by filename stem.
 
 Reads `git diff --name-status` output (use -M so renames are detected) and
 classifies every touched path against the SAME test/contract patterns the
@@ -350,15 +360,104 @@ def plan_paths_from(path):
     return out
 
 
+_INTENDED_CHANGE = re.compile(r"^[ \t]*#{1,6}[ \t]*Intended change\b", re.I | re.M)
+_ROW_PATH = re.compile(r"[A-Za-z0-9_.\-/]+\.[A-Za-z0-9]{1,6}$")
+
+
+def intended_change_paths(path):
+    """Repository paths named under the plan's `## Intended change`.
+
+    `None` when the plan has no such section, which is the `red pause: skip`
+    case and every plan before 7.12 appends one - silence there, because
+    reporting the absence needs the `red pause` value, and that field is parsed
+    in check-plan.py. A second parse of it here to drive one report line would
+    fork a definition; the deficit is filed instead.
+
+    Read from BOTH the first cell of each table row and any backticked token,
+    because the sibling above requires backticks and a table that does not use
+    them would extract nothing and pass in silence - the fail-silent shape
+    `--tests-from` produced three times.
+    """
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            body = fh.read(200_000)
+    except OSError:
+        return None
+    m = _INTENDED_CHANGE.search(body)
+    if not m:
+        return None
+    # To EOF: 7.12 appends the section last and, under `phased`, its body
+    # carries `## Phase N` headings of its own, so stopping at the next heading
+    # would read only the first phase's table.
+    tail = body[m.end():]
+    out = set()
+    for line in tail.split("\n"):
+        if line.lstrip().startswith("|"):
+            cell = line.strip().strip("|").split("|")[0].strip().strip("`").strip()
+            if "/" in cell and _ROW_PATH.match(cell):
+                out.add(cell)
+    for t in re.finditer(r"`([^`\n]{3,160})`", tail):
+        tok = t.group(1).strip()
+        if "/" in tok and re.search(r"\.[A-Za-z0-9]{1,6}$", tok) and " " not in tok:
+            out.add(tok)
+    return out
+
+
+def _plan_artifacts(plan_path):
+    """Predicate: is this changed path one of the plan's own artifacts?
+
+    Keyed on the plan's FILENAME STEM, not on its directory, because the caller
+    may pass the plan as a repository-relative path or an absolute one while
+    diff paths are always repository-relative - so a directory comparison
+    silently stops excluding anything the moment an absolute path is used, and
+    the report fills with the logs on every run. Every artifact step 7 and 7.12
+    write is `<plan stem>.<suffix>` beside the plan - the verify, red-state,
+    both pin-state and approval logs, and the pre-implementation diff - so the
+    stem identifies all of them under either form.
+
+    A directory comparison stood beside this and was deleted: probing showed no
+    case where it was the rule that excluded anything, because every artifact
+    is stem-named. An unguarded branch is worse than a missing one.
+    """
+    norm = plan_path.replace("\\", "/")
+    stem = os.path.splitext(os.path.basename(norm))[0]
+
+    def is_artifact(path):
+        return bool(stem) and os.path.basename(
+            path.replace("\\", "/")).startswith(stem)
+    return is_artifact
+
+
+def _covered(path, rows):
+    """A diff path is covered when some row names it.
+
+    Containment in both directions, as the sibling comparison does, plus
+    basename equality - a plan that abbreviates a long path to fit the column
+    (`Application/.../Commands/Foo.cs`) matches neither direction, and a row
+    that is present but unmatched reads here as a row that is missing.
+    """
+    base = os.path.basename(path)
+    return any(r in path or path in r or os.path.basename(r) == base
+               for r in rows)
+
+
 def main():
     args = sys.argv[1:]
     # --plan <path>: compare the inventory against the plan in BOTH
     # directions. Report-only; the verdict is unchanged.
     plan_paths = None
+    intended, is_plan_artifact = None, None
     if "--plan" in args:
         i = args.index("--plan")
         if i + 1 < len(args):
             plan_paths = plan_paths_from(args[i + 1])
+            intended = intended_change_paths(args[i + 1])
+            # 7.12 puts the red-state log, the pin-state logs, the approval
+            # record and the pre-implementation diff *beside the plan*. They
+            # are changed files that classify as nothing, so without this they
+            # are reported as missing rows on every run - the shape
+            # check-adr-drift.py refuses, and what readers learn to ignore.
+            is_plan_artifact = _plan_artifacts(args[i + 1])
             args = args[:i] + args[i + 2:]
     if args and args[0] in ("-h", "--help"):
         print(__doc__.strip())
@@ -427,7 +526,10 @@ def main():
         text = sys.stdin.read()
 
     findings = {"contract": [], "test": [], "adr": []}
-    other, unread = 0, []
+    # `other` stays a count for the line that reports it; `production` keeps the
+    # paths, which the `## Intended change` comparison below needs. A file that
+    # classifies as no surface at all is what 7.12 calls a production file.
+    other, unread, production = 0, [], []
 
     entries, malformed = parse_name_status(text)
     for status, old, new in entries:
@@ -444,6 +546,7 @@ def main():
                 findings[old_cls or new_cls].append(f"{verb}: {old} -> {new}")
             else:
                 other += 1
+                production.append(new or old)
         else:
             cls = classify(old)
             if cls:
@@ -458,12 +561,10 @@ def main():
                 unread.append(old)
             else:
                 other += 1
+                production.append(old)
 
     # Unknown content cannot clear the lane. SKILL.md 3.3 opens the trivial lane
     # on this exact verdict string, and a submodule bump can carry any change.
-    # A file the plan approved and the diff never touched is not "no surface":
-    # the run produced the same verdict a clean tree does, so an approved contract
-    # change that was never written read as nothing to see.
     # A file the plan approved and the diff never touched is not "no surface":
     # the run produced the same verdict a clean tree does, so an approved contract
     # change that was never written read as nothing to see.
@@ -511,6 +612,34 @@ def main():
             print("\nUnplanned surface:")
             for s in unplanned:
                 print(f"  - {s}")
+
+    # 7.12's table is "one row per production file the change touches, new files
+    # included". Observed twice in real use, both times shrinking the output: the
+    # phrase was read as "per file each phase actively edits", so files whose only
+    # change was step-7 stub plumbing were dropped - eight of seventeen on one
+    # change - and the plan's record of what was built had holes a later reader
+    # cannot tell from deliberate omission. Driven from the diff, not the table:
+    # under `phased` the diff holds only the phases implemented so far, so a file
+    # not yet touched cannot be reported missing.
+    # `is not None`, never a truth test: an empty set means the section is there
+    # and named no file at all, which is the failure rather than the absence of
+    # one. A truth test read that as nothing to compare and passed in silence -
+    # found by probing this check, and the same fail-silent shape `--tests-from`
+    # produced three separate times.
+    if intended is not None:
+        missing = sorted({p for p in production
+                          if not _covered(p, intended)
+                          and not (is_plan_artifact and is_plan_artifact(p))})
+        if missing:
+            print(f"\nProduction files with no `## Intended change` row "
+                  f"({len(missing)}):")
+            for p in missing:
+                print(f"  - {p}")
+            print("  7.12 wants one row per production file the change touches, "
+                  "new files included — a file already carrying step-7 plumbing "
+                  "is touched. Without its row a later reader cannot tell a file "
+                  "that was considered and deliberately left alone from one that "
+                  "was forgotten.")
 
     if unread:
         # A gitlink is a change of *unknown content*: the parent diff shows only

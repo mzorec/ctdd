@@ -27,6 +27,14 @@ def run(text, env_extra=None):
                           timeout=15, env=env)
 
 
+TAB = chr(9)
+NL = chr(10)
+
+def quoted(path):
+    """A backticked path, written without a literal backtick in source."""
+    return chr(96) + path + chr(96)
+
+
 def _norm(s):
     """Numbers and f-string interpolations collapse to a placeholder."""
     s = _re_mod.sub(r"\{[^}]*\}", "#", s)
@@ -176,12 +184,82 @@ class RoutingSkillStructureTests(unittest.TestCase):
                 # closed by replacing the ambiguous `guessing` qualifier. It is
                 # what licenses a spec to name the code a constraint is about,
                 # so the rule is only survivable while it survives.
-                "Naming an existing artifact"]
+                "Naming an existing artifact",
+                # The conversation half of the altitude rule. The document half
+                # above could not catch a design conversation that had already
+                # drifted into interface and class names, because the document
+                # did not exist yet; only the human caught it.
+                "This altitude is the conversation's as well as the document's"]
 
     def setUp(self):
         self.base = Path(__file__).resolve().parents[1] / "skills" / "ctdd-routing"
         self.skill = (self.base / "SKILL.md").read_text(encoding="utf-8")
         self.contract = (self.base / "references" / "spec-contract.md").read_text(encoding="utf-8")
+
+    def test_the_contract_path_names_the_skill_that_owns_it(self):
+        """A bare `references/x.md` is unambiguous inside a skill's own steps. This
+        one sits in a bullet whose whole subject is `brainstorming`, a skill in
+        another plugin — which ships no `references/` directory at all. An agent
+        resolved the path there, found nothing, reported that the contract did not
+        exist in brainstorming 6.3.0, and fell back to mirroring an unrelated
+        document. The file existed the whole time and the bundling guard below was
+        green: it checks that the file is there, not that a reader can find it."""
+        self.assertIn("this skill's `references/spec-contract.md`", self.skill,
+                      "the contract path must name its owner — read bare, inside a "
+                      "bullet about another plugin's skill, it resolves to that plugin")
+
+    def test_the_contract_loads_at_route_choice_not_at_write_time(self):
+        """`brainstorming` presents its sectioned design before it writes anything,
+        so a contract loaded only `before writing the spec` arrives after the
+        conversation it governs is over. The contract's own first line says to read
+        it once brainstorming is the chosen route; the skill must agree."""
+        self.assertIn("Once brainstorming is the chosen route", self.skill)
+        self.assertNotIn("Before writing the spec, read", self.skill,
+                         "loading the contract at spec-writing time puts it after "
+                         "the design conversation, which is what it has to govern")
+
+    def _upstream_brainstorming(self):
+        """The installed upstream skill routing pins by step number: newest cached
+        version, or None when superpowers is not in this machine's plugin cache.
+        CTDD_PLUGIN_CACHE points the locator elsewhere, so the guard can be probed
+        against a mangled copy instead of the user's real cache."""
+        root = Path(os.environ.get("CTDD_PLUGIN_CACHE")
+                    or Path.home() / ".claude" / "plugins" / "cache")
+        def vkey(path):
+            return [(0, int(x)) if x.isdigit() else (1, x)
+                    for x in path.parents[2].name.split(".")]
+        hits = sorted(root.glob("*/superpowers/*/skills/brainstorming/SKILL.md"), key=vkey)
+        return hits[-1] if hits else None
+
+    def test_the_pinned_upstream_steps_still_say_what_routing_claims(self):
+        """Routing names brainstorming's exits by position - Path 2 step 5 and Path 3
+        step 9 - because those are the seams it rewires to `ctdd-change`. The ROUTES
+        guard asserts routing still *says* so; nothing asserted brainstorming still
+        *does* so, and brainstorming is another plugin's file, renumbered without
+        regard to this one. Inert where superpowers is not installed; binding on the
+        pilot machine, where a silent misroute is the cost being guarded. The owner
+        declined a vendored copy on 2026-09-16, so this seam is permanent."""
+        skill = self._upstream_brainstorming()
+        if skill is None:
+            self.skipTest("superpowers is not in the plugin cache")
+        text = skill.read_text(encoding="utf-8")
+
+        def step(path_label, n):
+            stars, nl = re.escape("**"), chr(10)
+            block = re.search("^" + stars + path_label + ":" + stars + nl
+                              + "(.*?)(?=" + nl + stars + "|" + nl + "## )",
+                              text, re.S | re.M)
+            self.assertIsNotNone(block, f"upstream has no `**{path_label}:**` checklist")
+            m = re.search("^" + str(n) + re.escape(". ") + "(.*)", block.group(1), re.M)
+            self.assertIsNotNone(m, f"upstream {path_label} path has no step {n}")
+            return m.group(1)
+
+        self.assertIn("no plan document", step("Bounded", 5),
+                      f"routing says Path 2 step 5 implements with no plan document; "
+                      f"{skill.parents[2].name} upstream no longer does - re-pin routing")
+        self.assertIn("writing-plans", step("Architectural", 9),
+                      f"routing says Path 3 step 9 invokes writing-plans; "
+                      f"{skill.parents[2].name} upstream no longer does - re-pin routing")
 
     def test_routing_decisions_stay_in_the_always_loaded_skill(self):
         for route in self.ROUTES:
@@ -418,6 +496,21 @@ class ChangeSkillStructureTests(unittest.TestCase):
             "Stop for explicit approval.",
         "approval authorizes the plan file":
             "Treat approval as authorization to execute the plan file.",
+        # The three below are the prevention half of the approval-provenance fix,
+        # and they shipped with nothing pinning them: reverting all three left
+        # both suites green. An interactive selector resolved its highlighted
+        # default to the approve label while the human was typing something
+        # unrelated; the label was quoted into the approval record as if it were
+        # their message, and a production file was edited against a gate nobody
+        # had passed. `check-plan.py --approval` now rejects a bare option label,
+        # but the workflow passes that flag at one conditional site. These three
+        # lines are what stops the turn in the first place.
+        "the gate prints its options and does not offer them":
+            "Stop for explicit approval. Print:",
+        "approval must be typed, not selected":
+            "Require an affirmative typed message",
+        "a decision prompt is never rendered as a selector":
+            "never as a selector",
         "full plan reaches stdout outside plan mode":
             # 6.1 stopped demanding the whole plan in the terminal: the 2026-07-27
             # plans ran 31,448 and 27,976 chars (~14 and ~12 minutes), so agents
@@ -576,6 +669,189 @@ class ChangeSkillStructureTests(unittest.TestCase):
                 f"no `Read references/{name}` loader survives the boundary, so the "
                 f"fallback it backs would vanish")
 
+
+class IntendedChangeCoverageTests(unittest.TestCase):
+    """7.12: one row per production file the change touches, new files included.
+
+    Observed twice in real use, both times shrinking the output. On the second
+    change the phrase was read as "per file each phase actively edits", so the
+    eight files whose only change was step-7 stub plumbing were dropped and the
+    table carried nine rows of seventeen. A plan whose record of what was built
+    has holes cannot tell a later reader that a file was considered and left
+    alone, rather than forgotten. The tell is the direction: every misreading
+    resolved toward less work, which is not ambiguity.
+
+    Report-only, at 8.4, where the workflow already passes both the diff and the
+    plan. A checker reachable only behind a flag the workflow never passes is
+    the defect this repo already shipped once.
+    """
+
+    PROD = ["src/Infra/Repositories/DiscoveredDocumentRepository.cs",
+            "src/App/Commands/DiscoverDocumentsCommandHandler.cs",
+            "src/App/Abstractions/IDiscoveredDocumentRepository.cs"]
+    HEADER = "Production files with no"
+
+    def _plan(self, rows, section=True, stem="2026-09-17-bound-every-sweep"):
+        d = Path(tempfile.mkdtemp()) / "docs" / "plans"
+        d.mkdir(parents=True)
+        plan = d / (stem + ".md")
+        body = ["# Plan", "Business requirement: bound every sweep statement.", ""]
+        if section:
+            body += ["## Intended change", "",
+                     "## Phase 1 - Bound the discovery statements",
+                     "Consumes: - . Produces: a bounded copy.", "",
+                     "| File | Intended change |", "| --- | --- |"]
+            body += ["| %s | Takes TOP and ORDER BY. |" % r for r in rows]
+        plan.write_text(NL.join(body) + NL, encoding="utf-8", newline=NL)
+        return plan
+
+    def _run(self, plan, paths=None, extra=()):
+        lines = ["M" + TAB + q for q in (self.PROD if paths is None else paths)]
+        lines += list(extra)
+        return subprocess.run(
+            [sys.executable, SCRIPT, "-", "--plan", str(plan)],
+            input=NL.join(lines) + NL, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=15)
+
+    def _reported(self, out):
+        if self.HEADER not in out:
+            return []
+        block = out[out.index(self.HEADER):]
+        block = block[:block.index("7.12 wants one row")]
+        return [l.strip()[2:] for l in block.split(NL) if l.startswith("  - ")]
+
+    def test_a_production_file_with_no_row_is_reported(self):
+        r = self._run(self._plan([quoted(self.PROD[0])]))
+        self.assertEqual(sorted(self.PROD[1:]), sorted(self._reported(r.stdout)))
+
+    def test_a_complete_table_reports_nothing(self):
+        r = self._run(self._plan([quoted(q) for q in self.PROD]))
+        self.assertNotIn(self.HEADER, r.stdout)
+
+    def test_a_plan_with_no_intended_change_section_reports_nothing(self):
+        """The `red pause: skip` lane appends no section, and every plan before
+        7.12 runs has none either. Reporting the absence needs the `red pause`
+        value, which check-plan.py parses; a second parse here would fork it."""
+        r = self._run(self._plan([], section=False))
+        self.assertNotIn(self.HEADER, r.stdout)
+
+    def test_the_plans_own_artifacts_are_never_reported(self):
+        """7.12 writes the pre-implementation diff beside the plan and step 7
+        writes the red-state, pin-state and approval logs there. They classify
+        as no surface, so without the exclusion every run reports five files
+        that can never have a row - the shape check-adr-drift.py refuses."""
+        stem = "2026-09-17-bound-every-sweep"
+        beside = ["docs/plans/" + stem + s for s in
+                  (".md", ".approval.log", ".redstate.log", ".pinstate.log",
+                   ".pinstate-after.log", ".prered.diff")]
+        r = self._run(self._plan([quoted(q) for q in self.PROD]),
+                      extra=["M" + TAB + q for q in beside])
+        self.assertNotIn(self.HEADER, r.stdout)
+
+    def test_artifacts_are_excluded_when_the_plan_arg_is_absolute(self):
+        """The exclusion keys on the plan's filename stem, not its directory:
+        diff paths are repository-relative while the caller may pass the plan
+        either way, and a directory comparison silently stops excluding
+        anything under an absolute path - filling the report on every run."""
+        plan = self._plan([quoted(q) for q in self.PROD])
+        beside = ["docs/plans/" + plan.stem + ".redstate.log",
+                  "docs/plans/" + plan.stem + ".prered.diff"]
+        r = subprocess.run(
+            [sys.executable, SCRIPT, "-", "--plan", str(plan.resolve())],
+            input=NL.join(["M" + TAB + q for q in self.PROD + beside]) + NL,
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=15)
+        self.assertNotIn(self.HEADER, r.stdout)
+
+    def test_test_and_contract_surface_are_not_production(self):
+        r = self._run(self._plan([quoted(q) for q in self.PROD]),
+                      extra=["M" + TAB + "tests/App.IntegrationTests/SweepTests.cs",
+                             "M" + TAB + "openapi.yaml"])
+        self.assertNotIn(self.HEADER, r.stdout)
+
+    def test_rows_are_read_without_backticks(self):
+        """The sibling comparison requires backticks. A table that does not use
+        them would extract zero paths and pass in silence, which is the
+        fail-silent shape `--tests-from` produced three separate times."""
+        r = self._run(self._plan(self.PROD))
+        self.assertNotIn(self.HEADER, r.stdout)
+
+    def test_an_abbreviated_row_path_still_covers_its_file(self):
+        """Plans abbreviate a long path to fit the column. Containment matches
+        neither direction, so without the basename fallback a row that is
+        present reads as a row that is missing."""
+        r = self._run(self._plan(
+            [quoted("App/.../Repositories/DiscoveredDocumentRepository.cs"),
+             quoted("App/.../Commands/DiscoverDocumentsCommandHandler.cs"),
+             quoted("App/.../Abstractions/IDiscoveredDocumentRepository.cs")]))
+        self.assertNotIn(self.HEADER, r.stdout)
+
+    def test_rows_below_a_later_phase_heading_still_count(self):
+        """The section runs to EOF because its body carries `## Phase N`
+        headings of its own; bounding it at the next heading would read only
+        the first phase's table and report every later phase's files."""
+        plan = self._plan([quoted(self.PROD[0])])
+        plan.write_text(
+            plan.read_text(encoding="utf-8") + NL.join(
+                ["", "## Phase 2 - Bound the expansion statements",
+                 "Consumes: phase 1 . Produces: bounded inserts.", "",
+                 "| File | Intended change |", "| --- | --- |"]
+                + ["| %s | Passes the batch. |" % quoted(q) for q in self.PROD[1:]]
+                + [""]),
+            encoding="utf-8", newline=NL)
+        r = self._run(plan)
+        self.assertNotIn(self.HEADER, r.stdout)
+
+    def test_a_section_naming_no_file_reports_every_production_file(self):
+        """Found by probing this check: an empty extraction is the failure, not
+        the absence of one. A truth test on the result treated a section that
+        named nothing as nothing to compare and passed in silence, which also
+        made the no-backticks guard above vacuous. The section is present here
+        and carries prose only, so every production file is unaccounted for."""
+        plan = self._plan([])
+        plan.write_text(plan.read_text(encoding="utf-8")
+                        + "Phase 1 bounds the discovery statements." + NL,
+                        encoding="utf-8", newline=NL)
+        r = self._run(plan)
+        self.assertEqual(sorted(self.PROD), sorted(self._reported(r.stdout)))
+
+    def test_artifacts_are_excluded_when_the_plan_arg_has_no_directory(self):
+        """Isolates the stem half of the exclusion. The directory half matches
+        by suffix and so covers relative and absolute plan paths alike; it
+        cannot fire at all when the caller passes a bare filename, which is
+        what a run from inside the plans directory does."""
+        plan = self._plan([quoted(q) for q in self.PROD])
+        beside = ["docs/plans/" + plan.stem + ".redstate.log",
+                  "docs/plans/" + plan.stem + ".prered.diff"]
+        r = subprocess.run(
+            [sys.executable, SCRIPT, "-", "--plan", plan.name],
+            input=NL.join(["M" + TAB + q for q in self.PROD + beside]) + NL,
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=15, cwd=str(plan.parent))
+        self.assertNotIn(self.HEADER, r.stdout)
+
+    def test_a_reported_missing_row_does_not_move_the_verdict(self):
+        """The sibling below compares two runs that both report nothing, so it
+        cannot see whether reporting moves the verdict. `check-plan.py` opens
+        the trivial lane on this exact string, and a production file is not
+        spec surface: a missing row is something for the human to fix at 8.5,
+        never a reclassification of the diff."""
+        r = self._run(self._plan([]))
+        self.assertEqual(sorted(self.PROD), sorted(self._reported(r.stdout)))
+        self.assertEqual(0, r.returncode)
+        self.assertIn("no test/contract/ADR surface touched", r.stdout)
+
+    def test_the_verdict_and_exit_code_are_untouched(self):
+        """Report-only: 8.5 acts on what 8.4 reports, and the trivial lane opens
+        on the verdict string, which this must not move."""
+        bare = subprocess.run([sys.executable, SCRIPT, "-"],
+                              input="M" + TAB + self.PROD[0] + NL,
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=15)
+        r = self._run(self._plan([]), paths=[self.PROD[0]])
+        self.assertEqual(bare.returncode, r.returncode)
+        self.assertIn("no test/contract/ADR surface touched", bare.stdout)
+        self.assertIn("no test/contract/ADR surface touched", r.stdout)
 
 class QuotedPathTests(unittest.TestCase):
     """git quotes non-ASCII paths by default, and the leading quote defeated every
@@ -2335,7 +2611,12 @@ class CrossSkillAgreementTests(unittest.TestCase):
         skill = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
         wc = (self._skills() / "ctdd-change" / "references"
               / "worked-change.md").read_text(encoding="utf-8")
-        self.assertIn("`Plan: <path> (<tier>)`", skill)
+        # The literal moved out of the row and into the emitter, which is now
+        # what puts it first; the worked example still teaches the order.
+        cp = (self._skills().parent / "scripts" / "check-plan.py").read_text(encoding="utf-8")
+        gate = cp[cp.index("def gate_presentation"):]
+        self.assertIn('out = [f"Plan: {plan_src} ({tier})"', gate,
+                      "the gate block no longer leads with the plan path and tier")
         self.assertIn("`Plan: <path> (<tier>)` goes to stdout first", wc)
 
     def test_the_canonical_plan_addresses_every_always_case(self):
@@ -2668,12 +2949,31 @@ class CrossSkillAgreementTests(unittest.TestCase):
         self.assertIn("Gate presentation", skill)
         row = [l for l in skill.split(chr(10)) if l.startswith("| Gate presentation")]
         self.assertEqual(len(row), 1, "the Output contract lost its Gate presentation row")
-        for name in IN_FULL:
-            self.assertIn("`%s`" % name, row[0],
-                          f"the always-loaded row no longer names {name!r} as printed in full")
-        # A pointer to a growable set is what made the gate scale with the plan.
-        # The body names the closed set itself, so it cannot grow silently.
+
+        # v0.54.0: the set moved from the row into `check-plan.py --gate`, which
+        # emits it from the plan file. The reason is a real session in which the
+        # agent retyped these sections from memory at eleven consecutive gates
+        # and compressed every one - a seven-step walk became a prose arrow, the
+        # hold-out's nine fields became a sentence - so the human approved
+        # eleven changes on sections they had never seen. The closed-set
+        # property the two recorded failures above bought is NOT relaxed by
+        # that move; it follows the set. Asserted by equality against the
+        # script's own order, so a sixth member still fails, and against the
+        # row still ordering the output printed unaltered.
+        self.assertIn("--gate", row[0],
+                      "the row no longer names the flag that emits the gate "
+                      "presentation, so the sections are retyped from memory again")
+        self.assertIn("unaltered", row[0],
+                      "without this the agent may print the block and put its own "
+                      "summary above it, which is the compression, restored")
         self.assertNotIn("marks **gate-visible**", row[0])
+        cp = (self._skills().parent / "scripts" / "check-plan.py").read_text(encoding="utf-8")
+        emitted = _re.search(r"for key, label in \((.*?)\):", cp, _re.S)
+        self.assertIsNotNone(emitted, "check-plan.py lost its gate emission order")
+        self.assertEqual(
+            set(_re.findall(r'"([^"]+)"\)', emitted.group(1))), IN_FULL,
+            "the set --gate prints in full changed; both recorded failures above "
+            "were caused by growing it, and the set is closed at five")
         # v0.52.0 added one more thing printed in full, and it is not a sixth
         # member of the set above: the altitude table check-plan prints at 5.4 is
         # script output, categorically like `Plan: <path> (<tier>)` already in
@@ -2682,7 +2982,7 @@ class CrossSkillAgreementTests(unittest.TestCase):
         # 5.4 exits 0 and the agent moves on - and the within-layer case the
         # script cannot judge is exactly the row a human reads correctly at a
         # glance, and had been asking for by hand four or five plans running.
-        self.assertIn("5.4 altitude table", row[0],
+        self.assertIn("altitude", cp[cp.index("def gate_presentation"):],
                       "the gate no longer prints check-plan's altitude table, so the "
                       "one placement question the script cannot decide never reaches "
                       "the reader who decides it correctly")

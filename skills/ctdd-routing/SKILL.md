@@ -42,8 +42,8 @@ cause is ceremony.
   followed — Path 2 step 5 implements directly with no plan document, and Path 3 step 9 invokes
   `writing-plans`; both hand off to `ctdd-change` instead. It never edits production files.
 
-  Before writing the spec, read `references/spec-contract.md` — what the document must carry, and
-  what stays out of it.
+  Once brainstorming is the chosen route, read this skill's `references/spec-contract.md` — what
+  the document must carry, and what stays out of it.
 
   Approving the spec is not approving a plan either — the gate at step 6 is still where a change is
   authorized.

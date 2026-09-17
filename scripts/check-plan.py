@@ -7,6 +7,17 @@ Usage:
     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" plan.md --diff surface.txt
     echo "$CI_MERGE_REQUEST_DESCRIPTION" | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" - --diff surface.txt
     echo "$CI_MERGE_REQUEST_DESCRIPTION" | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" - --from-description --diff surface.txt
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" plan.md --gate
+
+--gate emits the step 6.1 gate presentation from the plan file, after every
+check has passed and never for a plan that fails one: the path and derived
+tier, the decision summary verbatim, the categorical line, then `Hold-out`,
+`Behavior flow`, `Known gaps`, `Assumptions`, `Uncovered or ambiguous` and the
+altitude table, each in full and read from the approved region. It exists
+because the alternative is the agent retyping them, and in one real session it
+did that at eleven consecutive gates and compressed every one — a seven-step
+flow became a prose arrow, the hold-out's nine fields became a sentence. Print
+the block unaltered; a summary of it is the defect.
 
 --from-description keeps CI and the runtime pointing at the SAME artifact. The
 skill writes the canonical plan to docs/plans/<name>.md and puts a pointer in
@@ -616,11 +627,127 @@ for _stream in (sys.stdin, sys.stdout, sys.stderr):
             pass
 
 
+# Sections REQUIRED does not carry, because each is conditional and so cannot be
+# a presence check. They appear here only as terminators: a gate-visible section
+# ends where the next section starts, whichever one that is.
+_EXTRA_BOUNDARIES = [
+    ("decisions confirmed",  r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*decisions?\s+confirmed\b"),
+    ("changed assertions",   r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*changed\s+existing\s+assertions?\b"),
+    ("colocated notes",      r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*colocated\s+notes?\b"),
+    ("ADR draft",            r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*adr\s+draft\b"),
+]
+# `## Intended change` is deliberately NOT a boundary here. It was, and probing
+# showed no mutation could make it the rule that kept the post-approval tail out
+# of the presentation - `approved_region` had already removed that text before
+# this function saw it. Two mechanisms for one rule, one of them unguarded and
+# the redundant one the weaker: a boundary only stops the tail leaking out of
+# the section above it, while the region rule is the reason the tail is absent.
+# Deliberately NOT boundaries: `current flow` and `flow after change` are
+# subheadings *inside* `Behavior flow`, so treating them as sections would cut
+# that section at its own first subheading - emitting the narrative's title and
+# none of the narrative, which is the compression this flag exists to remove.
+_INNER = {"current flow", "flow after change"}
+
+
+def _boundary_patterns():
+    """Every line that starts a section, from REQUIRED plus the conditionals.
+
+    REQUIRED's patterns, not a second list of literal names: they already carry
+    the heading prefixes and the spelling variants a plan really uses - the
+    section the format calls `Uncovered or ambiguous` is written `Uncovered /
+    ambiguous` in this repo's own fixture, and a literal-prefix match reported
+    it missing while the checker two functions away matched it.
+    """
+    return [(n, re.compile(rx, re.I)) for n, rx in REQUIRED
+            if n not in _INNER] + [(n, re.compile(rx, re.I))
+                                   for n, rx in _EXTRA_BOUNDARIES]
+
+
+def _section_bounds(text):
+    """Section name -> (start, end) line indices, end exclusive.
+
+    A section runs to the next section's first line, not to the next blank line
+    or heading: the sections this is built for carry numbered walks, bullet
+    lists and their own subheadings, and every cheaper terminator cuts one.
+    """
+    lines = text.split(chr(10))
+    pats = _boundary_patterns()
+    hits = []
+    for i, line in enumerate(lines):
+        for name, rx in pats:
+            if rx.match(line):
+                hits.append((i, name))
+                break
+    out = {}
+    for n, (i, name) in enumerate(hits):
+        end = hits[n + 1][0] if n + 1 < len(hits) else len(lines)
+        # First occurrence wins: a later line repeating the label - a
+        # cross-reference in prose - must not replace the real section.
+        out.setdefault(name, (i, end))
+    return lines, out
+
+
+def gate_presentation(text, plan_src, tier, required_names, altitude):
+    """Every gate-visible section, from the plan file, in the row's order.
+
+    Written because the alternative is the agent retyping them from memory, and
+    across eleven consecutive gates in one real session it did exactly that:
+    `Behavior flow`'s seven-step walk became a one-line prose arrow and the
+    hold-out's nine fields became a sentence. The human approved eleven changes
+    on sections they had not seen. Nothing checked it, because what reaches the
+    terminal was the one step of this workflow left on the agent's honour.
+
+    Read from `approved_region`, never the raw text: after 7.12 appends
+    `## Intended change`, a re-gate would otherwise print that tail as though
+    the approval had covered it.
+    """
+    lines, bounds = _section_bounds(approved_region(text))
+    cat = categorical_line(text)
+    out = [f"Plan: {plan_src} ({tier})", ""]
+
+    # The summary has no heading - it is everything above the categorical line -
+    # so it is the one gate-visible part with nothing marking it, and the one
+    # the agent is most likely to replace with its own words.
+    head = min([i for i, _ in [bounds[n] for n in bounds]] or [len(lines)])
+    if cat:
+        for i, line in enumerate(lines):
+            if line.strip() == cat.strip():
+                head = i
+                break
+    summary = chr(10).join(lines[:head]).strip()
+    if summary:
+        out += ["Decision summary, verbatim:", "", summary, ""]
+    if cat:
+        out += [cat.strip(), ""]
+
+    # The order the Gate presentation names, by the checker's own section keys.
+    for key, label in (("hold-out decision", "Hold-out"),
+                       ("behavior flow", "Behavior flow"),
+                       ("known gaps", "Known gaps"),
+                       ("assumptions", "Assumptions"),
+                       ("uncovered/ambiguous", "Uncovered or ambiguous")):
+        if key in bounds:
+            out += [chr(10).join(lines[slice(*bounds[key])]).rstrip(), ""]
+        elif key in required_names:
+            # Unreachable through the workflow, since the same run fails on a
+            # missing required section before reaching here. Printed rather
+            # than skipped so that a future tier change cannot turn a hole into
+            # silence.
+            out += [f"{label}: MISSING from the plan file.", ""]
+    out += altitude or ["Test altitude: no named tests to place.", ""]
+    return out
+
+
 def main():
     args = sys.argv[1:]
     if args and args[0] in ("-h", "--help"):
         print(__doc__.strip())
         return 0
+
+    # --gate: emit the step 6.1 presentation instead of describing it in prose.
+    gate = "--gate" in args
+    if gate:
+        args = [a for a in args if a != "--gate"]
 
     diff_src = None
     if "--diff" in args:
@@ -976,6 +1103,7 @@ def main():
 
     tier = plan_tier(text)
     required = required_for(tier)
+    altitude_lines = []
 
     # A section appearing twice is a corrupted plan, not a complete one. The
     # 2026-08-03 session rewrote its plan 28 times with 16 silent-failing `sed`
@@ -1176,12 +1304,26 @@ def main():
                 misplaced.append((name, t_lbl, layers[need],
                                   "above" if t_idx > need else "below"))
         if tests:
-            print("check-plan: test altitude — test layer | owning layer")
-            for name, t_lbl, o_lbl in rows:
-                print(f"  {name}  {t_lbl} | {o_lbl}")
+            body = [f"  {name}  {t_lbl} | {o_lbl}" for name, t_lbl, o_lbl in rows]
             if not layers:
-                print("  (layers not configured — set `layers` in .ctdd.json, "
-                      "lowest;…;highest, or CTDD_LAYERS, to check placement)")
+                body.append("  (layers not configured — set `layers` in "
+                            ".ctdd.json, lowest;…;highest, or CTDD_LAYERS, to "
+                            "check placement)")
+            # Under --gate it belongs inside the block the human reads, not
+            # scrolled off above it: 5.4 says re-run until this exits 0, so on
+            # 0 the table printed here reached nobody. That is the defect
+            # v0.52.0 fixed by naming it gate-visible, and it stays fixed by
+            # the table travelling with the rest of the presentation.
+            #
+            # Without the flag this prints exactly what it printed before the
+            # flag existed, header wording included: 5.4's run is the one every
+            # plan makes, and moving its output would be a change nobody asked
+            # for riding along with one they did.
+            altitude_lines = ["Test altitude — test layer | owning layer"] + body + [""]
+            if not gate:
+                print("check-plan: test altitude — test layer | owning layer")
+                for line in body:
+                    print(line)
         if orphans:
             print("check-plan: NO OWNER — no slice turns these green: "
                   + ", ".join(orphans))
@@ -1232,6 +1374,17 @@ def main():
     print(f"check-plan: all mandatory sections present for a {tier} plan "
           f"({len(required)} of {len(REQUIRED)}; presence, not quality — the "
           f"review still owns quality).")
+
+    # Last, and only after every check passed: a gate presentation for a plan
+    # that does not validate would put a human in front of an approval surface
+    # the workflow has not cleared.
+    if gate:
+        print()
+        print("check-plan: ---- gate presentation, print unaltered ----")
+        for line in gate_presentation(text, plan_src, tier,
+                                      {n for n, _ in required}, altitude_lines):
+            print(line)
+        print("check-plan: ---- end of gate presentation ----")
     return 0
 
 
