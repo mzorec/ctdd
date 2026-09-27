@@ -16,8 +16,10 @@ tier, the decision summary verbatim, the categorical line, then `Hold-out`,
 altitude table, each in full and read from the approved region. It exists
 because the alternative is the agent retyping them, and in one real session it
 did that at eleven consecutive gates and compressed every one — a seven-step
-flow became a prose arrow, the hold-out's nine fields became a sentence. Print
-the block unaltered; a summary of it is the defect.
+flow became a prose arrow, the hold-out's nine fields became a sentence. Copy
+the block into your reply unaltered: running this command is not showing its
+output, which lands in a tool result the human may never expand. A summary of
+it is the defect.
 
 --from-description keeps CI and the runtime pointing at the SAME artifact. The
 skill writes the canonical plan to docs/plans/<name>.md and puts a pointer in
@@ -1021,17 +1023,28 @@ def main():
             quoted = said.group(1).strip()
             bare = re.sub(r'^["“‘\']+|["”’\']+$', "", quoted).strip()
             spoken = bare.rstrip(".!,").strip().casefold()
+            # v0.55.0, intent-born: the owner asked for selectable options at
+            # every stop, the gate included, so a bare label is now a legitimate
+            # way to approve and rejecting it would fail every gate. What the
+            # record still may not do is leave the reader unable to tell WHICH
+            # happened. This is traceability, not prevention: with selectors
+            # allowed, nothing in the record distinguishes a deliberate click
+            # from a selector resolving on a harness default, which is how a
+            # production file was once edited against a gate nobody passed. That
+            # protection now belongs to the harness. The record at least says so.
+            # No separate "does it carry provenance" test: any wording beyond
+            # the label itself already takes `spoken` out of the set above, so a
+            # second check would be a branch no mutation could reach.
             if spoken in _GATE_LABELS:
-                print(f"check-plan: the approval record quotes the option label "
-                      f"{quoted}, not a typed message. A label is what an "
-                      f"interactive selector returns, and a selector resolves on "
-                      f"one keystroke or on a harness default — so this record "
-                      f"cannot establish that 6.4 was satisfied.")
-                print("6.3 prints the three options and ends the turn: re-present "
-                      "the gate and quote the human's own words. If they did type "
-                      "exactly this word, record where it came from — "
-                      f"`Approved by: \"{bare}, typed by the human at the gate\"` "
-                      "— rather than the bare label.")
+                print(f"check-plan: the approval record carries the bare option "
+                      f"label {quoted} and does not say how it arrived. A label "
+                      f"alone reads the same whether the human chose it or a "
+                      f"selector resolved on a default, and only one of those is "
+                      f"approval.")
+                print("Say which, in the record itself — "
+                      f"`Approved by: \"{bare}\" (selected at the gate)` or "
+                      f"`Approved by: \"{bare}\" (typed at the gate)` — or quote "
+                      "the human's own words instead of the label.")
                 return 1
         print(f"check-plan: approval record verified for revision {want}.")
 
@@ -1380,7 +1393,7 @@ def main():
     # the workflow has not cleared.
     if gate:
         print()
-        print("check-plan: ---- gate presentation, print unaltered ----")
+        print("check-plan: ---- gate presentation: copy this block into your reply unaltered; the human does not see tool output ----")
         for line in gate_presentation(text, plan_src, tier,
                                       {n for n, _ in required}, altitude_lines):
             print(line)

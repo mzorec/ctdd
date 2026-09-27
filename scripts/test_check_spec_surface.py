@@ -496,21 +496,46 @@ class ChangeSkillStructureTests(unittest.TestCase):
             "Stop for explicit approval.",
         "approval authorizes the plan file":
             "Treat approval as authorization to execute the plan file.",
-        # The three below are the prevention half of the approval-provenance fix,
-        # and they shipped with nothing pinning them: reverting all three left
-        # both suites green. An interactive selector resolved its highlighted
-        # default to the approve label while the human was typing something
-        # unrelated; the label was quoted into the approval record as if it were
-        # their message, and a production file was edited against a gate nobody
-        # had passed. `check-plan.py --approval` now rejects a bare option label,
-        # but the workflow passes that flag at one conditional site. These three
-        # lines are what stops the turn in the first place.
-        "the gate prints its options and does not offer them":
-            "Stop for explicit approval. Print:",
-        "approval must be typed, not selected":
-            "Require an affirmative typed message",
-        "a decision prompt is never rendered as a selector":
-            "never as a selector",
+        # These three were the prevention half of the approval-provenance fix and
+        # are now REVERSED, intent-born 2026-09-21. They banned selectors at the
+        # gate after one resolved its highlighted default to the approve label
+        # while the human typed something unrelated, and a production file was
+        # edited against a gate nobody had passed.
+        #
+        # What the ban cost was reported six days later and is a regression of a
+        # defect this file already records fixing once - see the sibling
+        # `test_the_decision_prompt_has_no_unconditional_stdout_fallback`, whose
+        # own docstring opens *the approval gate stopped offering options and had
+        # to be answered by typing*. The row's one mangled sentence
+        # (`...never as a selector: print them and end the turn`) read as the
+        # whole rule rather than a three-step exception, and the observed
+        # behaviour was the exact inverse of the contract: options produced ONLY
+        # at the three exempt steps, bare yes/no prose everywhere else, though
+        # line 25 orders every question asked as a Decision prompt.
+        #
+        # The owner chose selectors at every stop, the gate included, with the
+        # incident in front of them. So these pin the reversal, and the honest
+        # cost is recorded beside the ratchet: the approval record can no longer
+        # distinguish a deliberate selection from a selector resolving on a
+        # default. `check-plan.py` now demands the record SAY which; prevention
+        # moved to the harness.
+        "the gate offers its options rather than printing them":
+            "Stop for explicit approval. Offer:",
+        "a selection at the gate is approval":
+            "their typed message, or their selection at 6.3",
+        # Measured from the pilot transcript the same day the reversal shipped:
+        # the selector fired at the first gate (the human saw it) and the
+        # re-presentation after `approve with changes` printed the three options
+        # as text instead. 6.3 said `re-present on changes`, which does not carry
+        # the offer forward - the sentence opens with `Offer:` and then names the
+        # amendment path with a different verb, so the amendment path inherited
+        # the old behaviour. One word; -2 chars.
+        "the amendment path re-offers rather than re-printing":
+            "re-run the checker and re-offer on changes",
+        "options are selectable at every stop, the gate included":
+            "Offer them selectably at every stop, the step 6 gate included",
+        "the agent still recommends nothing where the human decides":
+            "your voice is excluded where the human decides",
         "full plan reaches stdout outside plan mode":
             # 6.1 stopped demanding the whole plan in the terminal: the 2026-07-27
             # plans ran 31,448 and 27,976 chars (~14 and ~12 minutes), so agents
@@ -1130,7 +1155,24 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # -10. worked-change.md holds no copy of the example, and the gate-visible echo
     # is the guarded deliberate one. Nothing else in the route restates the
     # example, so the remainder is the example itself, and the limit moves.
-    MAX_PLAN_GATED_METHODOLOGY_CHARS = 48700
+    #
+    # 48,700 — 48,900, intent-born 2026-09-21, and the smallest of the three
+    # movements on record. The owner reported that stops almost never offer
+    # selectable options and that they have to type every decision, then chose
+    # selectors at every stop including the step 6 gate. Two things had to change
+    # in the body: the Decision prompt row, whose one mangled sentence
+    # (`...never as a selector: print them and end the turn`) read as the whole
+    # rule rather than a three-step exception - the observed behaviour is the
+    # inverse of the contract, options produced ONLY at the three exempt steps and
+    # bare yes/no prose everywhere else - and 6.3/6.4, which demanded a typed
+    # message. Nothing in the route restates either, so there was nothing to
+    # displace and the limit moves. The counsel recorded beside the work: what
+    # this gives up is the v0.52.0 guard's premise, so the approval record can no
+    # longer distinguish a deliberate selection from a selector resolving on a
+    # harness default - the failure that once edited a production file against a
+    # gate nobody passed. The guard now demands the record SAY which; that is
+    # traceability, and prevention moved to the harness.
+    MAX_PLAN_GATED_METHODOLOGY_CHARS = 48900
     """ctdd-tests keeps craft work (de-flaking, altitude, renaming) out of the
     plan gate, while every consumer of the diff — this script, the hook, and
     ctdd-review — reads any modified test as a changed requirement. Both are
@@ -2571,7 +2613,13 @@ class CrossSkillAgreementTests(unittest.TestCase):
                 "checker, and harness acceptance of a plan-mode surface are not "
                 "approval.",
             "the other two prompt options are consumed":
-                "Amend the plan, re-run the checker and re-present on changes; stop "
+                # `re-present` -> `re-offer`, 2026-09-21, measured from the pilot:
+                # the selector fired at the first gate and the re-presentation
+                # after `approve with changes` printed the options as text again.
+                # The sentence opens with `Offer:` and named this path with a
+                # different verb, so the amendment path inherited the behaviour
+                # the reversal removed everywhere else.
+                "Amend the plan, re-run the checker and re-offer on changes; stop "
                 "on reject.",
             "the trivial lane can be unwound":
                 # Stdout cannot be unprinted, so the retraction has to be a
@@ -2966,6 +3014,15 @@ class CrossSkillAgreementTests(unittest.TestCase):
         self.assertIn("unaltered", row[0],
                       "without this the agent may print the block and put its own "
                       "summary above it, which is the compression, restored")
+        # 2026-09-27, from a real gate: the agent ran `--gate`, the block landed
+        # in a collapsed tool result, and the reply carried one summary sentence
+        # and a selector. "Printed" was satisfied by running the command, because
+        # in this harness a command prints to the agent and only the reply reaches
+        # the human. The row now says where the block goes; the script header says
+        # why, at the moment the agent reads its own tool result.
+        self.assertIn("into your reply", row[0],
+                      "the row no longer says the block goes into the reply, so "
+                      "running the checker reads as having shown its output")
         self.assertNotIn("marks **gate-visible**", row[0])
         cp = (self._skills().parent / "scripts" / "check-plan.py").read_text(encoding="utf-8")
         emitted = _re.search(r"for key, label in \((.*?)\):", cp, _re.S)

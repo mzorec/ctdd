@@ -1115,7 +1115,8 @@ class GatePresentationTests(unittest.TestCase):
     has a mechanical check. What reached the terminal at the gate did not.
     """
 
-    START = "---- gate presentation, print unaltered ----"
+    START = ("---- gate presentation: copy this block into your reply unaltered; "
+             "the human does not see tool output ----")
     END = "---- end of gate presentation ----"
 
     def _block(self, out):
@@ -1365,8 +1366,15 @@ class ApprovalProvenanceTests(unittest.TestCase):
     interactive selector returns. This is observed, not hypothetical: a gate was
     resolved with the highlighted default while the human typed an unrelated
     slash command, the agent quoted `"Approve"`, this checker said the record was
-    verified, and the production edit ran. 6.3 now prints the options and ends
-    the turn; the guard catches the label that shows a selector was used anyway.
+    verified, and the production edit ran.
+
+    REVERSED 2026-09-21, intent-born: the owner asked for selectable options at
+    every stop, the gate included, so a bare label is now a legitimate way to
+    approve and rejecting it outright would fail every gate. What the guard
+    still refuses is a label that does not say how it arrived, because a label
+    alone reads the same whether the human chose it or a selector resolved on a
+    default. Traceability, not prevention; prevention moved to the harness with
+    the owner's decision, and that cost is recorded beside the route ratchet.
     """
 
     def record(self, message, plan_text=None):
@@ -1388,6 +1396,30 @@ class ApprovalProvenanceTests(unittest.TestCase):
         r = self.record("Approve")
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("option label", r.stdout)
+
+    def test_a_label_that_says_it_was_selected_is_approval(self):
+        """The shape the reversal exists to allow. Before 2026-09-21 this was a
+        failure; after it, refusing it would stop every gate the owner asked to
+        be answered with a click."""
+        r = self.record('approve" (selected at the gate)')
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("approval record verified", r.stdout)
+
+    def test_a_label_that_says_it_was_typed_is_approval(self):
+        """The escape hatch that predates the reversal still works, so a human
+        who really typed the word is not pushed into claiming a selection."""
+        r = self.record('approve" (typed at the gate)')
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_the_refusal_asks_for_provenance_rather_than_a_retyped_message(self):
+        """The message is the whole instruction the agent acts on. Left as-is it
+        would tell the agent to re-present a gate the human already answered,
+        which is the round-trip the reversal removes."""
+        r = self.record("Approve")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("does not say how it arrived", r.stdout)
+        self.assertIn("selected at the gate", r.stdout)
+        self.assertNotIn("re-present the gate", r.stdout)
 
     def test_every_label_6_3_prints_is_caught_however_it_is_cased(self):
         for label in ("approve", "APPROVE", "Approve.", "Approve with changes",

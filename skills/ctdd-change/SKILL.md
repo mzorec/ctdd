@@ -37,9 +37,9 @@ Do not infer an order among these condition-triggered rules.
 | Trivial-risk declaration | `stdout` and PR/MR description | `Risk: trivial — <reason>. Skipping the plan gate.` Emit only through step 3.6. |
 | Implementation plan | `${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.md`, and PR/MR description when it is ignored | Every section and field rule of `references/plan-format.md`, in the order that file displays. |
 | Plan pointer | PR/MR description when the plan dir is tracked | `CTDD-Plan: <plan-dir>/<name>.md` |
-| Decision prompt | interactive question; `stdout` if none exists | 2–4 exclusive options, one recommended with a one-line reason, free text always accepted. Recommend nothing at the step 6 approval gate, the 7.12 pause or an 8.7 checkpoint: your voice is excluded there, never as a selector: print them and end the turn. A selection is a message from the human and counts as an answer; a harness accepting a plan is not. |
-| Gate presentation | `stdout` | The block `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" <plan-path> --gate` emits, printed unaltered and never paraphrased or summarised. Then the one-line refusable decisions the summary names, and anything the human must act on. |
-| Approval record | `stdout` and `${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.approval.log` | `Approved by: <human message quoted>; plan: <plan-dir>/<name>.md@<checker revision>.` |
+| Decision prompt | interactive question; `stdout` if none exists | 2–4 exclusive options, one recommended with a one-line reason, free text always accepted. Offer them selectably at every stop, the step 6 gate included. Recommend nothing at the step 6 approval gate, the 7.12 pause or an 8.7 checkpoint — your voice is excluded where the human decides. |
+| Gate presentation | `stdout` | The block `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" <plan-path> --gate` emits, copied into your reply unaltered and never paraphrased or summarised. Then the one-line refusable decisions the summary names, and anything the human must act on. |
+| Approval record | `stdout` and `${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.approval.log` | `Approved by: <human message quoted>; plan: <plan-dir>/<name>.md@<checker revision>.` A bare option label says how it arrived: `"approve" (selected at the gate)`. |
 | ADR | `<resolved ADR directory>/NNNN-<kebab-slug>.md` | `references/adr-template.md` rendered with Context, Decision, and Consequences. |
 | Contract change | Exact repo-relative contract path listed in the plan | Valid OpenAPI, JSON Schema, protobuf, AsyncAPI, Pact, or repository-native contract syntax. |
 | Test change | Exact repo-relative test path listed in the plan | Behavior-level test names and assertions produced under `ctdd-tests`. |
@@ -80,8 +80,8 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
 6. **Gate.** Enter: step 5 exited `0`. Emit: Gate presentation, Approval record. Stop: mandatory, until 6.4 is satisfied.
    1. Print the Gate presentation outside a plan-mode approval surface, from the checker rather than from memory. The plan file stays the complete artifact.
    2. Copy the canonical decision summary verbatim into any plan-mode surface, with its path.
-   3. Stop for explicit approval. Print: approve, approve with changes, reject. Amend the plan, re-run the checker and re-present on changes; stop on reject. Write no contract, test, ADR, or production file, and execute no later step, until 6.4 is satisfied.
-   4. Require an affirmative typed message from the human approving this plan. Your own restatement, silence, a subagent verdict, a passing checker, and harness acceptance of a plan-mode surface are not approval.
+   3. Stop for explicit approval. Offer: approve, approve with changes, reject. Amend the plan, re-run the checker and re-offer on changes; stop on reject. Write no contract, test, ADR, or production file, and execute no later step, until 6.4 is satisfied.
+   4. Require the human's own affirmative answer approving this plan — their typed message, or their selection at 6.3. Your own restatement, silence, a subagent verdict, a passing checker, and harness acceptance of a plan-mode surface are not approval.
    5. Treat approval as authorization to execute the plan file.
 7. **Apply approved artifacts and create test evidence.** Enter: step 6 printed the Approval record. Emit: contract, ADR, tests, pin-state logs, red-state log. Stop: 7.2, 7.7, 7.11, 7.12.
    1. Re-check the working tree against step 0.
