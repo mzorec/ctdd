@@ -45,7 +45,7 @@ Do not infer an order among these condition-triggered rules.
 | Test change | Exact repo-relative test path listed in the plan | Behavior-level test names and assertions produced under `ctdd-tests`. |
 | Test evidence logs | `${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>` followed by `.verify.log` (verification), `.redstate.log` (red state), `.pinstate.log` (pin state before), `.pinstate-after.log` (pin state after) | Complete raw output from the named run. |
 | Review packet | `stdout` | The exact field list in `references/execution.md`, assembled at step 9. |
-| Colocated note | A path from the plan's `Colocated notes` | One sentence stating one universal rule, deliberate gap, or durable external fact. |
+| Colocated note | A path from the plan's `Colocated notes` | One sentence; when writing one, read `references/colocated-notes.md` first. |
 ## Ordered change workflow
 Execute steps 0–10 in ascending order. Until an Approval record exists for the current plan revision, the only file you write is the step 5 plan file; an amendment voids the previous one. An amendment re-enters at the lowest invalidated step.
 0. **Establish the baseline.** Enter: a change request exists. Emit: Baseline statement. Stop: unresolvable base, contamination.
@@ -112,6 +112,6 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
 
 10. **Write a colocated note only when triggered.** Enter: step 9 printed the packet, and before 9.4 hands over the diff. Emit: Colocated note, or nothing.
    1. Write no note for behavior already expressed by a test or contract.
-   2. Otherwise, when the change leaves one universal rule, deliberate gap, or durable external fact, read `references/colocated-notes.md` and write one Colocated note.
+   2. Otherwise, when the change leaves one universal rule, deliberate gap, or durable external fact, write one Colocated note.
 ## Evidence and break points
 Classify every run as **pin pass**, **intended red**, **compile red**, **wrong red**, **premature green**, **pin fail**, **broken pin**, or **weakened green**. Only pin pass and intended red authorize step 8. A checker that cannot run, cannot read its input, or exits `2` leaves its claim unverified. `references/execution.md` carries the required action for every state and break point, the packet assembly, and the standalone-ADR procedure.

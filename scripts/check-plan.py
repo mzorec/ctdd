@@ -263,6 +263,25 @@ def plan_revision(text):
         approved_region(text).encode("utf-8")).hexdigest()[:12]
 
 
+def gate_token(revision):
+    """The eight hex characters `--gate` prints inside the presentation block
+    and the Approval record must carry back.
+
+    Derived from the plan revision, so it needs no stored state and any later
+    run can recompute it: same plan, same token; amended plan, new token. Its
+    only job is to leave a trace that the block was actually put in front of
+    the human. This script can already see that a record names the right
+    revision - but a revision is printed by every run, so an agent that never
+    copied the presentation can still quote one. The token appears ONLY inside
+    the block, so a record carrying it is evidence the block was rendered
+    somewhere a human could read it. That is traceability, not proof: an agent
+    determined to fake it can compute the same digest. It closes the accident,
+    not the lie.
+    """
+    return hashlib.sha256(
+        ("ctdd-gate:" + revision).encode("utf-8")).hexdigest()[:8]
+
+
 def hidden_in_intended_change(text, required):
     """Required section headings sitting in the un-approved tail.
 
@@ -1046,6 +1065,31 @@ def main():
                       f"`Approved by: \"{bare}\" (typed at the gate)` — or quote "
                       "the human's own words instead of the label.")
                 return 1
+        # The revision alone cannot show the presentation was ever rendered:
+        # every run prints it, so a record can name it without a human having
+        # seen the block. The token appears only inside the block. A record
+        # written before this check existed can still pass, but only by saying
+        # so in writing - an absent token is a failure, an explicitly waived
+        # one is a decision someone recorded.
+        want_token = gate_token(want)
+        tok = re.search(r"gate-token\s*:\s*([0-9a-f]{8}|n/a)\b", rec, re.I)
+        if tok is None:
+            print(f"check-plan: the approval record carries no gate token. "
+                  f"Re-run with --gate, copy the whole presentation into your "
+                  f"reply, and record `gate-token: {want_token}` alongside the "
+                  f"revision.")
+            print("A record written before gate tokens existed may carry "
+                  "`gate-token: n/a (predates gate tokens)` instead — "
+                  "deliberately, in writing, so the gap is visible rather than "
+                  "assumed.")
+            return 1
+        got = tok.group(1).casefold()
+        if got != "n/a" and got != want_token:
+            print(f"check-plan: GATE TOKEN MISMATCH — the record carries {got}, "
+                  f"this plan's presentation prints {want_token}. The token is "
+                  f"derived from the plan revision, so a stale one means the "
+                  f"block the human saw was not this plan.")
+            return 1
         print(f"check-plan: approval record verified for revision {want}.")
 
     # 4.5 routes a changed existing assertion as an amendment and rule 3 gives it
@@ -1397,6 +1441,12 @@ def main():
         for line in gate_presentation(text, plan_src, tier,
                                       {n for n, _ in required}, altitude_lines):
             print(line)
+        # Inside the block deliberately: a token printed outside it could be
+        # quoted by an agent that never showed the block to anyone.
+        print()
+        print(f"Gate token: {gate_token(digest)} — carry it in the Approval "
+              f"record as `gate-token: {gate_token(digest)}`, which is how a "
+              f"later run can tell this presentation was put in front of you.")
         print("check-plan: ---- end of gate presentation ----")
     return 0
 

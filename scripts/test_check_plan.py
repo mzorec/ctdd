@@ -339,8 +339,10 @@ class CheckPlanTests(unittest.TestCase):
             finally:
                 os.unlink(f.name)
 
+        tok = gate_token_of(FULL_PLAN)
         self.assertEqual(
-            with_record(f'Approved by: "looks right, go"; plan: p.md@{rev}.\n').returncode,
+            with_record(f'Approved by: "looks right, go"; plan: p.md@{rev}. '
+                        f'gate-token: {tok}.\n').returncode,
             0)
         stale = with_record('Approved by: "go"; plan: p.md@000000000000.\n')
         self.assertEqual(stale.returncode, 1)
@@ -1084,6 +1086,18 @@ def revision(plan_text):
     return m.group(1)
 
 
+def gate_token_of(plan_text):
+    """The 8-hex gate token, read back from `--gate` rather than recomputed.
+
+    Recomputing the derivation here would make these tests pass against a
+    checker whose own two call sites disagree - the defect
+    `test_both_digest_call_sites_agree` exists to catch for the revision."""
+    r = run(plan_text, ["--gate"])
+    m = re.search(r"Gate token: ([0-9a-f]{8})", r.stdout)
+    assert m, "no gate token printed:" + chr(10) + r.stdout
+    return m.group(1)
+
+
 HOLDOUT_PLAN = FULL_PLAN.replace(
     "hold-out: not required", "hold-out: required: 1 sealed test").replace(
     "Hold-out: not required " + chr(8212) + " read path",
@@ -1332,8 +1346,9 @@ class PlanRevisionTests(unittest.TestCase):
             # A typed message, not the bare option label: the label is now its
             # own failure, and this test is about the two digest call sites.
             rec.write_text("Approved by: " + chr(34) + "looks right, go" + chr(34)
-                           + "; plan: p.md@" + rev + "." + chr(10),
-                           encoding="utf-8")
+                           + "; plan: p.md@" + rev + "."
+                           + " gate-token: " + gate_token_of(HOLDOUT_PLAN) + "."
+                           + chr(10), encoding="utf-8")
             # the mandated append lands after the record is written
             plan.write_text(HOLDOUT_PLAN + chr(10) + "## Intended change"
                             + chr(10) + "Dated after approval." + chr(10),
@@ -1385,6 +1400,7 @@ class ApprovalProvenanceTests(unittest.TestCase):
             rec = Path(d) / "p.approval.log"
             rec.write_text("Approved by: " + chr(34) + message + chr(34)
                            + "; plan: p.md@" + revision(plan_text) + "."
+                           + " gate-token: " + gate_token_of(plan_text) + "."
                            + chr(10), encoding="utf-8")
             return subprocess.run(
                 [sys.executable, SCRIPT, str(plan), "--approval", str(rec)],
@@ -1445,6 +1461,99 @@ class ApprovalProvenanceTests(unittest.TestCase):
             self.assertEqual(r.returncode, 0,
                              message + " is a typed message and must pass:"
                              + chr(10) + r.stdout)
+
+
+class GateTokenTests(unittest.TestCase):
+    """The revision alone cannot show the gate presentation was ever rendered:
+    every run prints it, so a record can name the right revision while the
+    human saw nothing. That is not hypothetical — it is how an 8.6 amendment
+    was approved from the agent's summary of what changed rather than from the
+    plan's own decision summary, which 8.6 requires and the agent skipped.
+
+    The token is printed ONLY inside the block, so a record carrying it is
+    evidence the block was rendered somewhere a human could read it.
+    Traceability, not proof: an agent determined to fake it can recompute the
+    digest. It closes the accident, not the lie.
+    """
+
+    def record(self, token_line, plan_text=None):
+        plan_text = FULL_PLAN if plan_text is None else plan_text
+        with tempfile.TemporaryDirectory() as d:
+            plan = Path(d) / "p.md"
+            plan.write_text(plan_text, encoding="utf-8")
+            rec = Path(d) / "p.approval.log"
+            rec.write_text("Approved by: " + chr(34) + "looks right, go"
+                           + chr(34) + "; plan: p.md@" + revision(plan_text)
+                           + "." + token_line + chr(10), encoding="utf-8")
+            return subprocess.run(
+                [sys.executable, SCRIPT, str(plan), "--approval", str(rec)],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=15)
+
+    def test_the_token_is_printed_only_inside_the_gate_block(self):
+        """Its whole value rests on this. Printed among the summary lines every
+        run emits, it could be quoted by an agent that never rendered the
+        block, and it would be checking nothing."""
+        plain = run(FULL_PLAN)
+        self.assertEqual(plain.returncode, 0, plain.stdout)
+        self.assertNotIn("Gate token:", plain.stdout)
+        out = run(FULL_PLAN, ["--gate"]).stdout
+        self.assertIn("Gate token:", out)
+        self.assertLess(out.index("---- gate presentation:"),
+                        out.index("Gate token:"), out)
+        self.assertLess(out.index("Gate token:"),
+                        out.index("---- end of gate presentation ----"), out)
+
+    def test_a_record_without_a_token_is_not_approval(self):
+        r = self.record("")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("no gate token", r.stdout)
+
+    def test_the_refusal_names_the_token_the_record_should_carry(self):
+        """The message is the whole instruction the agent acts on; without the
+        value it would send the agent back to re-run the gate to read one
+        number off it."""
+        r = self.record("")
+        self.assertIn("gate-token: " + gate_token_of(FULL_PLAN), r.stdout)
+
+    def test_the_right_token_is_approval(self):
+        r = self.record(" gate-token: " + gate_token_of(FULL_PLAN) + ".")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("approval record verified", r.stdout)
+
+    def test_a_token_from_another_plan_is_caught(self):
+        """The token is derived from the revision, so a stale one means the
+        block the human read was a different plan."""
+        r = self.record(" gate-token: " + gate_token_of(HOLDOUT_PLAN) + ".")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("GATE TOKEN MISMATCH", r.stdout)
+
+    def test_a_waiver_passes_only_because_it_is_written_down(self):
+        """Records predating this check are real approvals and must not be
+        voided retroactively — but the gap is stated in the record rather than
+        assumed by the reader."""
+        r = self.record(" gate-token: n/a (predates gate tokens)")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("approval record verified", r.stdout)
+
+    def test_a_stale_revision_is_still_reported_as_staleness(self):
+        """Ordering: an amended plan must read STALE, not `no gate token`. The
+        first names what happened; the second would send the agent to fix a
+        record whose real problem is that the plan moved under it."""
+        with tempfile.TemporaryDirectory() as d:
+            plan = Path(d) / "p.md"
+            plan.write_text(FULL_PLAN, encoding="utf-8")
+            rec = Path(d) / "p.approval.log"
+            rec.write_text("Approved by: " + chr(34) + "go" + chr(34)
+                           + "; plan: p.md@000000000000." + chr(10),
+                           encoding="utf-8")
+            r = subprocess.run(
+                [sys.executable, SCRIPT, str(plan), "--approval", str(rec)],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=15)
+            self.assertEqual(r.returncode, 1, r.stdout)
+            self.assertIn("APPROVAL STALE", r.stdout)
+            self.assertNotIn("no gate token", r.stdout)
 
 
 class DuplicateSectionShapeTests(unittest.TestCase):

@@ -585,7 +585,7 @@ class ChangeSkillStructureTests(unittest.TestCase):
 
     # Claude Code re-attaches only the first 5,000 *model tokens* of a skill after
     # auto-compaction. No authoritative tokenizer is available here, so this uses a
-    # deliberately pessimistic character proxy: 3 chars/token rather than the ~4
+    # character proxy of 3 chars/token rather than the ~4
     # typical of English prose, because markdown with backticks, paths and code
     # tokenizes worse than prose. The property asserted is MARGIN — these rules sit
     # comfortably inside the surviving window — not a simulation of the boundary.
@@ -596,9 +596,19 @@ class ChangeSkillStructureTests(unittest.TestCase):
     # PROTECTION" — so the response raised the constant the probes slice on, by
     # 2,500, which rule 9 names as the thing to check first. And its stated
     # justification, "measured 4.00", was `len(body)/(len(body)//4)`: 4.00 for any
-    # text at all, a tautology rather than a measurement. External tokenizers put
-    # this content at 4.16-4.50, so a raise may well be defensible — but it needs a
-    # measurement and a reason that is not the early-warning guard going off.
+    # text at all, a tautology rather than a measurement.
+    #
+    # MEASURED 2026-09-29, and it says do not raise this. An earlier note here put
+    # this content at 4.16-4.50 chars/token from non-Claude tokenizers, which the
+    # token-counting guidance says undercount Claude by 15-20%; it was the reason a
+    # raise was proposed. Claude's own counts, fitted over 13 clean skill loads in
+    # recorded pilot sessions (injected text against the exact input the API billed,
+    # with a fixed per-load overhead fitted separately): claude-opus-5 2.84 chars/
+    # token over 7 loads, claude-opus-5-5 3.08 over 4, all models 2.92 over 13, fit
+    # R^2 0.98. So 3.0 is not pessimistic; it is slightly generous for the densest
+    # model this pilot runs, whose 5,000 tokens end near char 14,200. The one known
+    # confound - whether the previous reply's hidden thinking is re-sent - biases
+    # these rates upward, so the real boundary can only be earlier, not later.
     COMPACTION_PROXY_CHARS = 5000 * 3
 
     # Position, not presence. While the body is smaller than the proxy the head
@@ -638,6 +648,11 @@ class ChangeSkillStructureTests(unittest.TestCase):
             "red-state verdict is required": "Verify red state with",
             "pin verdict is required": "Verify pins with",
             "hold-out blocks review": "Stop for the required sealed hold-out result",
+            # Moved into the Output contract row 2026-09-29. At step 10.2 it
+            # ended at char 14,993: inside the 15,000 proxy, but past where
+            # claude-opus-5's measured 5,000 tokens end, so after compaction a
+            # long session lost the instruction to load the note rules.
+            "colocated-note loader survives": "read `references/colocated-notes.md`",
     }
 
     def _surviving_head(self):
