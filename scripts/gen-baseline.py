@@ -5,7 +5,7 @@
 
 Why this exists: `diff-base` is not a note for the reader. It is the literal
 argument four later checks take — `check-spec-surface.py --git <diff-base>` at
-3.3 and 8.4, the packet's re-run at 9.3, and `git diff <diff-base> --stat` at
+3.3 and 8.4, the packet's re-run at 9.3, and the same script's `--stat` at
 9.4 — so a hand-derived value is a hand-derived input to every mechanical check
 the method has. Deriving it here makes those four agree by construction.
 

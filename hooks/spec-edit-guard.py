@@ -52,7 +52,10 @@ TEST_DEFAULT = [
 
 CONTRACT_DEFAULT = [
     r"(^|/)(contracts?|pacts?)(/|$)",                        # contract directories
-    r"(^|/)(openapi|swagger|asyncapi)[^/]*\.(ya?ml|json)$",  # openapi.yaml, swagger.json
+    # The word anywhere in the basename, not only at its start: a regenerated
+    # `docs/api/<service>-openapi-v1.json` matched no default, so a real change
+    # whose contract snapshot moved printed no contract section at any run.
+    r"(^|/)[^/]*(openapi|swagger|asyncapi)[^/]*\.(ya?ml|json)$",  # openapi.yaml, orders-openapi-v1.json
     r"\.(openapi|asyncapi)\.(ya?ml|json)$",                  # payments.openapi.yaml
     r"\.proto$",                                             # gRPC / protobuf IDL
     r"\.pact\.json$",                                        # Pact consumer contracts

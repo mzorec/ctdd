@@ -1,0 +1,41 @@
+{
+  "openapi": "3.0.1",
+  "info": { "title": "Shop API", "version": "v1" },
+  "paths": {
+    "/api/v1/orders/{orderNumber}": {
+      "get": {
+        "operationId": "GetOrder",
+        "summary": "Reads one order.",
+        "description": "Returns the order with the given number.",
+        "responses": { "200": { "description": "The order." }, "404": { "description": "No such order." } }
+      }
+    },
+    "/api/v1/orders/{orderNumber}/state": {
+      "put": {
+        "operationId": "SetOrderState",
+        "summary": "Moves an order to Packed or Shipped.",
+        "description": "Sets the order's state when the move is allowed, and stores the note sent with it.",
+        "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SetOrderStateCommand" } } } },
+        "responses": {
+          "204": { "description": "The state was set." },
+          "400": { "description": "The request is not valid." },
+          "404": { "description": "No such order." },
+          "409": { "description": "The move is not allowed." }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "SetOrderStateCommand": {
+        "type": "object",
+        "required": ["state"],
+        "properties": {
+          "state": { "$ref": "#/components/schemas/SettableOrderState" },
+          "note": { "type": "string", "nullable": true, "maxLength": 500, "description": "A note to store with the order; omitted, the stored one is cleared." }
+        }
+      },
+      "SettableOrderState": { "type": "string", "enum": ["Packed", "Shipped"] }
+    }
+  }
+}

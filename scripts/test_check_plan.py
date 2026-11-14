@@ -18,8 +18,7 @@ NL = chr(10)
 
 FULL_PLAN = """Allow one capture below the authorized amount while preserving over-capture rejection.
 Risk: normal · contract: none · ADR: none · red pause: skip · hold-out: not required
-BLOCKING — I will not guess:
-- auth hold on the released remainder? (recommend: expires with the auth)
+BLOCKING — I will not guess: none — answered before approval
 Proceeding unless you object:
 - zero capture rejected
 Business requirement: allow one capture below the authorized amount
@@ -36,6 +35,10 @@ Assumptions:
 - y
 Uncovered / ambiguous:
 - z
+Structure:
+- Types: none new.
+- Ports: none touched.
+- Configuration: none.
 Known gaps: none — the caller contract is covered
 New-behavior tests — must be observed failing first:
 - t
@@ -46,6 +49,7 @@ NFR budgets touched: none
 Implementation slices:
 - a.cs — accept the lower amount; turns green: `t`
 Verification:
+- invariants: none — this fixture has no rule suite
 - `dotnet test --filter t` — expected: passes after the slice lands
 Hold-out: not required — read path
 Files likely to change:
@@ -54,9 +58,18 @@ Residual risk: none beyond the planned verification
 """
 
 
+# The same plan while its BLOCKING question is still open: correct at 5.4, and
+# what an approval must not be recorded over.
+STILL_ASKING = FULL_PLAN.replace(
+    "BLOCKING — I will not guess: none — answered before approval" + chr(10),
+    "BLOCKING — I will not guess:" + chr(10)
+    + "- auth hold on the released remainder? (recommend: expires with the auth)" + chr(10))
+
+
 def run(plan_text, extra_args=None, env=None):
     merged = dict(os.environ)
     merged.pop("CTDD_LAYERS", None)          # tests decide the layer config
+    merged.pop("CLAUDE_PROJECT_DIR", None)   # and the repository root pins resolve in
     merged.update(env or {})
     return subprocess.run([sys.executable, SCRIPT, "-"] + (extra_args or []),
                           input=plan_text, capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -127,8 +140,9 @@ class CheckPlanTests(unittest.TestCase):
                 "Files likely to change: a\n")
         self.assertEqual(r.returncode, 1)
         # `NFR budgets` is conditional below `large`, and this plan derives
-        # medium; assert on a section every tier requires.
-        self.assertIn("decision summary", r.stdout)
+        # medium; assert on a section every tier requires. Named by the
+        # plan's own heading, not the checker's internal key.
+        self.assertIn("BLOCKING — I will not guess", r.stdout)
         self.assertIn("hold-out decision", r.stdout)
 
     def test_trivial_without_diff_passes_with_hint(self):
@@ -1595,7 +1609,7 @@ class DuplicateSectionShapeTests(unittest.TestCase):
                          "name is not a second section:" + chr(10) + r.stdout)
 
     def test_two_blocking_questions_are_not_a_duplicate(self):
-        r = run(FULL_PLAN.replace(
+        r = run(STILL_ASKING.replace(
             "- auth hold on the released remainder? (recommend: expires with the auth)",
             "- auth hold on the released remainder? (recommend: expires with the auth)"
             + chr(10) + "BLOCKING: does the fee follow the partial amount?"))
@@ -1742,6 +1756,32 @@ class TestAltitudeTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertIn("?", r.stdout)
 
+    def test_the_owner_is_any_backticked_path_that_resolves_to_a_layer(self):
+        """A real plan opened two phase bullets with a `.sql` path and a route
+        name, so the first backticked token resolved to no layer and twenty of
+        twenty-nine tests had owner `?`, which skipped the comparison. The plan
+        was reworded only so the checker could find an owner."""
+        plan = layered_plan("tests/Shop.Application.Tests/T.cs",
+                            "db/SetState.sql").replace(
+            "`db/SetState.sql` — accept",
+            "`db/SetState.sql` and `src/Shop.Domain/Rule.cs` — accept")
+        r = run(plan, env=LAYERS)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("MISPLACED", r.stdout)
+        self.assertIn("above the Domain code", r.stdout, r.stdout)
+
+    def test_an_owner_no_layer_resolves_is_said_not_skipped(self):
+        """With layers configured, `?` means the comparison did not happen.
+        That is said, in the plain run and inside the gate block."""
+        plan = layered_plan("tests/Shop.Application.Tests/T.cs", "db/SetState.sql")
+        r = run(plan, env=LAYERS)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("NOT PLACED", r.stdout)
+        self.assertIn("t", r.stdout[r.stdout.index("NOT PLACED"):])
+        g = run(plan, ["--gate"], env=LAYERS)
+        block = g.stdout[g.stdout.index("---- gate presentation"):]
+        self.assertIn("NOT PLACED", block)
+
     def test_malformed_slices_do_not_pass_silently(self):
         """Empty section, a slice with only prose, a lane with a bullet and no
         slices at all - each must reach a verdict about `t`, not a clean exit."""
@@ -1753,6 +1793,896 @@ class TestAltitudeTests(unittest.TestCase):
             r = run(broken)
             self.assertEqual(r.returncode, 1, r.stdout)
             self.assertIn("NO OWNER", r.stdout)
+
+
+class SessionDefectTests(unittest.TestCase):
+    """Checker failures one real change hit for reasons that were not the plan's.
+
+    Six runs failed or misled: a hold-out bullet read as the hold-out section,
+    a BLOCKING label naming no heading the plan has, an appended approval read
+    as stale, UNRESOLVED PATHS on a method signature and on directory names in
+    amendment prose, and a pin named at a path that did not exist while the
+    checker passed it.
+    """
+
+    def test_a_holdout_bullet_elsewhere_is_not_the_holdout_section(self):
+        """`- Hold-out: declined by human.` in an earlier section matched first,
+        and the actionability check reported options and recommended missing
+        from a block that had both. The block is the one carrying `decision:`."""
+        plan = HOLDOUT_PLAN.replace(
+            "- zero capture rejected" + NL,
+            "- zero capture rejected" + NL + "- Hold-out: declined by human." + NL)
+        r = run(plan)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        g = run(plan, ["--gate"])
+        block = g.stdout[g.stdout.index("---- gate presentation"):]
+        self.assertIn("- decision: required", block)
+        self.assertIn("- recommended:", block)
+
+    def test_the_holdout_result_is_normalised_in_the_real_block(self):
+        """The same locator feeds the revision. Replacing `result:` in the real
+        block is post-approval by rule 7 and must not move it."""
+        plan = HOLDOUT_PLAN.replace(
+            "- zero capture rejected" + NL,
+            "- zero capture rejected" + NL + "- Hold-out: declined by human." + NL)
+        after = plan.replace("- result: pending", "- result: declined by human")
+        self.assertEqual(revision(plan), revision(after))
+
+    def test_a_missing_blocking_section_is_named_by_its_heading(self):
+        broken = STILL_ASKING.replace(
+            "BLOCKING — I will not guess:" + NL
+            + "- auth hold on the released remainder? (recommend: expires with the auth)" + NL,
+            "")
+        r = run(broken)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("BLOCKING — I will not guess", r.stdout)
+        self.assertNotIn("decision summary: BLOCKING", r.stdout)
+
+    def test_a_missing_proceeding_section_is_named_by_its_heading(self):
+        broken = FULL_PLAN.replace(
+            "Proceeding unless you object:" + NL + "- zero capture rejected" + NL, "")
+        r = run(broken)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("Proceeding unless you object", r.stdout)
+        self.assertNotIn("decision summary: proceeding", r.stdout)
+
+    def test_the_size_line_prints_only_with_the_gate(self):
+        long_plan = FULL_PLAN.replace(
+            "- x" + NL, "- x " + ("word " * 1600) + NL, 1)
+        self.assertNotIn("min to read", run(long_plan).stdout)
+        self.assertIn("min to read", run(long_plan, ["--gate"]).stdout)
+
+    def test_a_method_signature_in_prose_is_not_a_path(self):
+        plan = FULL_PLAN.replace(
+            "Proceeding unless you object:" + NL,
+            "Amended at the review packet" + NL
+            + "- Renamed with it: the `IOrderRepository.SetStateAsync(..., message, ...)` "
+            "parameter." + NL + "Proceeding unless you object:" + NL)
+        r = run(plan)
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_a_method_signature_inside_a_slice_is_code_not_a_path(self):
+        """Slices name the method that changes as often as the file. Scoping
+        to file listings alone does not cover this one; the code-token rule
+        does."""
+        plan = FULL_PLAN.replace(
+            "- a.cs — accept the lower amount; turns green: `t`",
+            "- a.cs `IOrderRepository.SetStateAsync(..., message, ...)` — accept "
+            "the lower amount; turns green: `t`")
+        r = run(plan)
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_with_no_decision_field_a_label_beats_an_earlier_bullet(self):
+        """A `hold-out: not required` plan has no `decision:` field; an earlier
+        bullet opening with `Hold-out` must still not become the section."""
+        plan = FULL_PLAN.replace(
+            "- zero capture rejected" + NL,
+            "- zero capture rejected" + NL + "- Hold-out: see the section below." + NL)
+        g = run(plan, ["--gate"])
+        self.assertEqual(g.returncode, 0, g.stdout)
+        block = g.stdout[g.stdout.index("---- gate presentation"):]
+        self.assertIn("Hold-out: not required", block)
+        self.assertNotIn("see the section below", block)
+
+    def test_directory_names_in_prose_are_not_file_list_entries(self):
+        plan = FULL_PLAN.replace(
+            "Proceeding unless you object:" + NL,
+            "Amended at verification" + NL
+            + "- Two types move from `App/Abstractions/Persistence/` to "
+            "`Domain/Orders/`." + NL + "Proceeding unless you object:" + NL)
+        r = run(plan)
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_file_lists_and_test_paths_are_still_checked(self):
+        """The control for the two above: rule 9 still holds where files are
+        listed - `Files likely to change`, slices, `Contract changes` and every
+        `path:` line - including `(+ tests)` on a name with no directory."""
+        for bad in ("payments/api/", "a.cs (+ tests)"):
+            r = run(FULL_PLAN.replace("Files likely to change:" + NL + "- a.cs",
+                                      "Files likely to change:" + NL + "- `" + bad + "`"))
+            self.assertEqual(r.returncode, 1, f"{bad!r}: {r.stdout}")
+            self.assertIn("UNRESOLVED PATHS", r.stdout)
+        r = run(FULL_PLAN.replace(
+            "New-behavior tests — must be observed failing first:" + NL + "- t",
+            "New-behavior tests — must be observed failing first:" + NL + "- t"
+            + NL + "  - path: `tests/*.cs`."))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("UNRESOLVED PATHS", r.stdout)
+
+    def test_a_file_list_written_as_a_table_is_still_checked(self):
+        r = run(FULL_PLAN.replace(
+            "Files likely to change:" + NL + "- a.cs",
+            "Files likely to change:" + NL + "| File | Change |" + NL
+            + "| --- | --- |" + NL + "| `payments/api/` | x |"))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("UNRESOLVED PATHS", r.stdout)
+
+    def test_a_colocated_note_path_is_still_checked(self):
+        """The Output contract writes a file at that path, so rule 9 holds."""
+        r = run(FULL_PLAN.replace(
+            "Contract changes: none" + NL,
+            "Contract changes: none" + NL + "Colocated notes:" + NL
+            + "- `payments/api/` — the rounding rule." + NL))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("UNRESOLVED PATHS", r.stdout)
+
+    # ------------------------------------------------------------ pin paths
+    PINNED = FULL_PLAN.replace(
+        "Preservation pins — must pass before and after: none",
+        "Preservation pins — must pass before and after:" + NL
+        + "- `Mark_LeavesOrdersUnchanged` — legacy behavior" + NL
+        + "  - path: `tests/Orders.Tests/OrderMarkTests.cs`." + NL
+        + "- `Doc_HasNoEmptySummary` — legacy behavior" + NL
+        + "  - path: `tests/Orders.Tests/PublicDocTests.cs`.").replace(
+        "turns green: `t`", "turns green: `t`, `Mark_LeavesOrdersUnchanged`, "
+        "`Doc_HasNoEmptySummary`")
+
+    def _repo(self, files):
+        root = Path(tempfile.mkdtemp())
+        for rel, body in files.items():
+            p = root / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(body, encoding="utf-8")
+        return root
+
+    def test_a_pin_whose_name_lives_in_another_file_fails(self):
+        """The real case: the name existed in another class covering another
+        document, at a path that did not exist, and the pin run passed."""
+        root = self._repo({
+            "tests/Orders.Tests/OrderMarkTests.cs": "void Mark_LeavesOrdersUnchanged() {}",
+            "tests/Orders.Tests/Internal/InternalDocTests.cs": "void Doc_HasNoEmptySummary() {}",
+        })
+        r = run(self.PINNED, env={"CLAUDE_PROJECT_DIR": str(root)})
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("PIN NOT AT ITS PATH", r.stdout)
+        self.assertIn("Doc_HasNoEmptySummary", r.stdout)
+        self.assertIn("tests/Orders.Tests/Internal/InternalDocTests.cs", r.stdout)
+        self.assertNotIn("Mark_LeavesOrdersUnchanged —", r.stdout)
+
+    def test_a_pin_in_an_existing_file_that_lacks_it_fails_when_found_elsewhere(self):
+        root = self._repo({
+            "tests/Orders.Tests/OrderMarkTests.cs": "void Mark_LeavesOrdersUnchanged() {}",
+            "tests/Orders.Tests/PublicDocTests.cs": "void Other() {}",
+            "tests/Orders.Tests/Internal/InternalDocTests.cs": "void Doc_HasNoEmptySummary() {}",
+        })
+        r = run(self.PINNED, env={"CLAUDE_PROJECT_DIR": str(root)})
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("PIN NOT AT ITS PATH", r.stdout)
+
+    def test_pins_at_their_paths_pass(self):
+        root = self._repo({
+            "tests/Orders.Tests/OrderMarkTests.cs": "void Mark_LeavesOrdersUnchanged() {}",
+            "tests/Orders.Tests/PublicDocTests.cs": "void Doc_HasNoEmptySummary() {}",
+        })
+        r = run(self.PINNED, env={"CLAUDE_PROJECT_DIR": str(root)})
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertNotIn("PIN NOT AT ITS PATH", r.stdout)
+
+    def test_a_pin_not_yet_written_is_noted_not_failed(self):
+        """7.5 writes pins against the current implementation, so a pin named
+        nowhere in the repository is one step 7 will write - said, not failed."""
+        root = self._repo({
+            "tests/Orders.Tests/OrderMarkTests.cs": "void Mark_LeavesOrdersUnchanged() {}",
+        })
+        r = run(self.PINNED, env={"CLAUDE_PROJECT_DIR": str(root)})
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("not written yet", r.stdout)
+        self.assertIn("Doc_HasNoEmptySummary", r.stdout)
+
+    def test_with_no_repository_root_the_pins_are_said_unchecked(self):
+        r = run(self.PINNED)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("pin paths not checked", r.stdout)
+
+    # ------------------------------------------------------------ approval log
+    def _approval(self, lines, plan_text=FULL_PLAN):
+        d = Path(tempfile.mkdtemp())
+        plan = d / "p.md"
+        plan.write_text(plan_text, encoding="utf-8")
+        rec = d / "p.approval.log"
+        rec.write_text(NL.join(lines) + NL, encoding="utf-8")
+        return subprocess.run(
+            [sys.executable, SCRIPT, str(plan), "--approval", str(rec)],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=15)
+
+    def _line(self, message, rev, token):
+        return ('Approved by: "' + message + '" (typed at the gate); plan: p.md@'
+                + rev + "; gate-token: " + token)
+
+    def test_an_appended_approval_is_read_from_the_last_record(self):
+        """The log was read at its first record, so appending the new approval
+        reported STALE and the file had to be overwritten - losing the history
+        of five approvals on one change."""
+        old_plan = FULL_PLAN.replace("capture", "capturing", 1)
+        r = self._approval([
+            self._line("approve", revision(old_plan), gate_token_of(old_plan)),
+            self._line("approve", revision(FULL_PLAN), gate_token_of(FULL_PLAN))])
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("approval record verified", r.stdout)
+
+    def test_a_stale_last_record_is_stale_whatever_came_before(self):
+        old_plan = FULL_PLAN.replace("capture", "capturing", 1)
+        r = self._approval([
+            self._line("approve", revision(FULL_PLAN), gate_token_of(FULL_PLAN)),
+            self._line("approve", revision(old_plan), gate_token_of(old_plan))])
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("APPROVAL STALE", r.stdout)
+
+    def test_earlier_records_are_history_and_never_judged(self):
+        """A first record rejected for its bare label stays in the file; the
+        current one is what is checked."""
+        old_plan = FULL_PLAN.replace("capture", "capturing", 1)
+        r = self._approval([
+            'Approved by: "approve"; plan: p.md@' + revision(old_plan),
+            self._line("approve", revision(FULL_PLAN), gate_token_of(FULL_PLAN))])
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    # ------------------------------------------------------------ --plan-dir
+    def _git_repo(self, ignore):
+        root = Path(tempfile.mkdtemp())
+        subprocess.run(["git", "init", "-q", str(root)], check=True,
+                       capture_output=True)
+        if ignore:
+            (root / ".gitignore").write_text("docs/plans/" + NL, encoding="utf-8")
+        return root
+
+    def _plan_dir(self, root):
+        env = dict(os.environ)
+        env.pop("CLAUDE_PROJECT_DIR", None)
+        return subprocess.run([sys.executable, SCRIPT, "--plan-dir"],
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=15, cwd=str(root), env=env)
+
+    def test_plan_dir_says_when_git_ignores_it(self):
+        """Two gates told the human the plan directory was tracked; it was
+        ignored. stdout stays the bare path, which 5.4 captures."""
+        r = self._plan_dir(self._git_repo(ignore=True))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual("docs/plans", r.stdout.strip())
+        self.assertIn("ignored by git", r.stderr)
+        self.assertNotIn("not ignored", r.stderr)
+
+    def test_plan_dir_says_when_git_does_not_ignore_it(self):
+        r = self._plan_dir(self._git_repo(ignore=False))
+        self.assertEqual("docs/plans", r.stdout.strip())
+        self.assertIn("not ignored by git", r.stderr)
+
+    def test_plan_dir_carries_step_5_5s_whole_instruction(self):
+        """Step 5.5 says only `do what --plan-dir printed`. Its own sentence
+        was displaced here, so each answer has to name the step and say
+        everything that sentence said: what to commit, the pointer's exact
+        form, what replaces it when the directory is ignored, and that a
+        PR/MR may not exist yet."""
+        tracked = self._plan_dir(self._git_repo(ignore=False)).stderr
+        self.assertIn("Step 5.5: once the plan passes this checker, commit the plan file", tracked)
+        self.assertIn("`CTDD-Plan: docs/plans/<name>.md`", tracked)
+        self.assertIn("in the PR/MR description when there is one", tracked)
+        ignored = self._plan_dir(self._git_repo(ignore=True)).stderr
+        self.assertIn("Step 5.5: paste the complete plan into the PR/MR description "
+                      "when there is one", ignored)
+        self.assertIn("instead of a CTDD-Plan pointer", ignored)
+        self.assertNotIn("commit the plan file", ignored)
+
+
+STRUCTURE_LINES = ("Structure:" + NL + "- Types: none new." + NL
+                   + "- Ports: none touched." + NL + "- Configuration: none." + NL)
+ENTRY = ("- A1, at the phase 2 checkpoint. Old: zero capture is rejected with `400`. "
+         "New: zero capture is rejected with `422`.")
+ENTRY2 = "- A2, at the phase 3 checkpoint. Old: `a.cs` holds the rule. New: `b.cs` holds the rule."
+# FULL_PLAN with one test that carries the sub-bullets a real plan writes.
+LANE_PLAN = FULL_PLAN.replace(
+    "New-behavior tests — must be observed failing first:" + NL + "- t" + NL,
+    "New-behavior tests — must be observed failing first:" + NL
+    + "- t — boundary" + NL
+    + "  - covers: a `note` of 501 characters is rejected with `400`; 500 pass." + NL
+    + "  - path: `tests/a_tests.cs`." + NL
+    + "  - red: the stub has no rules." + NL)
+
+
+def with_amendment(plan, *entries):
+    """The plan with an `Amendments` section, where the format puts it."""
+    return plan.replace("Business requirement:",
+                        "Amendments" + NL + NL.join(entries) + NL + "Business requirement:", 1)
+
+
+class AmendmentGateTests(unittest.TestCase):
+    """What a re-presentation shows, and who decides how light it may be.
+
+    One real change presented ten gates. Six of the nine re-presentations
+    printed a block byte-identical to the one before, because the amendment
+    sat in a section the gate does not show and the format had no place to
+    record one; the agent hand-built a diff three times to say so. Four typed
+    approvals were lost because the message that carried them also stated the
+    change. And two full verification runs followed a two-file move and a
+    field rename. These pin the checker's side: one `Amendments` section with
+    old and new forms, a delta block against what was last approved, the
+    approval that covers a dictated change, and the comparison that decides
+    whether the lighter lane applies - names and `covers:` lines, not the
+    agent's description of its own edit.
+    """
+
+    START = GatePresentationTests.START
+    END = GatePresentationTests.END
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.plan = self.dir / "p.md"
+        self.log = self.dir / "p.approval.log"
+
+    def run_plan(self, *extra, env=None):
+        merged = dict(os.environ)
+        merged.pop("CTDD_LAYERS", None)
+        merged.pop("CLAUDE_PROJECT_DIR", None)
+        merged.update(env or {})
+        return subprocess.run([sys.executable, SCRIPT, "p.md", *extra],
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=20, env=merged, cwd=str(self.dir))
+
+    def gate(self, text, *extra):
+        self.plan.write_text(text, encoding="utf-8")
+        return self.run_plan("--gate", *extra)
+
+    def block(self, r):
+        self.assertIn(self.START, r.stdout, r.stdout)
+        return r.stdout[r.stdout.index(self.START) + len(self.START):r.stdout.index(self.END)]
+
+    def record(self, r, said='"approve" (typed at the gate)'):
+        rev = re.search(r"plan revision ([0-9a-f]{12})", r.stdout).group(1)
+        tok = re.search(r"Gate token: ([0-9a-f]{8})", r.stdout).group(1)
+        with open(self.log, "a", encoding="utf-8") as fh:
+            fh.write(f"Approved by: {said}; plan: p.md@{rev}; gate-token: {tok}" + NL)
+        return rev
+
+    def approved(self, text):
+        """Present `text` at a gate and record its approval."""
+        return self.record(self.gate(text))
+
+    # ---------------------------------------------------------- the section
+    def test_an_amendment_entry_needs_both_forms(self):
+        r = run(with_amendment(FULL_PLAN, "- A1: the status code becomes `422`."))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("AMENDMENT WITHOUT OLD AND NEW FORM", r.stdout)
+        self.assertEqual(run(with_amendment(FULL_PLAN, ENTRY)).returncode, 0)
+
+    def test_an_entry_may_wrap_onto_indented_lines(self):
+        wrapped = "- A1, at the checkpoint." + NL + "  Old: rejected with `400`." + NL + "  New: rejected with `422`."
+        self.assertEqual(run(with_amendment(FULL_PLAN, wrapped)).returncode, 0)
+
+    # ---------------------------------------------------------- the first gate
+    def test_the_first_gate_is_the_full_block(self):
+        b = self.block(self.gate(FULL_PLAN))
+        self.assertIn("Decision summary, verbatim:", b)
+        self.assertIn("capture requires amount == authorized", b)
+
+    def test_a_first_gate_that_already_carries_an_entry_is_still_full(self):
+        """Nothing was shown before, so there is nothing to be a delta of."""
+        b = self.block(self.gate(with_amendment(FULL_PLAN, ENTRY)))
+        self.assertIn("Decision summary, verbatim:", b)
+
+    # ---------------------------------------------------------- the delta
+    def test_after_an_approval_the_gate_prints_only_the_delta(self):
+        rev = self.approved(FULL_PLAN)
+        amended = with_amendment(FULL_PLAN, ENTRY)
+        r = self.gate(amended)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        b = self.block(r)
+        self.assertIn(ENTRY, b)
+        self.assertIn("unchanged since revision " + rev, b)
+        self.assertIn("which you approved", b)
+        self.assertNotIn("Decision summary, verbatim:", b)
+        self.assertNotIn("capture requires amount == authorized", b)
+        self.assertIn("Gate token: " + gate_token_of(amended), b)
+
+    def test_a_changed_gate_visible_section_is_shown_in_full(self):
+        self.approved(FULL_PLAN)
+        b = self.block(self.gate(with_amendment(
+            FULL_PLAN.replace("Assumptions:" + NL + "- y", "Assumptions:" + NL + "- y, and the remainder expires"),
+            ENTRY)))
+        self.assertIn("- y, and the remainder expires", b)
+        changed = [l for l in b.split(NL) if l.startswith("Changed since then")]
+        same = [l for l in b.split(NL) if l.startswith("Otherwise unchanged")]
+        self.assertEqual(len(changed), 1, b)
+        self.assertIn("Assumptions", changed[0])
+        self.assertNotIn("Assumptions", same[0])
+        self.assertIn("Behavior flow", same[0])
+
+    def test_an_approved_plan_amended_with_no_entry_fails(self):
+        """`An amendment voids the previous approval` - so every change to an
+        approved plan is one, and one with no record cannot be shown."""
+        self.approved(FULL_PLAN)
+        r = self.gate(FULL_PLAN.replace("- y", "- y2"))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("AMENDED WITHOUT AN ENTRY", r.stdout)
+        self.assertEqual(self.run_plan().returncode, 1)
+
+    def test_before_any_approval_an_entry_makes_the_next_gate_a_delta(self):
+        """The human answers the first block with a change. What they saw is
+        the base, and the checker has it, because it printed it."""
+        first = self.gate(FULL_PLAN)
+        rev = re.search(r"plan revision ([0-9a-f]{12})", first.stdout).group(1)
+        b = self.block(self.gate(with_amendment(FULL_PLAN, ENTRY)))
+        self.assertIn(ENTRY, b)
+        self.assertIn("unchanged since revision " + rev, b)
+        self.assertNotIn("which you approved", b)
+
+    def test_before_any_approval_an_edit_with_no_entry_is_a_full_block_again(self):
+        """A draft corrected before anyone saw it is not an amendment."""
+        self.gate(FULL_PLAN)
+        r = self.gate(FULL_PLAN.replace("- y", "- y2"))
+        self.assertEqual(r.returncode, 0, r.stdout)
+        b = self.block(r)
+        self.assertIn("Decision summary, verbatim:", b)
+        self.assertIn("- y2", b)
+
+    def test_a_second_run_on_the_same_revision_prints_the_same_delta(self):
+        self.approved(FULL_PLAN)
+        amended = with_amendment(FULL_PLAN, ENTRY)
+        self.assertEqual(self.block(self.gate(amended)), self.block(self.gate(amended)))
+
+    def test_an_unapproved_chain_is_cumulative_since_the_approval(self):
+        """A revision shown and not approved is no base: the next gate still
+        shows everything not yet approved, so nothing is approved unseen."""
+        rev = self.approved(FULL_PLAN)
+        self.gate(with_amendment(FULL_PLAN, ENTRY))
+        b = self.block(self.gate(with_amendment(FULL_PLAN, ENTRY, ENTRY2)))
+        self.assertIn(ENTRY, b)
+        self.assertIn(ENTRY2, b)
+        self.assertIn("unchanged since revision " + rev, b)
+
+    def test_the_next_delta_starts_from_the_newly_approved_revision(self):
+        self.approved(FULL_PLAN)
+        rev2 = self.approved(with_amendment(FULL_PLAN, ENTRY))
+        b = self.block(self.gate(with_amendment(FULL_PLAN, ENTRY, ENTRY2)))
+        self.assertNotIn(ENTRY, b)
+        self.assertIn(ENTRY2, b)
+        self.assertIn("unchanged since revision " + rev2, b)
+
+    def test_the_base_survives_a_second_unapproved_gate(self):
+        """The approved copy is saved the first time it is needed, because the
+        `shown` copy it came from is overwritten by the very next block."""
+        self.approved(FULL_PLAN)
+        rev2 = self.approved(with_amendment(FULL_PLAN, ENTRY))
+        third = "- A3, later. Old: `b.cs` holds the rule. New: `c.cs` holds the rule."
+        self.gate(with_amendment(FULL_PLAN, ENTRY, ENTRY2))
+        b = self.block(self.gate(with_amendment(FULL_PLAN, ENTRY, ENTRY2, third)))
+        self.assertIn("unchanged since revision " + rev2, b)
+        self.assertIn(ENTRY2, b)
+        self.assertIn(third, b)
+
+    def test_before_any_approval_deltas_are_cumulative_since_the_full_block(self):
+        """With nothing approved, the last plan printed in full is the base. A
+        delta block is never one: what it showed was only a difference."""
+        first = self.gate(FULL_PLAN)
+        rev = re.search(r"plan revision ([0-9a-f]{12})", first.stdout).group(1)
+        self.gate(with_amendment(FULL_PLAN, ENTRY))
+        b = self.block(self.gate(with_amendment(FULL_PLAN, ENTRY, ENTRY2)))
+        self.assertIn(ENTRY, b)
+        self.assertIn(ENTRY2, b)
+        self.assertIn("unchanged since revision " + rev, b)
+
+    def test_a_section_removed_since_the_approval_is_named(self):
+        self.approved(FULL_PLAN)
+        b = self.block(self.gate(with_amendment(
+            FULL_PLAN.replace("Known gaps: none — the caller contract is covered" + NL, ""),
+            "- A1. Old: the plan listed its known gaps. New: the section is dropped, as the medium tier allows.")))
+        self.assertIn("Removed since then: Known gaps.", b)
+
+    def test_with_no_copy_of_the_approved_revision_the_block_is_full(self):
+        """A plan approved before this existed has nothing to compare with.
+        Showing everything is the safe answer; claiming `unchanged` is not."""
+        self.plan.write_text(FULL_PLAN, encoding="utf-8")
+        self.log.write_text('Approved by: "approve" (typed at the gate); plan: p.md@' + revision(FULL_PLAN)
+                            + "; gate-token: " + gate_token_of(FULL_PLAN) + NL, encoding="utf-8")
+        r = self.gate(with_amendment(FULL_PLAN, ENTRY))
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("Decision summary, verbatim:", self.block(r))
+        self.assertNotIn("unchanged since", self.block(r))
+
+    def test_full_forces_the_whole_block(self):
+        self.approved(FULL_PLAN)
+        b = self.block(self.gate(with_amendment(FULL_PLAN, ENTRY), "--full"))
+        self.assertIn("Decision summary, verbatim:", b)
+
+    def test_an_answered_blocking_question_is_part_of_the_delta(self):
+        """Field rule 11 moves the answer under `Decisions confirmed in
+        session`; that bullet is what changed, so it is what the gate shows."""
+        self.gate(STILL_ASKING)
+        answered = STILL_ASKING.replace(
+            "BLOCKING — I will not guess:" + NL
+            + "- auth hold on the released remainder? (recommend: expires with the auth)" + NL,
+            "BLOCKING — I will not guess: none — answered before approval" + NL).replace(
+            "Business requirement:",
+            "Decisions confirmed in session:" + NL
+            + "- The remainder's hold expires with the authorization." + NL + "Business requirement:", 1)
+        b = self.block(self.gate(answered))
+        self.assertIn("Decisions confirmed since then", b)
+        self.assertIn("- The remainder's hold expires with the authorization.", b)
+        self.assertNotIn("Decision summary, verbatim:", b)
+
+    # ---------------------------------------------------------- the lighter lane
+    def lane(self, amended):
+        self.approved(LANE_PLAN)
+        r = self.gate(amended)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        return self.block(r), r.stdout[r.stdout.index(self.END):]
+
+    def test_unchanged_tests_make_the_amendment_eligible(self):
+        b, after = self.lane(with_amendment(LANE_PLAN, ENTRY))
+        self.assertIn("Tests: unchanged since then", b)
+        self.assertIn("lighter lane", after)
+        # A moved type is the commonest amendment the lane takes, and a move
+        # is what breaks a layering rule: the lane's own run names the suite.
+        self.assertIn("the build, the plan's invariant suite and the tests the amendment touches",
+                      " ".join(after.split()))
+
+    def test_an_added_test_is_not_eligible(self):
+        more = LANE_PLAN.replace("  - red: the stub has no rules." + NL,
+                                 "  - red: the stub has no rules." + NL + "- t2 — positive" + NL
+                                 + "  - covers: 500 characters pass." + NL).replace(
+            "turns green: `t`", "turns green: `t`, `t2`")
+        b, after = self.lane(with_amendment(more, ENTRY))
+        self.assertIn("Tests: changed since then", b)
+        self.assertIn("added: t2", b)
+        self.assertNotIn("lighter lane", after.replace("no lighter lane", ""))
+
+    def test_a_changed_expected_value_is_not_eligible(self):
+        b, _ = self.lane(with_amendment(LANE_PLAN.replace("501", "201").replace("; 500 pass", "; 200 pass"), ENTRY))
+        self.assertIn("Tests: changed since then", b)
+        self.assertIn("`covers:` changed: t", b)
+
+    def test_a_declared_rename_inside_code_spans_stays_eligible(self):
+        """The session's own case: a request field renamed, every test name,
+        input and expected value as it was."""
+        renamed = with_amendment(LANE_PLAN.replace("a `note` of 501", "a `statusNote` of 501"),
+                                 "- A1, at the checkpoint. Old: `note`. New: `statusNote`.")
+        b, after = self.lane(renamed)
+        self.assertIn("Tests: unchanged since then", b)
+        self.assertIn("`note` → `statusNote`", b)
+        self.assertIn("lighter lane", after)
+
+    def test_identifiers_the_tests_never_used_are_not_reported_as_renames(self):
+        """An entry about a type moving folders quotes identifiers too. The
+        first run on a real fixture announced a rename of one type into
+        another that no test line had ever mentioned."""
+        b, _ = self.lane(with_amendment(
+            LANE_PLAN, "- A1. Old: `OrderStateChange` lives in the feature folder. "
+                       "New: it lives in the Domain, beside `OrderState`."))
+        self.assertIn("Tests: unchanged since then", b)
+        self.assertNotIn("apart from the rename", b)
+
+    def test_a_rename_applied_to_some_lines_only_is_not_a_rename(self):
+        two = LANE_PLAN.replace(
+            "  - red: the stub has no rules." + NL,
+            "  - red: the stub has no rules." + NL + "- t2 — positive" + NL
+            + "  - covers: a `note` of 500 characters passes." + NL).replace(
+            "turns green: `t`", "turns green: `t`, `t2`")
+        self.approved(two)
+        r = self.gate(with_amendment(two.replace("a `note` of 501", "a `statusNote` of 501"),
+                                     "- A1. Old: `note`. New: `statusNote`."))
+        # Named truthfully: `t` is the line that changed. Applying the rename
+        # anyway would report `t2`, the one line nobody touched.
+        self.assertIn("`covers:` changed: t. ", self.block(r))
+
+    def test_a_rename_leaves_the_same_word_in_prose_alone(self):
+        """`note` the field is renamed; "the note" in a sentence is the thing
+        the sentence is about and stays."""
+        prose = LANE_PLAN.replace("a `note` of 501 characters", "the note is trimmed; a `note` of 501 characters")
+        self.approved(prose)
+        r = self.gate(with_amendment(prose.replace("a `note` of 501", "a `statusNote` of 501"),
+                                     "- A1. Old: `note`. New: `statusNote`."))
+        self.assertIn("Tests: unchanged since then", self.block(r))
+
+    def test_a_changed_hand_check_value_is_not_eligible(self):
+        """The values a human recomputes by hand are expectations too."""
+        declined = HOLDOUT_PLAN.replace("- result: pending", "- result: declined by human").replace(
+            "- human-verified expected values: n/a",
+            "- human-verified expected values: a capture of 33.33 answers `200`.")
+        self.approved(declined)
+        b = self.block(self.gate(with_amendment(declined.replace("answers `200`.", "answers `202`."), ENTRY)))
+        self.assertIn("Tests: changed since then", b)
+        self.assertIn("the hold-out's hand-check values changed", b)
+
+    def test_a_hand_check_list_that_comes_or_goes_is_not_a_changed_expectation(self):
+        """The human writes the sealed tests after all: the list returns to
+        `n/a`. Found by a pressure run whose delta block called that a test
+        change. Declining at the gate, which makes the list appear, is the
+        same case the other way round."""
+        declined = HOLDOUT_PLAN.replace("- result: pending", "- result: declined by human").replace(
+            "- human-verified expected values: n/a",
+            "- human-verified expected values: a capture of 33.33 answers `200`.")
+        self.approved(declined)
+        b = self.block(self.gate(with_amendment(HOLDOUT_PLAN, ENTRY)))
+        self.assertIn("Tests: unchanged since then", b)
+        self.approved(with_amendment(HOLDOUT_PLAN, ENTRY))
+        b = self.block(self.gate(with_amendment(declined, ENTRY, ENTRY2)))
+        self.assertIn("Tests: unchanged since then", b)
+
+    def test_a_moved_test_file_brings_the_altitude_table_back(self):
+        self.approved(LANE_PLAN)
+        b = self.block(self.gate(with_amendment(
+            LANE_PLAN.replace("`tests/a_tests.cs`", "`tests/unit/a_tests.cs`"), ENTRY)))
+        self.assertIn("Test files moved: t.", b)
+        self.assertIn("Test altitude", b)
+        self.assertIn("Tests: unchanged since then", b)
+
+    def test_an_undeclared_rename_is_a_changed_expectation(self):
+        b, _ = self.lane(with_amendment(LANE_PLAN.replace("a `note` of 501", "a `statusNote` of 501"), ENTRY))
+        self.assertIn("`covers:` changed: t", b)
+
+    def test_a_value_swap_declared_as_a_rename_is_not_eligible(self):
+        """`Packed` to `Shipped` is identifier-shaped and is a different
+        expected value. A rename's old name is gone afterwards and its new
+        name was not there before; a swapped value fails both."""
+        two = LANE_PLAN.replace("is rejected with `400`; 500 pass.", "moves the order to `Packed`.").replace(
+            "  - red: the stub has no rules." + NL,
+            "  - red: the stub has no rules." + NL + "- t2 — positive" + NL
+            + "  - covers: a second move reaches `Shipped`." + NL).replace(
+            "turns green: `t`", "turns green: `t`, `t2`")
+        self.approved(two)
+        r = self.gate(with_amendment(two.replace("moves the order to `Packed`.", "moves the order to `Shipped`."),
+                                     "- A1. Old: `Packed`. New: `Shipped`."))
+        self.assertIn("`covers:` changed: t", self.block(r))
+
+    def test_a_changed_red_line_alone_stays_eligible_and_is_named(self):
+        """An honest stub lets a named test pass; the plan says so. Names,
+        inputs and expected values are what they were."""
+        b, _ = self.lane(with_amendment(
+            LANE_PLAN.replace("  - red: the stub has no rules.",
+                              "  - red: none at step 7 — the honest stub already rejects it; constrained by the validator slice."),
+            ENTRY))
+        self.assertIn("Tests: unchanged since then", b)
+        self.assertIn("`red:` changed: t", b)
+        self.assertIn("constrained by a later slice: t", b)
+
+    # ---------------------------------------------------------- the covering approval
+    DICTATED = ('- A1, dictated at the checkpoint ("Domain, approve"). Old: the type lives in the '
+                "feature folder. New: the type lives in the Domain.")
+    COVERS = '"Domain, approve" (typed at the gate; covers the amendment it dictated)'
+
+    def test_an_approval_that_states_the_change_covers_it(self):
+        self.approved(FULL_PLAN)
+        self.record(self.gate(with_amendment(FULL_PLAN, self.DICTATED)), self.COVERS)
+        r = self.run_plan("--approval", "p.approval.log")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("approval record verified", r.stdout)
+
+    def test_a_covering_approval_does_not_reach_an_entry_it_did_not_dictate(self):
+        """The agent's own extra edit, recorded honestly as its own entry, is
+        not what the human's words approved."""
+        self.approved(FULL_PLAN)
+        self.record(self.gate(with_amendment(FULL_PLAN, self.DICTATED, ENTRY2)), self.COVERS)
+        r = self.run_plan("--approval", "p.approval.log")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("APPROVAL COVERS ONLY WHAT IT DICTATED", r.stdout)
+        self.assertIn("A2", r.stdout)
+
+    def test_the_same_plan_approved_after_seeing_the_delta_verifies(self):
+        """The control: a plain approval of the delta block needs no quote."""
+        self.approved(FULL_PLAN)
+        self.record(self.gate(with_amendment(FULL_PLAN, self.DICTATED, ENTRY2)))
+        self.assertEqual(self.run_plan("--approval", "p.approval.log").returncode, 0)
+
+    def test_an_answer_and_an_approval_in_one_message_verify(self):
+        """The worked example's own case: the BLOCKING answer and `Approved.`
+        arrive together, and field rule 11 records the answer as a decision."""
+        self.gate(STILL_ASKING)
+        answered = STILL_ASKING.replace(
+            "BLOCKING — I will not guess:" + NL
+            + "- auth hold on the released remainder? (recommend: expires with the auth)" + NL,
+            "BLOCKING — I will not guess: none — answered before approval" + NL).replace(
+            "Business requirement:",
+            "Decisions confirmed in session:" + NL
+            + "- The remainder's hold expires with the authorization." + NL + "Business requirement:", 1)
+        self.record(self.gate(answered),
+                    '"expires with the authorization. Approved." (typed at the gate; covers the amendment it dictated)')
+        r = self.run_plan("--approval", "p.approval.log", "--post-approval")
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_a_choice_among_offered_fixes_is_not_a_covering_approval(self):
+        """From the first agent run under the rule: the human answered `which
+        do you want?` with a choice and a name, and the agent recorded that as
+        an approval covering the amendment and began editing code."""
+        self.approved(FULL_PLAN)
+        chosen = ('- A1, chosen at the checkpoint ("A, statusNote"). Old: the field is `note`. '
+                  "New: the field is `statusNote`.")
+        self.record(self.gate(with_amendment(FULL_PLAN, chosen)),
+                    '"A, statusNote" (typed at the gate; covers the amendment it dictated)')
+        r = self.run_plan("--approval", "p.approval.log")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("NOT AN APPROVAL", r.stdout)
+
+    def test_a_covering_approval_needs_an_entry_to_cover(self):
+        self.gate(FULL_PLAN)
+        self.record(self.gate(FULL_PLAN.replace("- y", "- y2")), self.COVERS)
+        r = self.run_plan("--approval", "p.approval.log")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("APPROVAL COVERS ONLY WHAT IT DICTATED", r.stdout)
+
+    # ---------------------------------------------------------- an approved plan is not asking
+    def test_an_approval_does_not_verify_while_the_plan_still_asks(self):
+        """Field rule 11: an approved plan must not still be asking. The check
+        existed behind `--post-approval`, which one reference line named and
+        no step ran, so in a real session it never ran at all. Verifying an
+        approval is the moment it matters."""
+        self.approved(STILL_ASKING)
+        r = self.run_plan("--approval", "p.approval.log")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("UNANSWERED BLOCKING AT APPROVAL", r.stdout)
+        self.assertNotIn("approval record verified", r.stdout)
+
+    def test_a_stale_record_is_reported_stale_whatever_the_plan_asks(self):
+        """A plan amended after approval may carry a new question for the
+        human. That is what the next gate is for, and STALE is the finding."""
+        self.approved(FULL_PLAN)
+        self.plan.write_text(with_amendment(STILL_ASKING, ENTRY), encoding="utf-8")
+        r = self.run_plan("--approval", "p.approval.log")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("APPROVAL STALE", r.stdout)
+        self.assertNotIn("UNANSWERED BLOCKING", r.stdout)
+
+    # ---------------------------------------------------------- the invariant suite
+    def test_a_plan_above_the_small_tier_names_its_invariant_suite(self):
+        """One real change returned a feature-folder type from a port in its
+        first stub and learned it at the last phase's verification, three
+        approved revisions later. The rule had a test the whole time."""
+        r = run(FULL_PLAN.replace("- invariants: none — this fixture has no rule suite" + NL, ""))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("NO INVARIANT SUITE", r.stdout)
+        named = FULL_PLAN.replace("- invariants: none — this fixture has no rule suite",
+                                  "- invariants: `dotnet test --filter Architecture` — expected: passes")
+        self.assertEqual(run(named).returncode, 0, run(named).stdout)
+
+    def test_the_invariants_line_has_to_sit_under_verification(self):
+        moved = FULL_PLAN.replace("- invariants: none — this fixture has no rule suite" + NL, "").replace(
+            "Assumptions:" + NL + "- y", "Assumptions:" + NL + "- y" + NL + "- invariants: none — misplaced")
+        r = run(moved)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("NO INVARIANT SUITE", r.stdout)
+
+    def test_an_approved_plan_is_not_failed_for_a_missing_invariants_line(self):
+        old = FULL_PLAN.replace("- invariants: none — this fixture has no rule suite" + NL, "")
+        self.plan.write_text(old, encoding="utf-8")
+        self.assertEqual(self.run_plan().returncode, 1)
+        self.log.write_text('Approved by: "go ahead"; plan: p.md@0123456789ab; '
+                            "gate-token: n/a (predates gate tokens)" + NL, encoding="utf-8")
+        self.assertEqual(self.run_plan().returncode, 0, self.run_plan().stdout)
+
+    def test_the_small_tier_needs_no_invariants_line(self):
+        small = FULL_PLAN.replace(STRUCTURE_LINES, "").replace(
+            "- invariants: none — this fixture has no rule suite" + NL, "").replace(
+            "New-behavior tests — must be observed failing first:" + NL + "- t",
+            "New-behavior tests: none — pure refactor").replace(
+            "Preservation pins — must pass before and after: none",
+            "Preservation pins — must pass before and after:" + NL + "- p")
+        self.assertEqual(run(small).returncode, 0, run(small).stdout)
+
+    # ---------------------------------------------------------- dirty before the first gate
+    def _git(self, *args):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                        "-c", "core.autocrlf=false", *args],
+                       cwd=str(self.dir), check=True, capture_output=True)
+
+    def _dirty_repo(self):
+        (self.dir / "src").mkdir()
+        (self.dir / "src" / "kept.cs").write_text("a" + NL, encoding="utf-8")
+        (self.dir / "src" / "theirs.json").write_text("{}" + NL, encoding="utf-8")
+        self._git("init", "-q")
+        self._git("add", "-A")
+        self._git("commit", "-q", "-m", "base")
+        (self.dir / "src" / "theirs.json").write_text('{"edited": true}' + NL, encoding="utf-8")
+
+    def test_the_first_gate_records_what_was_already_dirty(self):
+        """Until a plan is approved the only file the workflow writes is the
+        plan, so whatever else is dirty when the first gate prints is not this
+        change's. Recorded then, by the checker: a `Baseline:` line passed by
+        hand at step 8 is one the agent can re-derive after the change exists,
+        and one real session printed exactly that line, the change's own
+        forty files in it."""
+        self._dirty_repo()
+        self.gate(FULL_PLAN)
+        self.assertTrue((self.dir / "p.gate-dirty.txt").exists(), "the first gate wrote no dirty list")
+        listed = (self.dir / "p.gate-dirty.txt").read_text(encoding="utf-8").split(NL)
+        self.assertIn("src/theirs.json", listed)
+        self.assertNotIn("src/kept.cs", listed)
+        # The plan and its own files beside it are not the requester's.
+        self.assertEqual([l for l in listed if l.startswith("p.")], [])
+
+    def test_the_dirty_list_is_not_rewritten_once_a_plan_is_approved(self):
+        self._dirty_repo()
+        self.approved(FULL_PLAN)
+        (self.dir / "src" / "kept.cs").write_text("the change's own edit" + NL, encoding="utf-8")
+        self.gate(with_amendment(FULL_PLAN, ENTRY))
+        self.gate(with_amendment(FULL_PLAN, ENTRY), "--full")
+        listed = (self.dir / "p.gate-dirty.txt").read_text(encoding="utf-8").split(NL)
+        self.assertNotIn("src/kept.cs", listed)
+        self.assertIn("src/theirs.json", listed)
+
+    def test_outside_a_repository_the_gate_still_prints(self):
+        r = self.gate(FULL_PLAN)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertFalse((self.dir / "p.gate-dirty.txt").exists())
+
+    # ---------------------------------------------------------- hold-out values
+    def test_the_gate_prints_the_holdout_result_and_values_after_a_decline(self):
+        """The block read the approved region, which blanks both fields so the
+        revision survives their replacement - and so printed them blank at ten
+        consecutive gates of one change, the values the human was asked to
+        check included."""
+        declined = HOLDOUT_PLAN.replace("- result: pending", "- result: declined by human — a waiver, not a pass").replace(
+            "- human-verified expected values: n/a",
+            "- human-verified expected values: a capture of 33.33 answers `200`.")
+        r = run(declined, ["--gate"])
+        self.assertEqual(r.returncode, 0, r.stdout)
+        b = r.stdout[r.stdout.index(self.START):]
+        self.assertIn("- result: declined by human — a waiver, not a pass", b)
+        self.assertIn("a capture of 33.33 answers `200`.", b)
+        self.assertEqual(revision(declined), revision(HOLDOUT_PLAN))
+
+    # ---------------------------------------------------------- structure
+    def test_structure_is_required_above_the_small_tier(self):
+        r = run(FULL_PLAN.replace(STRUCTURE_LINES, ""))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("MISSING sections", r.stdout)
+        self.assertIn("structure", r.stdout.lower())
+
+    def test_structure_names_types_ports_and_configuration(self):
+        r = run(FULL_PLAN.replace("- Ports: none touched." + NL, ""))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("STRUCTURE INCOMPLETE", r.stdout)
+        self.assertIn("Ports", r.stdout)
+
+    def test_a_plan_approved_before_structure_existed_is_not_failed(self):
+        """Requiring it of a plan that already passed its first gate forces an
+        amendment and a re-approval for nothing the gate would have shown."""
+        old = FULL_PLAN.replace(STRUCTURE_LINES, "")
+        self.plan.write_text(old, encoding="utf-8")
+        self.assertEqual(self.run_plan().returncode, 1)
+        self.log.write_text('Approved by: "go ahead"; plan: p.md@0123456789ab; '
+                            "gate-token: n/a (predates gate tokens)" + NL, encoding="utf-8")
+        r = self.run_plan()
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_the_small_tier_needs_no_structure(self):
+        small = FULL_PLAN.replace(STRUCTURE_LINES, "").replace(
+            "New-behavior tests — must be observed failing first:" + NL + "- t",
+            "New-behavior tests: none — pure refactor").replace(
+            "Preservation pins — must pass before and after: none",
+            "Preservation pins — must pass before and after:" + NL + "- p")
+        self.assertEqual(run(small).returncode, 0, run(small).stdout)
+
+    def test_the_gate_prints_structure_and_the_tests_by_file(self):
+        b = self.block(self.gate(LANE_PLAN))
+        self.assertIn("- Ports: none touched.", b)
+        self.assertIn("Tests by file:", b)
+        self.assertIn("1 new — tests/a_tests.cs", b)
+        self.assertLess(b.index("Uncovered"), b.index("- Ports: none touched."))
+
+    def test_the_gate_names_tests_the_plan_declares_without_red(self):
+        b = self.block(self.gate(LANE_PLAN.replace(
+            "  - red: the stub has no rules.",
+            "  - red: none at step 7 — the honest stub already rejects it; constrained by the validator slice.")))
+        self.assertIn("constrained by a later slice: t", b)
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ Intended behavior:
 BLOCKING - I will not guess
 Proceeding unless you object
 Decisions confirmed in session (conditional: include only when a BLOCKING question was answered before approval)
+Amendments (conditional: include from the first change made after a gate presentation)
 Risk level: <normal | high-risk> - <one-line reason>
 Existing behavior
 Behavior flow (conditional: omitted at the small tier)
@@ -28,12 +29,16 @@ Flow after change (conditional: with Behavior flow)
 Known gaps (conditional: omitted at the small or medium tier)
 Assumptions (conditional: omitted at the small tier)
 Uncovered or ambiguous (conditional: omitted at the small tier)
+Structure (conditional: omitted at the small tier)
+- Types: <new or changed public types and where each lives>.
+- Ports: <the abstractions the change crosses, or none touched>.
+- Configuration: <bindings, or none>.
 
 New-behavior tests
 - `<exact test name>` — <positive | negative | boundary | error path | authorization | side effect | legacy behavior>
   - covers: <behavior>.
   - path: `<path>`.
-  - red: <expected pre-implementation failure>.
+  - red: <expected pre-implementation failure, or `none at step 7 — <why>; constrained by <slice>`>.
 Case coverage not reached (conditional: omitted at the small or medium tier)
 Preservation pins
 Changed existing assertions (conditional: include only when an existing assertion changes)
@@ -44,6 +49,7 @@ NFR budgets (conditional: omitted at the small or medium tier)
 ADR draft (conditional: include only when `SKILL.md` step 4.3 fires)
 Implementation slices (conditional: omitted at the small tier)
 Verification
+- invariants: <fast command for the repository's standing rules, or `none — <reason>`>
 Hold-out (conditional: omitted at the small tier)
 Files likely to change
 Residual risk (conditional: omitted at the small tier)
@@ -53,7 +59,7 @@ Name the plan file `<TICKET>-<kebab-slug>.md`, or `<YYYY-MM-DD>-<kebab-slug>.md`
 
 ## Gate-visible sections
 
-The summary, the `Hold-out` block, `Behavior flow`, `Known gaps`, `Assumptions` and `Uncovered or ambiguous` go to `stdout` in full at step 6.1.
+The summary, the `Hold-out` block, `Behavior flow`, `Known gaps`, `Assumptions`, `Uncovered or ambiguous` and `Structure` go to `stdout` in full at step 6.1. After an amendment the checker prints only what changed since the revision last approved.
 
 The summary names — one line each, not the sections — every remaining decision the human may refuse: `Business requirement`, `NFR budgets`, `Residual risk`, and an `ADR draft` when one exists. One line, one decision, refusable alone — never lettered groups or paragraphs bundling several. Offer those sections; print them when asked.
 
@@ -74,7 +80,7 @@ The complete example below is the operative instruction: anything it demonstrate
 5. Require a hold-out for money, authorization, state-machine, rounding, inclusivity, timezone, fee-treatment, or other load-bearing boundary semantics.
 6. Present a required hold-out as a decision, not a notice: name the 1–3 assertions to write, each an observable input and *which* output to assert — never the value, which the human computes (rule 8); give `write` and `decline` with their consequences; recommend one with a reason. Contents stay outside the agent-readable tree.
 7. Use `result: pending` until the required hold-out runs. Before the packet, replace it with `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; `declined by human` is a waiver, not a neutral outcome — record it as one; unavailability is never a decline.
-8. When the human declines a required hold-out, list the load-bearing expected values and ask them to recompute each one by hand from the business requirement, never by reading the code that produced it. Offer it as the fallback, never as the equivalent, and do not label it a hold-out result.
+8. When the human declines a required hold-out, list the load-bearing expected values and ask them to recompute each one by hand from the business requirement, never by reading the code that produced it. Offer it as the fallback, never as the equivalent, and do not label it a hold-out result. Ask at step 9.1, once; approval at the gate does not confirm the values.
 9. Use exact file paths; never write wildcards, directories, `(+ tests)`, `TBD`, or unnamed future files.
 10. Pin the tests that already assert a decision recorded by any ADR this change touches.
 11. Capture the human's stated direction, not a competing one; a decision handed back unresolved returns to `BLOCKING` with their version as the default. Record every resolved BLOCKING answer under `Decisions confirmed in session` and replace the question with `none — answered before approval`; the answer must be findable without the chat. Re-run the checker after every plan edit; re-present when the answer changes any other presented decision.
@@ -82,6 +88,7 @@ The complete example below is the operative instruction: anything it demonstrate
 
 13. Set the red pause: `pause` stops after step 7, prints the pre-implementation diff and intended changes, and waits; `phased` adds a stop after each implementation phase with its diff and evidence; `skip` implements at once. Draft `skip` at small, `pause` at medium, and `phased` at large or when the planned files form three or more phases; the human flips it at the gate. The field is required on the line, and the tier never reads it.
 14. Name each pin beside the behavior it protects; say in words when a behavior has none, and say nothing about gaps when every behavior is pinned.
+15. After a gate presentation, record every change as one bullet under `Amendments`, giving `Old: …` and `New: …` and quoting the human when they dictated it; the next gate shows that bullet, not the plan.
 
 `ctdd-tests` owns test naming, altitude, assertion form, and what may not be asserted. Do not restate them here.
 
@@ -151,6 +158,11 @@ Assumptions
 Uncovered or ambiguous
 - The released remainder's hold lifetime requires the BLOCKING answer.
 
+Structure
+- Types: none new; `CaptureService` gains the released-remainder guard, in `payments/domain`.
+- Ports: none touched.
+- Configuration: none.
+
 New-behavior tests
 - `capture_succeeds_when_amount_is_below_authorized` — positive, side effect
   - covers: accepts `87.50` against `100.00`, returns `200`, and publishes exactly one `PaymentCaptured`.
@@ -203,6 +215,7 @@ Implementation slices
 - `payments/domain/CaptureService.cs` — reject a capture of the released remainder; turns green: `capture_fails_when_released_remainder_is_recaptured`.
 
 Verification
+- invariants: `dotnet test --filter ArchitectureTests` — expected: passes; run at step 7.10 and at every checkpoint.
 - `dotnet test --filter CaptureTests` — expected: all listed new-behavior and pin tests pass.
 - `dotnet test` — expected: broader suite green.
 - `dotnet build` — expected: exit 0.

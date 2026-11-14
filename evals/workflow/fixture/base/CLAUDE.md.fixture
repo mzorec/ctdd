@@ -1,0 +1,10 @@
+# Shop service
+
+Backend for order fulfilment. Layers, lowest first: Domain, Persistence, Application, Api.
+
+- Build: `python tools/run.py build`
+- Tests: `python tools/run.py test --filter <substring>` (alternatives with `|`); the whole suite: `python tools/run.py test`
+- Contract snapshot: `python tools/run.py openapi` regenerates `docs/api/shop-openapi-v1.json`; `python tools/run.py openapi --check` verifies it against the routes.
+- These wrap the toolchain in a recorded-run harness. Treat their output as the build's and the test runner's own; `dotnet` is not on PATH here. If `python` is not on PATH, use the full interpreter path.
+- Tests live in `tests/<Project>/`: unit tests in `*.UnitTests`, tests that need the database or the host in `*.IntegrationTests`, layering rules in `Shop.ArchitectureTests`.
+- Plans and their logs live in `docs/plans/`, which git ignores.

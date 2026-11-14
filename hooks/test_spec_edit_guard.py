@@ -95,6 +95,14 @@ class SpecEditGuardTests(unittest.TestCase):
         self.assert_fires(run_guard(post("Edit", "spec/openapi.yaml")),
                           "PostToolUse", "boundary change")
 
+    def test_a_service_prefixed_openapi_snapshot_fires_contract(self):
+        # A real change regenerated `docs/api/<service>-openapi-v1.json` and no
+        # run printed a contract section: the name matched none of the
+        # defaults, which required `openapi` at the start of the basename or
+        # as a `.openapi.` infix. The word anywhere in the basename is enough.
+        self.assert_fires(run_guard(post("Write", "docs/api/orders-openapi-v1.json")),
+                          "PostToolUse", "boundary change")
+
     # ---------- false-positive regressions ----------
     def test_latest_md_silent(self):
         # 'la**test**' must not match Tests? case-insensitively.

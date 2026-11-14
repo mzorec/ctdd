@@ -41,7 +41,7 @@ The plan is written to `docs/plans/PAY-123-partial-capture.md` using `plan-forma
 
 ```
 $ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" "${CLAUDE_PROJECT_DIR}/docs/plans/PAY-123-partial-capture.md"
-check-plan: all mandatory sections present for a large plan (22 of 22; presence, not quality — the review still owns quality).
+check-plan: all mandatory sections present for a large plan (23 of 23; presence, not quality — the review still owns quality).
 ```
 
 `docs/plans/` is tracked here, so the plan file is committed and the MR description carries one line:
@@ -52,17 +52,19 @@ CTDD-Plan: docs/plans/PAY-123-partial-capture.md
 
 ## Step 6 — gate
 
-`Plan: <path> (<tier>)` goes to stdout first, then the summary verbatim, the categorical `Risk:` line, and the `Hold-out` block in full. Nothing else is written. The BLOCKING question is answered by the human in the same turn as the approval:
+`Plan: <path> (<tier>)` goes to stdout first, then the summary verbatim, the categorical `Risk:` line, and the `Hold-out` block in full. Nothing else is written. The human answers the BLOCKING question and approves in one message:
 
 ```
 Human: release the remainder when the authorization expires. Approved.
 ```
 
+That approval covers the answer it dictates, so there is no second gate. Field rule 11 governs how the answer is recorded first: it moves to `Decisions confirmed in session`, and the question becomes `none — answered before approval`. `--gate` is run again and prints only that change, and the record line it prints underneath is appended to the approval log:
+
 ```
-Approved by: "release the remainder when the authorization expires. Approved."; plan: docs/plans/PAY-123-partial-capture.md@453959650ce8.
+Approved by: "release the remainder when the authorization expires. Approved." (typed at the gate; covers the amendment it dictated); plan: docs/plans/PAY-123-partial-capture.md@453959650ce8; gate-token: 9f2c41d7
 ```
 
-Field rule 11 governs: the answer moves, the question becomes `none — answered before approval`, and `check-plan.py --post-approval` must exit 0.
+`check-plan.py --approval` then verifies the record, and `--post-approval` must exit 0. Had the human asked for something the answer did not say, that part would have gone back to them as a delta to approve.
 
 ## Step 7 — artifacts and evidence
 
@@ -86,7 +88,7 @@ check-redstate: all 4 new test(s) observed failing — red state verified. (That
 
 Two of the four did not reach that verdict on the first run, and each was resolved by its **Evidence states** row before step 8 began:
 
-- `capture_fails_when_released_remainder_is_recaptured` did not compile: `CaptureService.ReleasedRemainder` did not exist. A compile-only member that throws not-implemented was added, the test re-run, and the failure became the planned assertion failure. Nothing else was implemented.
+- `capture_fails_when_released_remainder_is_recaptured` did not compile: `CaptureService.ReleasedRemainder` did not exist. A compile-only member returning a default was added — a stub never throws and is never shaped to fail a test — the test re-run, and the failure became the planned assertion failure. Nothing else was implemented.
 - `capture_succeeds_when_amount_is_one_cent` passed on the first run. Premature green: the fixture authorized one cent, so the old equality rule already accepted it and the test did not constrain the change. The corrected fixture went back through step 6 as an amendment before it was accepted as evidence.
 
 ## Step 8 — implement and verify
@@ -113,7 +115,7 @@ Both are in `Files likely to change`, so nothing is reopened.
 
 ### When the specification turns out to be wrong
 
-Implementing the released-remainder guard showed that `CAPTURED` is terminal in the state machine, so the approved `Intended behavior` was unreachable. Step 8.6 fired: implementation stopped, the plan file was amended with the old and new form of the transition, `check-plan.py` was re-run, the amended plan was re-presented at step 6, and a second Approval record was printed. Work resumed at step 7 because the amendment changed a planned test. The amendment is never applied by editing the test to match the code.
+Implementing the released-remainder guard showed that `CAPTURED` is terminal in the state machine, so the approved `Intended behavior` was unreachable. Step 8.6 fired: implementation stopped, and the finding went to the human with the two ways out as a Decision prompt, before the plan was touched. Their choice was recorded under `Amendments` with the old and new form of the transition, `check-plan.py --gate` printed that entry and what it changed in place of the whole plan, and a second Approval record was appended. Work resumed at step 7 because that block said a planned test had changed; had it said the tests were unchanged, the lighter lane it names would have applied. The amendment is never applied by editing the test to match the code.
 
 ## Step 9 — review packet
 
@@ -122,7 +124,7 @@ Business requirement: The merchant is allowed one capture below the authorized a
 Back-translation: Capture accepts any amount from one cent to the authorized amount, emits exactly one event carrying that amount, and rejects a second capture with 409.
 Plan: docs/plans/PAY-123-partial-capture.md
 Approval: "release the remainder when the authorization expires. Approved."
-Plan check: check-plan: all mandatory sections present for a large plan (22 of 22; presence, not quality — the review still owns quality).
+Plan check: check-plan: all mandatory sections present for a large plan (23 of 23; presence, not quality — the review still owns quality).
 Red state: check-redstate: all 4 new test(s) observed failing — red state verified. (That they failed for the *right* reason is still the reviewer's read.)
 Pin state before: 7.6 · `…partial-capture.pinstate.log` · check-redstate: all 4 pin test(s) observed PASSING against the current implementation — preservation baseline captured. Re-run the same tests after the change; they must still pass.
 Pin state after: 8.3 · `…partial-capture.pinstate-after.log` · check-redstate: all 4 pin test(s) observed PASSING against the current implementation — preservation baseline captured. Re-run the same tests after the change; they must still pass.

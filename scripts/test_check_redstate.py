@@ -983,5 +983,235 @@ class DuplicateNameTests(unittest.TestCase):
         self.assertNotIn("occurrences disagree", r.stdout)
 
 
+class PlannedPathTests(unittest.TestCase):
+    """`--tests-from` matched bare names and ignored the plan's `path:`. A real
+    plan named a pin that existed in another class, covering another document,
+    at a path that did not exist, and the pin run verified it - the passing
+    line was the other class's. With a planned path, the verdict is read from
+    lines that carry that file's class or module; a name that ran only
+    elsewhere is not the planned test."""
+
+    PLAN = ("New-behavior tests — must be observed failing:\n"
+            "- `Set_WritesTheState` — positive\n"
+            "  - path: `tests/App.Tests/SetStateTests.cs`.\n"
+            "Preservation pins — must pass before and after:\n"
+            "- `Doc_HasNoEmptySummary` — legacy behavior\n"
+            "  - path: `tests/Api.Tests/PublicDocTests.cs`.\n")
+
+    def _pins(self, log):
+        return run(write(log), "--tests-from", write(self.PLAN), "--expect-pass")
+
+    def test_a_pin_that_ran_only_in_another_class_is_not_verified(self):
+        r = self._pins("  Passed Shop.Api.Tests.InternalDocTests.Doc_HasNoEmptySummary [1 ms]\n")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("outside its planned file", r.stdout)
+        self.assertIn("InternalDocTests", r.stdout)
+        self.assertIn("tests/Api.Tests/PublicDocTests.cs", r.stdout)
+
+    def test_a_pin_in_its_planned_class_is_verified(self):
+        r = self._pins("  Passed Shop.Api.Tests.PublicDocTests.Doc_HasNoEmptySummary [1 ms]\n")
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_the_planned_class_decides_when_the_name_runs_twice(self):
+        """Read from the planned file only, and say the other one exists."""
+        r = self._pins(
+            "  Passed Shop.Api.Tests.PublicDocTests.Doc_HasNoEmptySummary [1 ms]\n"
+            "  Failed Shop.Api.Tests.InternalDocTests.Doc_HasNoEmptySummary [1 ms]\n")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("also runs", r.stdout)
+        self.assertIn("InternalDocTests", r.stdout)
+
+    def test_a_log_that_names_no_class_falls_back_and_says_so(self):
+        """jest, Go and TAP print bare names; scoping is impossible there,
+        so the bare match stands and the run says it could not scope."""
+        r = self._pins("  ✓ Doc_HasNoEmptySummary (1 ms)\n")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("could not scope", r.stdout)
+
+    def test_a_new_test_that_failed_only_in_another_class_is_not_red_state(self):
+        r = run(write("  Failed Shop.App.Tests.OtherTests.Set_WritesTheState [1 ms]\n"),
+                "--tests-from", write(self.PLAN))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("outside its planned file", r.stdout)
+
+    def test_pytest_module_paths_scope_by_their_stem(self):
+        plan = ("New-behavior tests — must be observed failing:\n"
+                "- `test_sets_state` — positive\n"
+                "  - path: `tests/test_set_state.py`.\n"
+                "Preservation pins — must pass before and after: none — n/a\n")
+        ok = run(write("FAILED tests/test_set_state.py::test_sets_state - AssertionError\n"),
+                 "--tests-from", write(plan))
+        self.assertEqual(ok.returncode, 0, ok.stdout)
+        other = run(write("FAILED tests/test_other.py::test_sets_state - AssertionError\n"),
+                    "--tests-from", write(plan))
+        self.assertEqual(other.returncode, 1, other.stdout)
+
+
+class ConstrainedBySliceTests(unittest.TestCase):
+    """A compile-only stub returns a default and is never shaped to make a
+    test fail. So an honest stub sometimes lets a named test pass, and the
+    plan then says so on that test's `red:` line: `constrained by` a later
+    slice. One real plan specified a 132-line stub enum only to keep one test
+    red, which was the human's first question at the pause. The declaration
+    is what this reads; without it a passing new test is still a finding."""
+
+    PLAN = ("New-behavior tests — must be observed failing:\n"
+            "- `Set_WritesTheState` — positive\n"
+            "  - red: the stub writes nothing.\n"
+            "- `Set_RejectsAnUnknownState` — negative\n"
+            "  - red: none at step 7 — the honest stub already rejects it; constrained by the route slice.\n"
+            "Preservation pins — must pass before and after: none — n/a\n")
+    LOG = "  Failed Set_WritesTheState [1 ms]\n  Passed Set_RejectsAnUnknownState [1 ms]\n"
+
+    def test_a_declared_test_may_pass_and_is_named(self):
+        r = run(write(self.LOG), "--tests-from", write(self.PLAN))
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("Set_RejectsAnUnknownState", r.stdout)
+        self.assertIn("constrained by a later slice", r.stdout)
+        self.assertIn("not been seen red", r.stdout)
+        self.assertTrue(r.stdout.strip().splitlines()[-1].startswith(
+            "check-redstate: all 1 new test(s) observed failing"), r.stdout)
+
+    def test_without_the_declaration_a_passing_new_test_is_still_a_finding(self):
+        plain = self.PLAN.replace(
+            "none at step 7 — the honest stub already rejects it; constrained by the route slice.",
+            "the stub accepts every state.")
+        r = run(write(self.LOG), "--tests-from", write(plain))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("passed before implementation", r.stdout)
+
+    def test_a_declared_test_that_fails_contradicts_the_plan(self):
+        r = run(write("  Failed Set_WritesTheState [1 ms]\n  Failed Set_RejectsAnUnknownState [1 ms]\n"),
+                "--tests-from", write(self.PLAN))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("declared constrained by a later slice, but not observed passing", r.stdout)
+
+    def test_a_declared_test_still_has_to_run(self):
+        r = run(write("  Failed Set_WritesTheState [1 ms]\n"), "--tests-from", write(self.PLAN))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("Set_RejectsAnUnknownState", r.stdout)
+
+    def test_the_pin_lane_ignores_the_declaration(self):
+        """A control, not a guard: the pin lane never reads the declaration,
+        and a probe showed no rule here whose removal this could catch."""
+        pins = ("New-behavior tests — must be observed failing: none — refactor\n"
+                "Preservation pins — must pass before and after:\n"
+                "- `Keeps_TheOldAnswer` — legacy behavior\n"
+                "  - red: constrained by nothing; pins have no red line.\n")
+        r = run(write("  Failed Keeps_TheOldAnswer [1 ms]\n"), "--tests-from", write(pins), "--expect-pass")
+        self.assertEqual(r.returncode, 1, r.stdout)
+
+
+class InvariantSuiteReminderTests(unittest.TestCase):
+    """The plan names a fast suite for the repository's standing rules, and
+    step 7.10 is the first moment the stubs can break one. This run is the one
+    every plan makes there, so it says to run the suite - where a sentence in
+    the skill, thousands of tokens back, has been forgotten before."""
+
+    PLAN = ("New-behavior tests — must be observed failing:\n"
+            "- `Set_WritesTheState` — positive\n"
+            "Preservation pins — must pass before and after:\n"
+            "- `Keeps_TheOldAnswer` — legacy behavior\n"
+            "Verification\n"
+            "- invariants: `tools/run test --filter ArchitectureTests` — expected: passes.\n"
+            "- `tools/run test` — expected: the whole suite passes.\n")
+    LOG = "  Failed Set_WritesTheState [1 ms]\n"
+
+    def test_the_red_run_says_to_run_the_invariant_suite(self):
+        r = run(write(self.LOG), "--tests-from", write(self.PLAN))
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("invariant suite", r.stdout)
+        # The command alone, as the plan backticks it: not the rest of the line.
+        self.assertIn("run `tools/run test --filter ArchitectureTests` now", r.stdout)
+        self.assertTrue(r.stdout.strip().splitlines()[-1].startswith(
+            "check-redstate: all 1 new test(s) observed failing"), r.stdout)
+
+    def test_a_command_written_without_backticks_is_still_named(self):
+        bare = self.PLAN.replace("`tools/run test --filter ArchitectureTests` — expected: passes.",
+                                 "make arch-check")
+        r = run(write(self.LOG), "--tests-from", write(bare))
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("run `make arch-check` now", r.stdout)
+
+    def test_a_plan_with_no_suite_gets_no_reminder(self):
+        none = self.PLAN.replace("`tools/run test --filter ArchitectureTests` — expected: passes.",
+                                 "none — this service has no rule suite.")
+        r = run(write(self.LOG), "--tests-from", write(none))
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertNotIn("invariant suite", r.stdout)
+
+    def test_the_pin_run_does_not_ask_for_it(self):
+        r = run(write("  Passed Keeps_TheOldAnswer [1 ms]\n"), "--tests-from", write(self.PLAN),
+                "--expect-pass")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertNotIn("invariant suite", r.stdout)
+
+
+class FailureReasonTests(unittest.TestCase):
+    """The verdict says a test failed, never why, and only the why separates
+    intended red from wrong red. One session wrote an ad-hoc parser for the
+    runner's `Error Message:` blocks three times to read them. Report-only:
+    one bounded line per test, the verdict line still last, the exit code
+    unchanged."""
+
+    DOTNET = ("  Failed Shop.App.Tests.SetStateTests.Set_WritesTheState [52 ms]\n"
+              "  Error Message:\n"
+              "   Assert.Equal() Failure: Values differ\n"
+              "Expected: 42\n"
+              "Actual:   40\n"
+              "  Stack Trace:\n"
+              "     at Shop.App.Tests.SetStateTests.Set_WritesTheState() in C:\\x\\SetStateTests.cs:line 9\n")
+
+    def test_the_runners_message_is_printed_beside_the_name(self):
+        r = run(write(self.DOTNET), "--test", "Set_WritesTheState")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("Set_WritesTheState — Assert.Equal() Failure: Values differ "
+                      "Expected: 42 Actual: 40", r.stdout)
+        self.assertTrue(r.stdout.strip().splitlines()[-1].startswith(
+            "check-redstate: all 1 new test(s) observed failing"), r.stdout)
+
+    def test_xunits_own_diagnostic_block_is_read(self):
+        """A dotnet run can report each failure twice, the runner's own
+        diagnostic block first; its message lines carry the `[xUnit.net …]`
+        prefix and no `Error Message:` header."""
+        log = ("[xUnit.net 00:00:05.40]     Shop.App.Tests.SetStateTests.Set_WritesTheState [FAIL]\n"
+               "[xUnit.net 00:00:05.40]       Assert.Equal() Failure: Values differ\n"
+               "[xUnit.net 00:00:05.40]       Expected: 7\n"
+               "[xUnit.net 00:00:05.40]       Actual:   3\n"
+               "[xUnit.net 00:00:05.40]       Stack Trace:\n"
+               "[xUnit.net 00:00:05.40]         at x\n")
+        r = run(write(log), "--test", "Set_WritesTheState")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("Set_WritesTheState — Assert.Equal() Failure: Values differ "
+                      "Expected: 7 Actual: 3", r.stdout)
+
+    def test_a_name_absent_from_the_log_is_not_said_unscoped(self):
+        plan = PlannedPathTests.PLAN
+        r = run(write("  Passed Shop.Api.Tests.PublicDocTests.Other [1 ms]\n"),
+                "--tests-from", write(plan), "--expect-pass")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertNotIn("could not scope", r.stdout)
+        self.assertIn("not found in the log", r.stdout)
+
+    def test_a_same_line_reason_is_read(self):
+        r = run(write("FAILED tests/test_set.py::test_sets_state - AssertionError: expected 409\n"),
+                "--test", "test_sets_state")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("test_sets_state — AssertionError: expected 409", r.stdout)
+
+    def test_a_failure_with_no_message_says_so(self):
+        r = run(write("  ✕ capture_fails_when_amount_is_zero (4 ms)\n"),
+                "--test", "capture_fails_when_amount_is_zero")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("no message in the log", r.stdout)
+
+    def test_a_long_message_is_bounded_to_one_line(self):
+        long = self.DOTNET.replace("Values differ", "Values differ " + "x" * 400)
+        r = run(write(long), "--test", "Set_WritesTheState")
+        line = next(l for l in r.stdout.splitlines()
+                    if l.startswith("  Set_WritesTheState — "))
+        self.assertLessEqual(len(line), 200)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

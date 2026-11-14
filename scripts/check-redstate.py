@@ -17,7 +17,13 @@ recollection.
 
 What it does: for each named test, scan the log for a line mentioning that name
 and decide whether that line reports a failure. A name that appears only on a
-passing line, or does not appear at all, fails the check.
+passing line, or does not appear at all, fails the check. With --tests-from,
+a test whose plan bullet carries `path:` is read only from lines qualified by
+that file's class or module (`Ns.PublicDocTests.Name`, `tests/test_x.py::name`);
+a name that ran only under another qualifier is reported as not the planned
+test. Runners that print bare names (jest, Go, TAP) cannot be scoped, and the
+run says so. Failing tests are listed with the runner's first message, so the
+reason can be read without parsing the log by hand.
 
 Honest ceiling: this is a text scan over a runner's output, not an
 understanding of the runner. It recognises the common markers of the major
@@ -384,7 +390,150 @@ def _is_heading(line, label):
     return not text.rstrip().endswith((".", "!", "?"))
 
 
-def names_from_plan(path, want_pins=False):
+_PATH_SUB_RX = re.compile(r"^\s+[-*]\s+[`*_]*path[`*_]*\s*:\s*`([^`\n]+)`", re.I)
+
+
+def _ident_rx(word):
+    return re.compile(r"(?<![A-Za-z0-9_])" + re.escape(word) + r"(?![A-Za-z0-9_])")
+
+
+def _stem(path):
+    """`tests/Api.Tests/PublicDocTests.cs` -> `PublicDocTests`; the class or
+    module a runner prints in front of the test name."""
+    base = (path or "").replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+    return base.split(".", 1)[0]
+
+
+def _qualifier(line, name):
+    """The token qualifying the name on this line (`Ns.Class.` in
+    `Failed Ns.Class.Name`), or None when the runner printed the bare name."""
+    span = _match_span(line, name)
+    before = line[:span[0]] if span else ""
+    m = re.search(r"(\S*\S)[.:/#\\]+$", before)
+    return m.group(0).rstrip(".:/#\\") if m else None
+
+
+def _carries_verdict(line, name):
+    return _verdicts(line, name) not in ([], [None])
+
+
+def scope_log(log, name, path):
+    """(log for this name, state, the other qualifiers it ran under).
+
+    `state` is `scoped` when some verdict line carries the planned file's
+    class or module - only those lines are read; `outside` when every verdict
+    line is qualified by something else - the name ran, but not as the
+    planned test; `unscoped` when the runner prints bare names (jest, Go,
+    TAP), where no scoping is possible and the bare match stands.
+    """
+    stem = _stem(path)
+    inside, outside, bare = [], [], []
+    for line in log.splitlines():
+        span = _match_span(line, name)
+        if span is None:
+            continue
+        if stem and _ident_rx(stem).search(line[:span[0]]):
+            inside.append(line)
+        elif _qualifier(line, name):
+            outside.append(line)
+        else:
+            bare.append(line)
+    out_q = sorted({_qualifier(l, name) for l in outside
+                    if _carries_verdict(l, name)})
+    if any(_carries_verdict(l, name) for l in inside):
+        return "\n".join(inside), "scoped", out_q
+    if out_q and not any(_carries_verdict(l, name) for l in bare):
+        return "", "outside", out_q
+    if not (inside or outside or bare):
+        return log, "absent", []
+    return log, "unscoped", []
+
+
+def _one_line(text, cap=150):
+    s = " ".join(text.split())
+    return s if len(s) <= cap else s[:cap - 1] + "…"
+
+
+def failure_reason(log, name, path=None):
+    """The runner's own message for this test's failure, as one bounded line,
+    or None. Report-only: the verdict cannot tell a planned reason from a
+    wrong one, and one session wrote an ad-hoc parser three times to read
+    these. A dotnet `Error Message:` block, pytest `E ` lines, or the text
+    after ` - ` on the failing line itself."""
+    lines = log.splitlines()
+    stem = _stem(path) if path else None
+    picks = []
+    for i, line in enumerate(lines):
+        span = _match_span(line, name)
+        if span is None or not looks_like_failure(_verdict_text(line, name)):
+            continue
+        scoped = bool(stem) and bool(_ident_rx(stem).search(line[:span[0]]))
+        picks.append((not scoped, i))
+    # A runner can report one failure twice - xUnit's own `[xUnit.net …]
+    # Name [FAIL]` block and the console logger's `Failed Name` with its
+    # `Error Message:` - so take the first candidate that yields a message.
+    for _unscoped, i in sorted(picks):
+        why = _message_after(lines, i, name)
+        if why:
+            return _one_line(why)
+    return None
+
+
+_PREFIX_RX = re.compile(r"^\s*\[[^\]]*\]\s?")
+
+
+def _message_after(lines, i, name):
+    line = lines[i]
+    tail = line[_match_span(line, name)[1]:]
+    same = re.search(r"\s[-–—]\s+(\S.*)$", tail)
+    if same:
+        return same.group(1)
+    # xUnit's diagnostic block puts the message straight under the name, every
+    # line carrying the same `[xUnit.net hh:mm:ss]` prefix; the console
+    # logger opens it with `Error Message:`.
+    prefixed = bool(_PREFIX_RX.match(line))
+    msg, collecting = [], prefixed
+    for nxt in lines[i + 1:i + 16]:
+        if prefixed and not _PREFIX_RX.match(nxt):
+            break
+        s = _PREFIX_RX.sub("", nxt).strip() if prefixed else nxt.strip()
+        if re.match(r"(?i)^(stack trace|standard output|standard error)\s*:", s) \
+                or re.match(r"(?i)^(passed|failed|skipped)\s", s) \
+                or re.search(r"\[(?:FAIL|PASS|SKIP)\]\s*$", s):
+            break
+        head = re.match(r"(?i)^error message\s*:\s*(.*)$", s)
+        if head:
+            collecting = True
+            if head.group(1):
+                msg.append(head.group(1))
+            continue
+        if collecting and s:
+            msg.append(s)
+        elif not collecting and re.match(r"^E\s+\S", nxt):
+            msg.append(nxt[1:].strip())
+        if len(msg) >= 6:
+            break
+    return " ".join(msg)
+
+
+_INVARIANTS_RX = re.compile(r"(?im)^\s*[-*]\s+[`*_]*invariants[`*_]*\s*:\s*(.*)$")
+
+
+def invariant_suite(plan_path):
+    """The command a plan names on its `- invariants:` line, or None when it
+    names none (`none — <reason>`) or has no such line."""
+    m = _INVARIANTS_RX.search(_read_text(plan_path))
+    if not m or re.match(r"[`*_\s]*none\b", m.group(1), re.I):
+        return None
+    tick = re.search(r"`([^`\n]+)`", m.group(1))
+    return (tick.group(1) if tick else m.group(1)).strip() or None
+
+
+_RED_SUB_RX = re.compile(r"^\s+[-*]\s+[`*_]*red[`*_]*\s*:\s*(.*)$", re.I)
+_CONSTRAINED_RX = re.compile(r"constrained\s+by\b", re.I)
+
+
+def names_from_plan(path, want_pins=False, paths=None, constrained=None):
     """Pull test names out of *only* the relevant test section of a plan.
 
     Names are collected only while inside the wanted section — the new-behavior
@@ -402,6 +551,7 @@ def names_from_plan(path, want_pins=False):
     text = _read_text(path)
     want = "pin" if want_pins else "new"
     found, skipped, unparsed, section = [], [], [], "other"
+    last = None
     for line in text.splitlines():
         label = _section_label(line)
         if label is not None and _is_heading(line, label):
@@ -411,6 +561,7 @@ def names_from_plan(path, want_pins=False):
                 section = "new"
             else:
                 section = "other"
+            last = None
             continue
         if section != want:
             continue
@@ -418,8 +569,21 @@ def names_from_plan(path, want_pins=False):
         # `  - note: the boundary is exclusive.` was extracted as the test `note`,
         # and check-redstate then reported it "not found in the log" at 7.11 —
         # after approval and after the tests were written, with no diagnostic
-        # naming the cause.
+        # naming the cause. Its `path:` is read, though: the name alone matched
+        # a same-named test in another class.
         if line[:1].isspace() and line.lstrip()[:1] in "-*":
+            pm = _PATH_SUB_RX.match(line)
+            if pm and last and paths is not None:
+                paths.setdefault(last, pm.group(1).strip())
+            # `red: … constrained by <slice>` declares that an honest stub
+            # already lets this test pass. A stub returns a default and is
+            # never shaped to make a test fail, so the plan records the test
+            # instead; one real plan specified a 132-line stub enum only to
+            # keep one test red.
+            rm = _RED_SUB_RX.match(line)
+            if rm and last and constrained is not None \
+                    and _CONSTRAINED_RX.search(rm.group(1)):
+                constrained.add(last)
             continue
         m = NAME_RX.match(line)
         # The marker is recognised in every rendering an author writes:
@@ -445,9 +609,13 @@ def names_from_plan(path, want_pins=False):
                 " " in body.split("—")[0].split(" - ")[0].strip())
             if BULLET_RX.match(line) and body and not sentence:
                 unparsed.append(line.strip()[:70])
+            if line.strip():
+                last = None
             continue
+        last = None
         if want_pins or not re.match(r"currently", m.group(1), re.I):
             found.append(m.group(1))
+            last = m.group(1)
         else:
             # A `currently_`-prefixed name under the new-behaviour heading is
             # dropped here, and nothing told the author the prefix controls
@@ -475,6 +643,9 @@ def main():
 
     log_src = args[0]
     names, rest = [], args[1:]
+    paths = {}
+    constrained = set()
+    suite = None
     while rest:
         flag = rest.pop(0)
         if flag == "--test" and rest:
@@ -483,7 +654,11 @@ def main():
             try:
                 _plan = rest.pop(0)
                 _found, _skipped, _unparsed = names_from_plan(
-                    _plan, want_pins=expect_pass)
+                    _plan, want_pins=expect_pass, paths=paths,
+                    constrained=constrained)
+                # Read in both lanes; only the verified-red branch prints it,
+                # and the pin lane returns before that.
+                suite = invariant_suite(_plan) or suite
                 if _unparsed:
                     print(f"check-redstate: {len(_unparsed)} bullet(s) in the "
                           f"evidence section yielded no test name and were "
@@ -548,28 +723,74 @@ def main():
         print(f"check-redstate: cannot read {log_src}: {exc}")
         return 2
 
+    # A name with a planned `path:` is read from the lines carrying that file's
+    # class or module. Bare-name matching verified a real pin on another
+    # class's run, covering another document, at a path that did not exist.
+    logs, outside, also, unscoped = {}, {}, {}, []
+    for name in names:
+        if name not in paths:
+            logs[name] = log
+            continue
+        scoped, state, quals = scope_log(log, name, paths[name])
+        logs[name] = scoped
+        if state == "outside":
+            outside[name] = quals
+        elif state == "scoped" and quals:
+            also[name] = quals
+        elif state == "unscoped":
+            unscoped.append(name)
+    checked = [n for n in names if n not in outside]
+    if unscoped:
+        print(f"check-redstate: could not scope {len(unscoped)} name(s) to their "
+              f"planned file — the log prints them with no class or module, so "
+              f"the bare name was matched: {', '.join(unscoped)}")
+    for name, quals in also.items():
+        print(f"check-redstate: {name} also runs outside its planned file "
+              f"(as {', '.join(quals)}); only `{paths[name]}`'s verdict was read.")
+
+    def _outside_report():
+        print(f"  ran only outside its planned file ({len(outside)}):")
+        for name, quals in outside.items():
+            print(f"    {name} — planned in `{paths[name]}`, ran as "
+                  f"{', '.join(quals)}")
+        print("    That is a same-named test in another class or module, not "
+              "the planned one. Correct the plan's path or name, or run the "
+              "planned test.")
+
+    def _reasons(failed):
+        if not failed:
+            return
+        print("check-redstate: why each failed — the runner's first message; the "
+              "verdict cannot tell a planned reason from a wrong one:")
+        for name in failed:
+            why = failure_reason(log, name, paths.get(name))
+            print(f"  {name} — {why or 'no message in the log'}")
+
     if expect_pass:
         # Pin / characterization evidence: the named tests assert behavior that
         # ALREADY exists, so the proof is green-against-the-old-implementation.
-        amb = ambiguous_names(log, names)
+        amb = [(n, c) for n in checked for _n, c in ambiguous_names(logs[n], [n])]
         ok, red, unclear, missing = [], [], [], []
-        for name in names:
-            seen, passed = observed_passing(log, name)
+        for name in checked:
+            seen, passed = observed_passing(logs[name], name)
             if passed:
                 ok.append(name)
             elif not seen:
                 missing.append(name)
-            elif observed_failing(log, name)[1]:
+            elif observed_failing(logs[name], name)[1]:
                 red.append(name)
             else:
                 unclear.append(name)
-        if not red and not missing and not unclear and not amb:
+        if not red and not missing and not unclear and not amb and not outside:
             print(f"check-redstate: {', '.join(ok)}")
             print(f"check-redstate: all {len(ok)} pin test(s) observed PASSING against the "
                   f"current implementation — preservation baseline captured. Re-run the same "
                   f"tests after the change; they must still pass.")
             return 2 if reclassified else 0
+        _reasons(red)
         print("check-redstate: PIN BASELINE NOT VERIFIED.")
+        if outside:
+            _outside_report()
         if amb:
             print(f"  occurrences disagree ({len(amb)}): " +
                   ", ".join(f"{n} ({c} occurrences)" for n, c in amb))
@@ -598,11 +819,19 @@ def main():
         return 1
 
     failing, passing, absent, setup = [], [], [], []
-    for name in names:
-        seen, failed = observed_failing(log, name)
+    held, broke = [], []
+    for name in checked:
+        if name in constrained:
+            # Declared to pass on the honest stub: it must have run and
+            # passed. Failing is not good enough either - the plan says
+            # otherwise, and a failure nobody predicted is a wrong red.
+            seen, passed = observed_passing(logs[name], name)
+            (held if passed else broke if seen else absent).append(name)
+            continue
+        seen, failed = observed_failing(logs[name], name)
         if failed:
             failing.append(name)
-        elif any(x == "setup" for x in _marked(log, name)):
+        elif any(x == "setup" for x in _marked(logs[name], name)):
             # execution.md's **wrong red**: the failure came from setup, so the
             # assertion never ran. Reporting it as "passed before implementation"
             # sent the agent to look for behaviour that already exists.
@@ -622,8 +851,14 @@ def main():
               "that failed.")
         return 1
 
-    if not passing and not absent:
-        print(f"check-redstate: {', '.join(failing)}")
+    if not passing and not absent and not outside and not broke:
+        if failing:
+            print(f"check-redstate: {', '.join(failing)}")
+        _reasons(failing)
+        if held:
+            print(f"check-redstate: {len(held)} test(s) the plan declares constrained by "
+                  f"a later slice passed on the stubs, as declared, and have not been "
+                  f"seen red: {', '.join(held)}")
         if reclassified:
             # Printing "red state verified" and exiting 2 put a verdict the packet
             # copies verbatim (worked-change.md:108) on a run the same command
@@ -634,15 +869,35 @@ def main():
                   f"reclassified out of the set — RED STATE NOT VERIFIED for every "
                   f"test the plan names.")
             return 2
+        if suite:
+            # The stubs are the first code of the change that can break a
+            # standing rule, and this run is the one every plan makes on them.
+            # Said here because a sentence in the skill is thousands of tokens
+            # back by now: one layering violation written with the stubs was
+            # found at the last phase's verification.
+            print(f"check-redstate: the plan names an invariant suite — run "
+                  f"`{suite}` now, on the stubs, before the step 7.12 pause. A "
+                  f"failure is a finding for the human, with the candidate fixes, "
+                  f"before any edit to the plan.")
         print(f"check-redstate: all {len(failing)} new test(s) observed failing — "
               f"red state verified. (That they failed for the *right* reason is "
               f"still the reviewer's read.)")
         return 0
 
+    _reasons(failing)
     print("check-redstate: RED STATE NOT VERIFIED.")
-    if ambiguous_names(log, names):
+    if outside:
+        _outside_report()
+    if broke:
+        print(f"  declared constrained by a later slice, but not observed passing "
+              f"({len(broke)}): {', '.join(broke)}")
+        print("    The plan's `red:` line says an honest stub already lets it pass. "
+              "It did not: correct the line to the failure the plan expects, or find "
+              "why it fails.")
+    amb = [(n, c) for n in checked for _n, c in ambiguous_names(logs[n], [n])]
+    if amb:
         print(f"  occurrences disagree: " + ", ".join(
-            f"{n} ({c} occurrences)" for n, c in ambiguous_names(log, names)))
+            f"{n} ({c} occurrences)" for n, c in amb))
         print("    The same name runs in more than one test project with differing "
               "results. Red state is not verified by whichever copy failed first.")
     if passing:

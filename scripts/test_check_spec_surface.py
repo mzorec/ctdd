@@ -166,7 +166,7 @@ class RoutingSkillStructureTests(unittest.TestCase):
     is the one that matters most: the contract's own elements are now enumerated, so a later
     trim that drops one fails here instead of silently shipping a spec with a hole in it."""
 
-    ROUTES = ["Path 2 step 5 implements directly with no plan document",
+    ROUTES = ["it implements directly, with no design doc",
               "both hand off to `ctdd-change` instead",
               "Approving the spec is not approving a plan either"]
 
@@ -209,7 +209,7 @@ class RoutingSkillStructureTests(unittest.TestCase):
                       "bullet about another plugin's skill, it resolves to that plugin")
 
     def test_the_contract_loads_at_route_choice_not_at_write_time(self):
-        """`brainstorming` presents its sectioned design before it writes anything,
+        """`brainstorming` holds its design conversation before it writes anything,
         so a contract loaded only `before writing the spec` arrives after the
         conversation it governs is over. The contract's own first line says to read
         it once brainstorming is the chosen route; the skill must agree."""
@@ -219,7 +219,7 @@ class RoutingSkillStructureTests(unittest.TestCase):
                          "the design conversation, which is what it has to govern")
 
     def _upstream_brainstorming(self):
-        """The installed upstream skill routing pins by step number: newest cached
+        """The installed upstream skill routing pins by its own wording: newest cached
         version, or None when superpowers is not in this machine's plugin cache.
         CTDD_PLUGIN_CACHE points the locator elsewhere, so the guard can be probed
         against a mangled copy instead of the user's real cache."""
@@ -231,35 +231,66 @@ class RoutingSkillStructureTests(unittest.TestCase):
         hits = sorted(root.glob("*/superpowers/*/skills/brainstorming/SKILL.md"), key=vkey)
         return hits[-1] if hits else None
 
-    def test_the_pinned_upstream_steps_still_say_what_routing_claims(self):
-        """Routing names brainstorming's exits by position - Path 2 step 5 and Path 3
-        step 9 - because those are the seams it rewires to `ctdd-change`. The ROUTES
-        guard asserts routing still *says* so; nothing asserted brainstorming still
-        *does* so, and brainstorming is another plugin's file, renumbered without
-        regard to this one. Inert where superpowers is not installed; binding on the
-        pilot machine, where a silent misroute is the cost being guarded. The owner
-        declined a vendored copy on 2026-09-16, so this seam is permanent."""
+    # What routing says brainstorming does, beside upstream's own words for it.
+    # Pinned to wording, never to a position. v0.53.0 pinned `Path 2 step 5` and
+    # `Path 3 step 9`; superpowers 7.0.0 rebuilt the skill with no paths and no
+    # per-path steps, and the guard died on its anchor without being able to say
+    # which claim had gone false. One had - a small change no longer skips the
+    # plan - and the other had only moved.
+    UPSTREAM_PINS = [
+        # Loose on purpose: 6.3.0 said `...-design.md` and commit, 7.0.2 says
+        # `...-design.md`, committed. Same fact, and the claim held in both.
+        ("ends at a committed spec",
+         r"docs/superpowers/specs/\S+[^.]{0,20}commit"),
+        ("when it judges the task quick and clear",
+         r"This is a quick, clear task\. Do it"),
+        ("or the human opts out of its questions",
+         r"this skill is done: [^.]*through the normal workflow\."),
+        ("it invokes `writing-plans` once the design doc is approved",
+         r"After the design doc is approved, the next step is the plan: invoke "
+         r"superpowers:writing-plans and no other skill\."),
+    ]
+
+    def test_routing_still_makes_every_claim_it_pins_upstream(self):
+        """A pin whose routing half was reworded away is a pin on nothing: its
+        upstream half goes on passing for a claim routing no longer makes. The
+        guard this replaces never read routing at all - its messages said `routing
+        says` on trust. Runs everywhere, superpowers installed or not."""
+        mine = " ".join(self.skill.split())
+        for claim, _ in self.UPSTREAM_PINS:
+            # assertTrue, not assertIn: assertIn prints the whole skill
+            self.assertTrue(claim in mine,
+                            f"routing no longer says brainstorming `{claim}` - "
+                            f"re-pin or drop its upstream pair")
+
+    def test_upstream_brainstorming_still_does_what_routing_claims(self):
+        """Routing rewires brainstorming's exits to `ctdd-change`, and brainstorming
+        is another plugin's file, reworded without regard to this one: 7.0.0, 7.0.1
+        and 7.0.2 each reworded it inside four weeks. Inert where superpowers is not
+        installed; binding on the pilot machine, where a silent misroute is the cost
+        being guarded. The owner declined a vendored copy on 2026-09-16, so this
+        seam is permanent.
+
+        It sees a pinned exit change or disappear, a hand-off to a skill routing
+        does not rewire, and a second `normal workflow` exit, which 7.0.0 had. It
+        cannot see a new exit written in words nobody pinned; that still takes a
+        read of upstream's release notes."""
         skill = self._upstream_brainstorming()
         if skill is None:
             self.skipTest("superpowers is not in the plugin cache")
-        text = skill.read_text(encoding="utf-8")
-
-        def step(path_label, n):
-            stars, nl = re.escape("**"), chr(10)
-            block = re.search("^" + stars + path_label + ":" + stars + nl
-                              + "(.*?)(?=" + nl + stars + "|" + nl + "## )",
-                              text, re.S | re.M)
-            self.assertIsNotNone(block, f"upstream has no `**{path_label}:**` checklist")
-            m = re.search("^" + str(n) + re.escape(". ") + "(.*)", block.group(1), re.M)
-            self.assertIsNotNone(m, f"upstream {path_label} path has no step {n}")
-            return m.group(1)
-
-        self.assertIn("no plan document", step("Bounded", 5),
-                      f"routing says Path 2 step 5 implements with no plan document; "
-                      f"{skill.parents[2].name} upstream no longer does - re-pin routing")
-        self.assertIn("writing-plans", step("Architectural", 9),
-                      f"routing says Path 3 step 9 invokes writing-plans; "
-                      f"{skill.parents[2].name} upstream no longer does - re-pin routing")
+        version = skill.parents[2].name
+        theirs = " ".join(skill.read_text(encoding="utf-8").split())
+        for claim, pattern in self.UPSTREAM_PINS:
+            self.assertTrue(re.search(pattern, theirs),
+                            f"routing says brainstorming `{claim}`; upstream "
+                            f"{version} no longer says so - re-pin routing")
+        handed_to = set(re.findall(r"superpowers:([a-z-]+)", theirs))
+        self.assertEqual(handed_to, {"writing-plans"},
+                         f"upstream {version} hands off to a skill routing's "
+                         f"brainstorming bullet does not rewire")
+        self.assertEqual(theirs.count("normal workflow"), 1,
+                         f"upstream {version} sends work to the normal workflow "
+                         f"somewhere other than the opt-out routing names")
 
     def test_routing_decisions_stay_in_the_always_loaded_skill(self):
         for route in self.ROUTES:
@@ -633,7 +664,41 @@ class ChangeSkillStructureTests(unittest.TestCase):
     # human must act on" at 36 chars, which is short of the 52 needed and would
     # have been the cheapest-item deletion rule 9 forbids. Reversible: drop the
     # four names back to a pointer and this returns under 13,700.
-    MAX_PROBE_OFFSET_CHARS = 13_800
+    # 13,800 -> 14,100 in v0.57.0, intent-born: the owner decided seven
+    # workflow changes from one real change that went through ten gates, and
+    # three of them are text that has to sit before step 9.1 - 6.3's approval
+    # that covers the change it dictates (+179), 8.6's finding and candidate
+    # fixes before the plan is edited (+96), and the preamble's hook for the
+    # lighter lane (+65). One displacement was real and was taken: the Approval
+    # record row no longer carries the record's shape, because `check-plan.py
+    # --gate` now prints the exact line with its revision and token, and the
+    # first-gate clause of the row beside it cost 21 (-47 for the pair). The
+    # rest of what those decisions need went into the checker's own output and
+    # the references. Checked first, per rule 9: the hold-out stop now starts
+    # at 14,053, inside the 15,000 proxy and inside claude-opus-5-5's measured
+    # 15,400 - but only about 150 characters inside claude-opus-5's 14,200. On
+    # that model the stop's opening survives compaction and the rest of 9.1,
+    # the ask-once rule included, does not. That is not resolved here and is
+    # the owner's to weigh: it is the tail-past-boundary item already filed in
+    # backlog.md, now one step closer. Reversible two ways: move 6.3's sentence
+    # into the checker's output, which already says the same under every delta
+    # block (-179), or take the 5.5 displacement that `--plan-dir` now makes
+    # possible, since it prints what to do about the pointer and the commit.
+    # Same ceiling, later the same day, intent-born: the owner chose seven of
+    # the proposals that release made, and three of them move text in front of
+    # step 9.1. The 5.5 displacement named above was taken (-92): the step
+    # points at what `--plan-dir` prints, and both of that command's answers
+    # now carry the whole instruction and name the step. The ask-once sentence
+    # left 9.1 for the guardrails, unchanged (+98 before the stop, -98 inside
+    # it): it now covers every stop and sits at character 1,202, where it was
+    # at 14,247, past claude-opus-5's measured boundary. 8.3 gained `When no
+    # phase remains,` (+23). Net: the stop starts 29 characters later, at
+    # 14,082, and the step ends 69 earlier, at 14,488. What the note above
+    # left open is half answered: the ask-once rule is out of reach of every
+    # measured boundary, and on claude-opus-5 the list of results 9.1 resolves
+    # to still is not. 18 characters remain under this ceiling, so the next
+    # sentence in front of 9.1 is a displacement or a decision.
+    MAX_PROBE_OFFSET_CHARS = 14_100
 
     MUST_SURVIVE = {
             "no result claim without current-turn run": "Do not claim a test, build, gate, checker",
@@ -653,6 +718,12 @@ class ChangeSkillStructureTests(unittest.TestCase):
             # claude-opus-5's measured 5,000 tokens end, so after compaction a
             # long session lost the instruction to load the note rules.
             "colocated-note loader survives": "read `references/colocated-notes.md`",
+            # Moved out of step 9.1 on 2026-11-14, unchanged. There it covered
+            # the hand check only and sat past where claude-opus-5's measured
+            # 5,000 tokens end; a pending red pause was printed again whenever
+            # the human asked about something else.
+            "a pending stop is asked once": "Ask once: while it is unanswered, later replies "
+                                            "end with one status line, never the prompt again.",
     }
 
     def _surviving_head(self):
@@ -892,6 +963,404 @@ class IntendedChangeCoverageTests(unittest.TestCase):
         self.assertEqual(bare.returncode, r.returncode)
         self.assertIn("no test/contract/ADR surface touched", bare.stdout)
         self.assertIn("no test/contract/ADR surface touched", r.stdout)
+
+class PlanComparisonTests(unittest.TestCase):
+    """`--plan` as one real change ran it: three runs printed misleading lists
+    and the agent explained the first to the human with a wrong diagnosis.
+
+    Every planned production file was listed as untouched, because the printed
+    list compared against classified surface only while the verdict two lines
+    above already compared against every changed path. "Planned" was any
+    backticked path anywhere in the plan, so a legacy citation in `Existing
+    behavior`, an amendment's old path and every pin file were planned. And the
+    step-0 baseline's own dirty files and `.ctdd.json` were reported as
+    missing `## Intended change` rows.
+    """
+
+    PROD = ["src/App/Orders/Commands/SetOrderStateHandler.cs",
+            "src/App/Abstractions/IOrderRepository.cs"]
+
+    def _plan(self, body):
+        d = Path(tempfile.mkdtemp()) / "docs" / "plans"
+        d.mkdir(parents=True)
+        plan = d / "2026-11-11-set-order-state.md"
+        plan.write_text(NL.join(body) + NL, encoding="utf-8", newline=NL)
+        return plan
+
+    def _files_section(self, paths):
+        return ["Files likely to change"] + [
+            "- " + quoted(p) + " - what changes there." for p in paths]
+
+    def _run(self, plan, paths, extra_args=()):
+        return subprocess.run(
+            [sys.executable, SCRIPT, "-", "--plan", str(plan), *extra_args],
+            input=NL.join("M" + TAB + p for p in paths) + NL,
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=15)
+
+    def _listed(self, out, header):
+        if header not in out:
+            return []
+        block = out[out.index(header):].split(NL)[1:]
+        names = []
+        for line in block:
+            if not line.startswith("  - "):
+                break
+            names.append(line[4:].strip())
+        return names
+
+    def test_a_touched_production_file_is_not_planned_but_untouched(self):
+        plan = self._plan(["Set an order's state."] + self._files_section(self.PROD))
+        r = self._run(plan, self.PROD)
+        self.assertEqual([], self._listed(r.stdout, "Planned but untouched"),
+                         r.stdout)
+        self.assertEqual(0, r.returncode, r.stdout)
+
+    def test_the_untouched_list_still_names_a_planned_file_never_touched(self):
+        """The control: the display fix must not empty the list it fixes."""
+        plan = self._plan(["Set an order's state."] + self._files_section(self.PROD))
+        r = self._run(plan, self.PROD[:1])
+        self.assertEqual(self.PROD[1:], self._listed(r.stdout, "Planned but untouched"))
+        self.assertEqual(1, r.returncode, r.stdout)
+
+    def test_planned_paths_come_from_files_likely_to_change_only(self):
+        """A path cited as evidence, an amendment's old location and a pin's
+        test file are not files this change plans to edit."""
+        plan = self._plan(
+            ["Set an order's state.",
+             "Existing behavior",
+             "Legacy does this in " + quoted("legacy/Pages/Orders/View.cs") + ".",
+             "Amended at verification",
+             "- Old: " + quoted("src/App/Orders/OrderStateOutcome.cs")
+             + "; new: " + quoted("src/Domain/Orders/OrderStateOutcome.cs") + ".",
+             "Preservation pins",
+             "- " + quoted("Mark_LeavesOrdersUnchanged") + " - legacy behavior",
+             "  - path: " + quoted("tests/App.Tests/OrderMarkTests.cs") + "."]
+            + self._files_section(self.PROD))
+        r = self._run(plan, self.PROD)
+        self.assertEqual([], self._listed(r.stdout, "Planned but untouched"),
+                         r.stdout)
+
+    def test_a_files_section_written_as_a_table_is_read(self):
+        """Ending the section at the first unindented non-bullet line would
+        read nothing from a table and turn the comparison off in silence -
+        the shape `intended_change_paths` reads table rows to avoid."""
+        plan = self._plan(["Set an order's state.", "Files likely to change", "",
+                           "| File | Change |", "| --- | --- |"]
+                          + ["| %s | x |" % p for p in self.PROD])
+        r = self._run(plan, self.PROD[:1])
+        self.assertEqual(self.PROD[1:], self._listed(r.stdout, "Planned but untouched"),
+                         r.stdout)
+
+    def test_a_files_section_naming_no_path_says_it_compared_nothing(self):
+        """Compared against an empty set, every touched test and contract file
+        would be listed as unplanned surface - noise that reads as findings."""
+        plan = self._plan(["Set an order's state.", "Files likely to change",
+                           "- the handler and its port."])
+        r = self._run(plan, self.PROD + ["tests/App.Tests/OrderTests.cs"])
+        self.assertNotIn("Planned but untouched", r.stdout)
+        self.assertNotIn("Unplanned surface", r.stdout)
+        self.assertIn("names no path", r.stdout)
+
+    def test_a_plan_with_no_files_section_says_it_compared_nothing(self):
+        """No fallback to the whole document: that fallback is the defect."""
+        plan = self._plan(["Set an order's state.",
+                           "Uses " + quoted("src/App/Orders/Other.cs") + "."])
+        r = self._run(plan, self.PROD)
+        self.assertNotIn("Planned but untouched", r.stdout)
+        self.assertIn("no `Files likely to change` section", r.stdout)
+
+    def test_ctdd_config_needs_no_intended_change_row(self):
+        plan = self._plan(["Set an order's state."]
+                          + self._files_section(self.PROD)
+                          + ["", "## Intended change", "",
+                             "| File | Intended change |", "| --- | --- |"]
+                          + ["| %s | Changes. |" % quoted(p) for p in self.PROD])
+        r = self._run(plan, self.PROD + [".ctdd.json"])
+        self.assertEqual([], self._listed(r.stdout, "Production files with no"),
+                         r.stdout)
+
+    def test_baseline_dirty_files_need_no_intended_change_row(self):
+        """Dirty before the change began is the requester's, not this plan's.
+        Excluded only from the missing-row report, and said so in one line."""
+        plan = self._plan(["Set an order's state."]
+                          + self._files_section(self.PROD)
+                          + ["", "## Intended change", "",
+                             "| File | Intended change |", "| --- | --- |"]
+                          + ["| %s | Changes. |" % quoted(p) for p in self.PROD])
+        baseline = ("Baseline: branch=feature/x; target=main; diff-base=abc1234; "
+                    "staged=none; unstaged=src/Api/appsettings.json; untracked=none.")
+        r = self._run(plan, self.PROD + ["src/Api/appsettings.json"],
+                      extra_args=("--baseline", baseline))
+        self.assertEqual([], self._listed(r.stdout, "Production files with no"),
+                         r.stdout)
+        self.assertIn("dirty at the step-0 baseline", r.stdout)
+        self.assertIn("src/Api/appsettings.json", r.stdout)
+        # Without the baseline the same file is reported: the exclusion is the flag.
+        r2 = self._run(plan, self.PROD + ["src/Api/appsettings.json"])
+        self.assertEqual(["src/Api/appsettings.json"],
+                         self._listed(r2.stdout, "Production files with no"))
+
+    def test_a_baseline_dirty_test_file_is_still_test_surface(self):
+        """The exclusion covers the missing-row report and nothing else: a
+        test edited before the session is still a changed requirement."""
+        plan = self._plan(["Set an order's state."] + self._files_section(self.PROD))
+        baseline = ("Baseline: branch=feature/x; target=main; diff-base=abc1234; "
+                    "staged=none; unstaged=tests/App.Tests/OrderTests.cs; untracked=none.")
+        r = self._run(plan, self.PROD + ["tests/App.Tests/OrderTests.cs"],
+                      extra_args=("--baseline", baseline))
+        self.assertIn("Test surface (1)", r.stdout)
+        self.assertEqual(1, r.returncode)
+
+    def test_a_service_prefixed_openapi_snapshot_is_contract_surface(self):
+        r = run("M" + TAB + "docs/api/orders-openapi-v1.json" + NL)
+        self.assertIn("Contract surface (1)", r.stdout)
+
+
+class DiffWithUntrackedTests(unittest.TestCase):
+    """`git diff <base> --stat` leaves out files git does not track yet, and a
+    change's new files are exactly those. To get them into the stat and the
+    full diff one real session ran `git add -N` and then `git reset`, in a
+    repository whose owner stages from the IDE while a session runs. `--stat`
+    and `--patch` give both from a copy of the index, so the real one is
+    neither read for writing nor changed."""
+
+    def _git(self, repo, *args):
+        return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                               "-c", "core.autocrlf=false", *args], cwd=str(repo),
+                              capture_output=True, text=True, encoding="utf-8", errors="replace")
+
+    def _repo(self):
+        repo = Path(tempfile.mkdtemp())
+        (repo / "a.txt").write_text("one" + NL, encoding="utf-8", newline=NL)
+        (repo / "staged.txt").write_text("s" + NL, encoding="utf-8", newline=NL)
+        self._git(repo, "init", "-q")
+        self._git(repo, "add", "a.txt")
+        self._git(repo, "commit", "-q", "-m", "base")
+        (repo / "a.txt").write_text("one" + NL + "two" + NL + "three" + NL, encoding="utf-8", newline=NL)
+        self._git(repo, "add", "staged.txt")            # the owner's own staging
+        (repo / "b").mkdir()
+        (repo / "b" / "new.txt").write_text("x" + NL + "y" + NL, encoding="utf-8", newline=NL)
+        return repo
+
+    def _run(self, repo, *args):
+        env = dict(os.environ, CLAUDE_PROJECT_DIR=str(repo))
+        return subprocess.run([sys.executable, SCRIPT, "--git", "HEAD", *args], cwd=str(repo),
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=60, env=env)
+
+    def _index(self, repo):
+        import hashlib
+        return (hashlib.sha256((repo / ".git" / "index").read_bytes()).hexdigest(),
+                self._git(repo, "status", "--porcelain").stdout)
+
+    def test_the_stat_counts_files_git_does_not_track_yet(self):
+        repo = self._repo()
+        r = self._run(repo, "--stat")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("a.txt", r.stdout)
+        self.assertIn("b/new.txt", r.stdout)
+        self.assertIn("3 files changed", r.stdout)
+
+    def test_the_index_is_left_exactly_as_it_was(self):
+        repo = self._repo()
+        before = self._index(repo)
+        self._run(repo, "--stat", "--patch", str(repo / "out.diff"))
+        (repo / "out.diff").unlink()
+        self.assertEqual(before, self._index(repo))
+        self.assertIn("?? b/", before[1])
+        self.assertIn("A  staged.txt", before[1])
+
+    def test_patch_writes_the_full_diff_new_files_included(self):
+        repo = self._repo()
+        out = repo / "full.diff"
+        r = self._run(repo, "--patch", str(out))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        body = out.read_text(encoding="utf-8")
+        self.assertIn("b/new.txt", body)
+        self.assertIn("+two", body)
+        self.assertIn("+x", body)
+
+    def test_stat_needs_git(self):
+        r = subprocess.run([sys.executable, SCRIPT, "-", "--stat"], input="M" + TAB + "a.cs" + NL,
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15)
+        self.assertEqual(r.returncode, 2, r.stdout)
+
+    def _with_plan(self):
+        repo = self._repo()
+        plans = repo / "docs" / "plans"
+        plans.mkdir(parents=True)
+        for suffix in (".md", ".redstate.log", ".gate-shown.md"):
+            (plans / ("2026-11-11-set-state" + suffix)).write_text("p" + NL, encoding="utf-8", newline=NL)
+        return repo, plans / "2026-11-11-set-state.md"
+
+    def test_the_plans_own_untracked_files_stay_out_of_the_stat(self):
+        """The red-state log is hundreds of lines of runner output and is not
+        the change; the inventory already leaves the plan's files out by their
+        stem, and the stat does the same."""
+        repo, plan = self._with_plan()
+        r = self._run(repo, "--stat", "--plan", str(plan))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("b/new.txt", r.stdout)
+        self.assertNotIn("redstate.log", r.stdout)
+        self.assertIn("3 untracked file(s) of the plan's own", r.stdout)
+
+    def test_without_the_plan_they_are_counted_like_any_new_file(self):
+        repo, _plan = self._with_plan()
+        r = self._run(repo, "--stat")
+        self.assertIn("2026-11-11-set-state.redstate.log", r.stdout)
+        self.assertNotIn("of the plan's own", r.stdout)
+
+    def test_a_second_patch_does_not_contain_the_first(self):
+        repo = self._repo()
+        out = repo / "pre.diff"
+        self._run(repo, "--patch", str(out))
+        first = out.read_bytes()
+        r = self._run(repo, "--patch", str(out))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(first, out.read_bytes())
+        self.assertNotIn(b"pre.diff", first)
+
+    def test_it_reads_the_whole_repository_from_a_subdirectory(self):
+        """`git ls-files --others` lists only what is under the current
+        directory, and the agent changes directory often."""
+        repo = self._repo()
+        (repo / "c").mkdir()
+        (repo / "c" / "other.txt").write_text("z" + NL, encoding="utf-8", newline=NL)
+        env = dict(os.environ)
+        env.pop("CLAUDE_PROJECT_DIR", None)
+        r = subprocess.run([sys.executable, SCRIPT, "--git", "HEAD", "--stat"], cwd=str(repo / "b"),
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=60, env=env)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("c/other.txt", r.stdout)
+        self.assertIn("b/new.txt", r.stdout)
+
+    def test_the_patch_keeps_a_files_own_line_endings(self):
+        repo = self._repo()
+        self._git(repo, "config", "core.autocrlf", "false")
+        (repo / "crlf.txt").write_bytes(b"one\r\ntwo\r\n")
+        out = repo / "full.diff"
+        self._run(repo, "--patch", str(out))
+        self.assertIn(b"+one\r\n", out.read_bytes())
+
+    def test_a_patch_path_that_cannot_be_written_is_a_usage_error(self):
+        repo = self._repo()
+        r = self._run(repo, "--patch", str(repo / "no-such-dir" / "x.diff"))
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("cannot write", r.stdout)
+
+
+class DirtyBeforeTheGateTests(unittest.TestCase):
+    """`check-plan.py --gate` records what was dirty before a plan had any
+    approval, in `<plan>.gate-dirty.txt`. Those files are the requester's, and
+    asking for an `## Intended change` row for them reported a settings file
+    and a configuration file as forgotten on a real change."""
+
+    PROD = ["src/App/Orders/SetOrderStateHandler.cs"]
+
+    def _plan(self, dirty):
+        d = Path(tempfile.mkdtemp()) / "docs" / "plans"
+        d.mkdir(parents=True)
+        plan = d / "2026-11-11-set-order-state.md"
+        plan.write_text(NL.join(
+            ["Set an order's state.", "Files likely to change"]
+            + ["- " + quoted(p) + " - what changes." for p in self.PROD]
+            + ["", "## Intended change", "", "| File | Intended change |", "| --- | --- |"]
+            + ["| %s | Changes. |" % quoted(p) for p in self.PROD]) + NL, encoding="utf-8", newline=NL)
+        if dirty is not None:
+            (d / "2026-11-11-set-order-state.gate-dirty.txt").write_text(
+                NL.join(dirty) + NL, encoding="utf-8", newline=NL)
+        return plan
+
+    def _run(self, plan, paths):
+        return subprocess.run([sys.executable, SCRIPT, "-", "--plan", str(plan)],
+                              input=NL.join("M" + TAB + p for p in paths) + NL,
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=15)
+
+    def test_a_file_dirty_before_the_first_gate_needs_no_row(self):
+        r = self._run(self._plan(["src/Api/appsettings.json"]),
+                      self.PROD + ["src/Api/appsettings.json"])
+        self.assertNotIn("Production files with no", r.stdout)
+        self.assertIn("dirty before the first gate", r.stdout)
+        self.assertIn("src/Api/appsettings.json", r.stdout)
+
+    def test_without_the_list_the_same_file_is_reported(self):
+        r = self._run(self._plan(None), self.PROD + ["src/Api/appsettings.json"])
+        self.assertIn("Production files with no", r.stdout)
+
+    def test_an_untracked_directory_in_the_list_covers_what_is_under_it(self):
+        r = self._run(self._plan(["notes/"]), self.PROD + ["notes/scratch.txt"])
+        self.assertNotIn("Production files with no", r.stdout)
+
+
+class TwoEndedRuleTests(unittest.TestCase):
+    """Rules that are said in two places, or whose wording left the skill for
+    a script's output. Each test holds both ends, the pointer and what it
+    points at: a pointer whose target was reworded away is an instruction the
+    agent no longer has anywhere, and nothing else would notice."""
+
+    ROOT = Path(__file__).resolve().parents[1]
+    CHANGE = ROOT / "skills" / "ctdd-change"
+
+    def setUp(self):
+        self.skill = (self.CHANGE / "SKILL.md").read_text(encoding="utf-8")
+        self.execution = (self.CHANGE / "references" / "execution.md").read_text(encoding="utf-8")
+        self.plan_format = (self.CHANGE / "references" / "plan-format.md").read_text(encoding="utf-8")
+
+    def _line(self, text, start):
+        lines = [l for l in text.split(NL) if l.lstrip().startswith(start)]
+        self.assertEqual(len(lines), 1, "%r moved or was duplicated" % start)
+        return lines[0]
+
+    def test_step_5_5_points_at_what_plan_dir_prints(self):
+        """The step's own sentence was displaced to bring the hold-out stop
+        back inside the measured compaction boundary; `test_check_plan.py`
+        holds the other end, that both of `--plan-dir`'s answers carry the
+        whole instruction."""
+        self.assertIn("Do what `--plan-dir` printed", self._line(self.skill, "5. Do what"))
+        self.assertIn("check-plan.py\" --plan-dir`", self._line(self.skill, "4. Resolve the plan directory"))
+
+    def test_the_whole_verification_waits_for_the_last_phase(self):
+        """8.3 read as owed at every phase, and one real change ran the whole
+        list three times. The step says when; the checkpoint row says what
+        runs instead."""
+        self._line(self.skill, "3. When no phase remains, run the contract validator")
+        row = self._line(self.execution, "| 8.7 stops with `red pause: phased`")
+        self.assertIn("Run now, and only, the build, the plan's new-behavior tests, "
+                      "its pins and its invariant suite", row)
+        self.assertIn("8.3's whole list waits until no phase remains", row)
+        self.assertIn("say so", row)
+
+    def test_the_invariant_suite_is_asked_for_and_run_at_checkpoints(self):
+        """`check-plan.py` requires the line and `check-redstate.py` says to
+        run the suite at 7.10; the format has to show where the line goes, and
+        a checkpoint has to count its result."""
+        skeleton = self.plan_format.split("```markdown")[1].split("```")[0]
+        at = skeleton.index(NL + "Verification" + NL)
+        self.assertTrue(skeleton[at:].startswith(NL + "Verification" + NL + "- invariants: <"),
+                        "the skeleton's Verification no longer opens with the invariants line")
+        self.assertIn("`none — <reason>`", skeleton[at:at + 160])
+        row = self._line(self.execution, "| 8.7 stops with `red pause: phased`")
+        self.assertIn("the invariant suite green (a failure is an 8.6 finding)", row)
+
+    def test_no_step_asks_git_for_a_stat_that_leaves_new_files_out(self):
+        """`git diff <base> --stat` omits untracked files, so the pause's stat
+        lacked every new file of the change, and one session staged them
+        intent-to-add and reset the index to get them in."""
+        surfaces = [self.skill] + [f.read_text(encoding="utf-8")
+                                   for f in (self.CHANGE / "references").glob("*.md")]
+        for text in surfaces:
+            self.assertNotIn("git diff <diff-base> --stat", text)
+        self.assertIn("check-spec-surface.py\" --git <diff-base> --plan <plan-path>`",
+                      self._line(self.skill, "4. Run `python3"))
+        self.assertIn("print what 8.4's command emits with `--stat` added",
+                      self._line(self.skill, "4. Stop and hand the `ctdd-review` verdict"))
+        row = self._line(self.execution, "| 7.12 stops and the approved line")
+        self.assertIn("Run 8.4's command with `--stat --patch <plan-dir>/<name>.prered.diff` added", row)
+        self.assertIn("never touches the index, and neither do you", row)
+
 
 class QuotedPathTests(unittest.TestCase):
     """git quotes non-ASCII paths by default, and the leading quote defeated every
@@ -1187,7 +1656,43 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # harness default - the failure that once edited a production file against a
     # gate nobody passed. The guard now demands the record SAY which; that is
     # traceability, and prevention moved to the harness.
-    MAX_PLAN_GATED_METHODOLOGY_CHARS = 48900
+    #
+    # 48,900 — 51,200, intent-born 2026-11-14, and the largest movement on
+    # record: +2,480 for seven decisions the owner made from one session's
+    # findings, each measured before and after against a scenario built from
+    # the session moment (evals/workflow/). Where it went: the body +493 (the
+    # approval that covers its own dictated change, the finding-and-fixes
+    # prompt at 8.6, the lighter-lane hook, the hand check asked once at 9.1),
+    # plan-format +888 (`Amendments`, `Structure` with its three bullets, the
+    # constrained `red:` form, rule 15), worked-change +770 (the step 6 and
+    # 8.6 walk-throughs rewritten to the new flow, which is what agents copy),
+    # execution +329 (honest stubs, the premature-green amendment, the full
+    # run before the packet). Displaced first: the Approval record's shape
+    # moved out of the body into `check-plan.py --gate`'s own output, and the
+    # lighter lane's definition lives only there too, printed under the delta
+    # block that grants it rather than as a Break points row. What the route
+    # gained in exchange is measured in the same place: ten gates for one
+    # change, six of the nine re-presentations byte-identical to the one
+    # before, four typed approvals lost. The counsel beside the work: three of
+    # the seven loosen `approve the exact revision`, and what holds them is
+    # the checker's comparison of two files, not this prose.
+    #
+    # 51,200 — 51,700, intent-born later on 2026-11-14: +469 for the seven
+    # proposals the owner chose to build out of the nineteen that release
+    # left. Four of the seven cost the route nothing or gave some back,
+    # because they are a checker's behaviour: `--approval` refusing a plan
+    # that still asks, the dirty list recorded at the first gate, the
+    # invariant-suite reminder `check-redstate.py` prints at 7.10, and step
+    # 5.5, displaced into what `--plan-dir` prints (the body is 54 smaller).
+    # What the rest needs has to be read by the agent where it acts:
+    # execution +319 (the checkpoint row says which four runs a phase owes and
+    # that 8.3's whole list waits; the 7.12 row names the stat that counts new
+    # files and never touches the index), plan-format +204 (the `invariants:`
+    # line in the skeleton and in the example, which is what agents copy).
+    # No displacement was found for those: the only candidate was one clause
+    # of worked-change.md naming `--post-approval`, 33 characters, and
+    # dropping it would have taken that flag out of every surface.
+    MAX_PLAN_GATED_METHODOLOGY_CHARS = 51700
     """ctdd-tests keeps craft work (de-flaking, altitude, renaming) out of the
     plan gate, while every consumer of the diff — this script, the hook, and
     ctdd-review — reads any modified test as a changed requirement. Both are
@@ -2425,7 +2930,8 @@ class CrossSkillAgreementTests(unittest.TestCase):
             for f in list(self._skills().glob("*/SKILL.md"))
             + list((self._skills() / "ctdd-change" / "references").glob("*.md")))
         for flag in ("--plan ", "--diff ", "--approval ", "--post-approval",
-                     "--plan-dir", "--tests-from", "--expect-pass", "--git "):
+                     "--plan-dir", "--tests-from", "--expect-pass", "--git ",
+                     "--stat", "--patch "):
             self.assertIn(flag, surfaces,
                           f"{flag.strip()} is implemented but no step invokes it")
 
@@ -3006,8 +3512,16 @@ class CrossSkillAgreementTests(unittest.TestCase):
         to leave the terminal and do something, and it has been declined or deferred
         on seven consecutive changes."""
         import re as _re
+        # A sixth member, 2026-11-14, intent-born: `Structure`. The set stays
+        # closed and this is not "print what is marked gate-visible" returning.
+        # The owner chose it with one session in front of them in which type
+        # names, ports, folders and test projects were first seen at the red
+        # pause, after twenty-nine tests and every stub existed: four
+        # amendments, four gates and a second pass over every test file. It is
+        # bounded where `Behavior flow` is not: three bullets, which the checker
+        # requires by name, plus one derived line per test file.
         IN_FULL = {"Hold-out", "Behavior flow", "Known gaps", "Assumptions",
-                   "Uncovered or ambiguous"}
+                   "Uncovered or ambiguous", "Structure"}
         skill = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("Gate presentation", skill)
         row = [l for l in skill.split(chr(10)) if l.startswith("| Gate presentation")]
@@ -3040,12 +3554,13 @@ class CrossSkillAgreementTests(unittest.TestCase):
                       "running the checker reads as having shown its output")
         self.assertNotIn("marks **gate-visible**", row[0])
         cp = (self._skills().parent / "scripts" / "check-plan.py").read_text(encoding="utf-8")
-        emitted = _re.search(r"for key, label in \((.*?)\):", cp, _re.S)
+        # The order is one tuple both the full block and the delta block read.
+        emitted = _re.search(r"_GATE_SECTIONS = \((.*?)\)\n", cp, _re.S)
         self.assertIsNotNone(emitted, "check-plan.py lost its gate emission order")
         self.assertEqual(
             set(_re.findall(r'"([^"]+)"\)', emitted.group(1))), IN_FULL,
             "the set --gate prints in full changed; both recorded failures above "
-            "were caused by growing it, and the set is closed at five")
+            "were caused by growing it, and the set is closed at six")
         # v0.52.0 added one more thing printed in full, and it is not a sixth
         # member of the set above: the altitude table check-plan prints at 5.4 is
         # script output, categorically like `Plan: <path> (<tier>)` already in

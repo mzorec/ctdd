@@ -39,8 +39,9 @@ cause is ceremony.
 - **`brainstorming`** ends at a committed spec, and that spec is `ctdd-change`'s business
   requirement. The spec must carry everything the change needs: `ctdd-change` reads the document,
   never the brainstorming conversation. Two of its own exits bypass this workflow and are not
-  followed — Path 2 step 5 implements directly with no plan document, and Path 3 step 9 invokes
-  `writing-plans`; both hand off to `ctdd-change` instead. It never edits production files.
+  followed — it implements directly, with no design doc, when it judges the task quick and clear or
+  the human opts out of its questions, and it invokes `writing-plans` once the design doc is
+  approved; both hand off to `ctdd-change` instead. It never edits production files.
 
   Once brainstorming is the chosen route, read this skill's `references/spec-contract.md` — what
   the document must carry, and what stays out of it.

@@ -21,6 +21,22 @@ the block into your reply unaltered: running this command is not showing its
 output, which lands in a tool result the human may never expand. A summary of
 it is the defect.
 
+After an amendment --gate prints a delta block instead: the entries recorded
+under `Amendments` and `Decisions confirmed in session` since the revision the
+approval log last names (before any approval: since the last plan printed in
+full), every gate-visible part that changed, a line naming the parts that did
+not, and whether the tests - their names and `covers:` lines - are unchanged,
+which is what grants the lighter lane. --full forces the whole block. To have
+something to compare with, --gate keeps two copies of the plan beside it,
+`<name>.gate-shown.md` and `<name>.gate-base.md`, and, while the plan has no
+approval yet, `<name>.gate-dirty.txt`: what git reports changed or untracked
+before this change wrote anything, which `check-spec-surface.py --plan` reads.
+They are the only files this script writes. Under the block it prints the
+Approval record line to append.
+
+--approval verifies the approval record against the current revision, and
+refuses a plan that still asks a BLOCKING question, as --post-approval does.
+
 --from-description keeps CI and the runtime pointing at the SAME artifact. The
 skill writes the canonical plan to docs/plans/<name>.md and puts a pointer in
 the MR description; without this mode CI would validate the description
@@ -114,7 +130,28 @@ REQUIRED = [
     ("NFR budgets",           r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*(nfr|budget)"),
     ("hold-out decision",     r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*hold.?out\b"),
     ("files to change",       r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*files\s+(likely\s+)?to\s+change\b"),
+    # Intent-born, 2026-11: the owner asked that the first gate show structure.
+    # In one real change the human first saw type names, ports, folders and
+    # test projects at the 7.12 pause, after twenty-nine tests and every stub
+    # existed, and questioned each in turn: four amendments, four gates and a
+    # second pass over every test file followed. No bullet prefix: `structure`
+    # is an ordinary word, and a bullet opening with it is not this section.
+    ("structure",             r"^\s*(?:#{1,6}\s+)?[`*_]*structure\b"),
 ]
+
+# The keys above are internal, and two of them name no heading a plan has: a
+# real run reported `MISSING sections … decision summary: BLOCKING` after a
+# compaction dropped the `BLOCKING - I will not guess` heading, and the agent
+# had to read this file to learn what to restore. Messages print the heading.
+_SHOWN = {
+    "decision summary: BLOCKING": "BLOCKING — I will not guess",
+    "decision summary: proceeding": "Proceeding unless you object",
+}
+
+
+def heading_of(name):
+    return _SHOWN.get(name, name)
+
 
 # Reason must sit on the SAME line as the risk call: with re.S a bare
 # "Risk: trivial —\n" would let the next section masquerade as the reason.
@@ -196,6 +233,37 @@ HOLDOUT_BLOCK = re.compile(
 # here: `hold-out — required: 2 sealed tests` silently read as no field at
 # all, which switched the actionability check off.
 _HOLDOUT_FIELD = re.compile(r"hold.?out\s*[:=—–-]\s*([^\n·|]*)", re.I)
+_DECISION_FIELD = re.compile(r"^\s*[-*]\s*[`*_]*decision[`*_]*\s*:", re.I | re.M)
+
+
+def holdout_block(text):
+    """The `Hold-out` section's block, or None.
+
+    The first line opening with `hold-out` used to be taken, wherever it was. A
+    real plan recorded `- Hold-out: declined by human.` under its decisions,
+    and that bullet became the hold-out: the actionability check reported
+    `options:` and `recommended:` missing from a section that had both, the
+    gate printed the bullet, and the revision normalised the wrong `result:`.
+    The section is the block that carries the format's `- decision:` field;
+    without one anywhere, an unbulleted label beats a bullet, and only then
+    the first match. The actionability check, the revision and the gate all
+    read this one function.
+    """
+    found = list(HOLDOUT_BLOCK.finditer(text))
+    for m in found:
+        if _DECISION_FIELD.search(m.group(0)):
+            return m
+    for m in found:
+        if not re.match(r"\s*[-*]\s", m.group(0)):
+            return m
+    return found[0] if found else None
+
+
+def _first_line(text, m):
+    """The line index of a match's first non-blank character. Patterns opening
+    `^\\s*` under MULTILINE can begin on a blank line above."""
+    g = m.group(0)
+    return text.count(chr(10), 0, m.start() + len(g) - len(g.lstrip()))
 
 
 # 7.12 mandates appending the intended-change table to the plan as
@@ -228,6 +296,24 @@ _INTENDED_CHANGE = re.compile(
     r"^(#{1,6}\s*[`*_]*intended\s+change\b).*\Z", re.I | re.M | re.S)
 
 
+def _untailed(text):
+    """The plan without its post-approval `## Intended change` tail, hold-out
+    values left as written. The gate presentation reads this: it must not
+    print the tail as though the approval covered it, and it must print the
+    hold-out's `result:` and expected values, which `approved_region` blanks
+    so that replacing them does not move the revision. Reading that region
+    for display printed both fields empty at ten consecutive gates of one
+    change, after a decline whose whole point was the listed values."""
+    m = _INTENDED_CHANGE.search(text)
+    # Heading included, unlike the hold-out fields `approved_region` keeps.
+    # Those lines exist at approval time, so their labels are approved and
+    # keeping them makes a deletion visible. This section does not exist at
+    # approval time at all - 7.12 appends it afterwards - so retaining the
+    # heading would mean the mandated append still moved the revision, which
+    # is the whole contradiction. `hidden_in_intended_change` carries the risk.
+    return text[:m.start()] if m else text
+
+
 def approved_region(text):
     """The plan text the approval covers, with post-approval content normalised.
 
@@ -235,16 +321,8 @@ def approved_region(text):
     and the other over this would make every plan read stale, which is the
     one-definition rule (CLAUDE.md rule 2) applied to a second pair.
     """
-    m = _INTENDED_CHANGE.search(text)
-    if m:
-        # Heading included, unlike the hold-out fields below. Those lines exist
-        # at approval time, so their labels are approved and keeping them makes
-        # a deletion visible. This section does not exist at approval time at
-        # all - 7.12 appends it afterwards - so retaining the heading would mean
-        # the mandated append still moved the revision, which is the whole
-        # contradiction. `hidden_in_intended_change` carries the risk instead.
-        text = text[:m.start()]
-    hb = HOLDOUT_BLOCK.search(text)
+    text = _untailed(text)
+    hb = holdout_block(text)
     if hb:
         block = hb.group(0)
         for rx in _POST_APPROVAL_VALUE:
@@ -331,6 +409,8 @@ MEDIUM_SECTIONS = SMALL_SECTIONS | {
     # shape: the parent heading present, the two blocks the reader actually
     # compares silently absent.
     "behavior flow", "current flow", "flow after change",
+    # Wherever a plan has new behaviour to place, it has structure to show.
+    "structure",
 }
 
 
@@ -464,6 +544,49 @@ def lane_tests(text, lane):
     return [(n, p) for n, p in out]
 
 
+def _bullet_section(text, name):
+    """A section's heading line plus its bullets, their indented
+    continuations and blank lines, ending at the next unindented line that is
+    not a bullet. Empty when the plan has no such heading."""
+    lines = text.split("\n")
+    pat = dict(REQUIRED + _EXTRA_BOUNDARIES)[name]
+    start = next((n for n, l in enumerate(lines) if re.match(pat, l, re.I)), None)
+    if start is None:
+        return []
+    block = [lines[start]]
+    for line in lines[start + 1:]:
+        # Table rows belong to the section too: a file list written as a table
+        # would otherwise end the section at its header row and go unchecked.
+        if line.strip() and not line[:1].isspace() \
+                and not line.lstrip().startswith(("-", "*", "|")):
+            break
+        block.append(line)
+    return block
+
+
+_PATH_LINE = re.compile(r"^\s*[-*]\s+[`*_]*path[`*_]*\s*:", re.I)
+_INVARIANTS = re.compile(r"^\s*[-*]\s+[`*_]*invariants[`*_]*\s*:", re.I)
+
+
+def _file_listings(text):
+    """The parts of a plan that list files, where field rule 9 applies:
+    `Files likely to change`, `Implementation slices`, `Contract changes`,
+    `Colocated notes`, and every `path:` line. Scanning the whole document
+    failed a real plan twice for prose - directory names in an amendment's
+    account of a move, and a method signature - and the first repair replaced
+    exact folder names with vaguer words, which is the opposite of what rule 9
+    is for. `## Intended change` is deliberately not read: it is written after
+    approval, and check-spec-surface already accepts its rows abbreviated
+    (`App/.../Foo.cs`) to fit the column, which the whole-document scan
+    rejected as a `...`."""
+    out = []
+    for name in ("files to change", "implementation slices", "contract changes",
+                 "colocated notes"):
+        out += _bullet_section(text, name)
+    out += [l for l in text.split("\n") if _PATH_LINE.match(l)]
+    return "\n".join(out)
+
+
 def slice_claims(text):
     """([(owner_path, [exact test names])], [(owner, clause, wildcards)]).
 
@@ -502,8 +625,28 @@ def slice_claims(text):
         if not names or wild:
             bad.append((owner, joined[m.end():].strip()[:80], wild))
             continue
-        claims.append((owner, names))
+        claims.append((owner, names, [t.strip() for t in ticks]))
     return claims, bad
+
+
+def owner_layer(owner, tokens, layers):
+    """The layer index of the first backticked token before `turns green:`
+    that resolves to a configured layer, or None.
+
+    The owner was the first token, full stop. A real plan opened phase bullets
+    with a `.sql` path and with a route name, so twenty of twenty-nine tests
+    had owner `?` - which skipped the comparison in silence - and the phases
+    were reworded only so the checker could find an owner, which moved the
+    revision and cost a gate. First RESOLVING token, not the highest of all of
+    them: a bullet naming an interface and its implementation would otherwise
+    take whichever layer sorts higher, a new false MISPLACED on plans that
+    already work.
+    """
+    for t in tokens or [owner]:
+        i = layer_of(t, layers)
+        if i is not None:
+            return i
+    return None
 
 
 def configured_layers(root):
@@ -613,6 +756,114 @@ def plan_dir(root=None):
     return raw.strip("/") or PLAN_DIR_DEFAULT
 
 
+def _git(args, cwd):
+    """(returncode, stdout) of a read-only git command, or (None, '') when git
+    cannot run. GIT_OPTIONAL_LOCKS=0: these reads run in repositories other
+    sessions are editing, and must not take the index lock."""
+    import subprocess
+    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
+    try:
+        r = subprocess.run(["git", *args], cwd=cwd, capture_output=True,
+                           text=True, encoding="utf-8", errors="replace",
+                           env=env, timeout=30)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None, ""
+    return r.returncode, r.stdout
+
+
+def plan_dir_status(pdir, root=None):
+    """Whether git ignores a NEW plan file in `pdir`, and so what step 5.5
+    does with the plan once it passes: that step points here and says nothing
+    of its own, so each line is the whole instruction.
+
+    Probed with a file that does not exist, because `git check-ignore` reports
+    nothing for tracked files: a directory that is ignored but holds one
+    committed plan would otherwise read as not ignored. Said as ignored or
+    not ignored, never "tracked", which this does not establish.
+    """
+    root = root or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    code, _ = _git(["check-ignore", "-q", pdir.rstrip("/") + "/.ctdd-probe.md"], root)
+    if code == 0:
+        return (f"{pdir}/ is ignored by git here — a plan written there is not "
+                f"committed. Step 5.5: paste the complete plan into the PR/MR "
+                f"description when there is one, instead of a CTDD-Plan pointer.")
+    if code == 1:
+        return (f"{pdir}/ is not ignored by git. Step 5.5: once the plan passes "
+                f"this checker, commit the plan file, and put the pointer "
+                f"`CTDD-Plan: {pdir}/<name>.md` in the PR/MR description when "
+                f"there is one.")
+    return (f"could not tell whether git ignores {pdir}/ (not a git repository, "
+            f"or git unavailable).")
+
+
+def project_root(plan_file):
+    """`CLAUDE_PROJECT_DIR`, else the git work tree holding the plan file, else
+    None. Never the current directory: a plan read from stdin in the wrong
+    directory would be checked against a repository it does not describe."""
+    env = os.environ.get("CLAUDE_PROJECT_DIR")
+    if env:
+        return env
+    if plan_file and plan_file != "-":
+        where = os.path.dirname(os.path.abspath(plan_file))
+        code, out = _git(["rev-parse", "--show-toplevel"], where)
+        if code == 0 and out.strip():
+            return out.strip()
+    return None
+
+
+def _ident(name):
+    return re.compile(r"(?<![A-Za-z0-9_])" + re.escape(name) + r"(?![A-Za-z0-9_])")
+
+
+def pin_path_findings(text, root):
+    """([(name, path, exists, [found in])], [(name, path)]) for preservation
+    pins whose name is not in the file their `path:` names.
+
+    A real plan named a pin that existed in another class, covering another
+    document, at a path that did not exist - and the pin run passed, because
+    check-redstate matches names. It cost a gate. A pin's name found elsewhere
+    in the repository's test surface is that mistake and fails. A name found
+    nowhere is a pin step 7.5 has not written yet, which is legitimate and is
+    only said.
+    """
+    pins = [(n, p) for n, p in lane_tests(text, "preservation") if p]
+    pending = []
+    for name, path in pins:
+        try:
+            with open(os.path.join(root, path), encoding="utf-8",
+                      errors="replace") as fh:
+                body = fh.read()
+        except OSError:
+            body = None
+        if body is not None and _ident(name).search(body):
+            continue
+        pending.append((name, path, body is not None))
+    if not pending:
+        return [], []
+    surface = _load_surface()
+    surface.ensure_patterns_loaded()
+    where = {name: [] for name, _p, _e in pending}
+    rxs = {name: _ident(name) for name in where}
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in surface._SKIP_DIRS]
+        for fn in filenames:
+            full = os.path.join(dirpath, fn)
+            rel = os.path.relpath(full, root).replace("\\", "/")
+            if surface.classify(rel) != "test":
+                continue
+            try:
+                with open(full, encoding="utf-8", errors="replace") as fh:
+                    body = fh.read()
+            except OSError:
+                continue
+            for name, rx in rxs.items():
+                if rx.search(body):
+                    where[name].append(rel)
+    wrong = [(n, p, e, sorted(where[n])) for n, p, e in pending if where[n]]
+    unwritten = [(n, p) for n, p, _e in pending if not where[n]]
+    return wrong, unwritten
+
+
 def _resolve_pointer(description):
     """(path_or_None, error_or_None) — find and sanity-check a CTDD-Plan pointer.
 
@@ -699,13 +950,410 @@ def _section_bounds(text):
             if rx.match(line):
                 hits.append((i, name))
                 break
+    # The hold-out is located by its block's shape, not by first match - see
+    # `holdout_block`. Every other section keeps first-occurrence.
+    hb = holdout_block(text)
+    hold_line = _first_line(text, hb) if hb else None
     out = {}
     for n, (i, name) in enumerate(hits):
         end = hits[n + 1][0] if n + 1 < len(hits) else len(lines)
+        if name == "hold-out decision" and hold_line is not None:
+            if i == hold_line:
+                out[name] = (i, end)
+            continue
         # First occurrence wins: a later line repeating the label - a
         # cross-reference in prose - must not replace the real section.
         out.setdefault(name, (i, end))
     return lines, out
+
+
+# The order the Gate presentation names, by the checker's own section keys.
+_GATE_SECTIONS = (("hold-out decision", "Hold-out"),
+                  ("behavior flow", "Behavior flow"),
+                  ("known gaps", "Known gaps"),
+                  ("assumptions", "Assumptions"),
+                  ("uncovered/ambiguous", "Uncovered or ambiguous"),
+                  ("structure", "Structure"))
+_SUMMARY, _RISK_LINE = "the decision summary", "the `Risk:` line"
+
+
+def _squash(s):
+    return " ".join((s or "").split())
+
+
+def _gate_visible(text):
+    """{label: text} for every gate-visible part of a plan, in the row's
+    order: the summary, the categorical line, then each section it has.
+
+    Read from `_untailed`, never the raw text: after 7.12 appends `## Intended
+    change`, a re-gate would otherwise print that tail as though the approval
+    had covered it.
+    """
+    body = _untailed(text)
+    lines, bounds = _section_bounds(body)
+    cat = categorical_line(body)
+    # The summary has no heading - it is everything above the categorical line -
+    # so it is the one gate-visible part with nothing marking it, and the one
+    # the agent is most likely to replace with its own words.
+    head = min([i for i, _ in bounds.values()] or [len(lines)])
+    if cat:
+        for i, line in enumerate(lines):
+            if line.strip() == cat.strip():
+                head = i
+                break
+    out = {_SUMMARY: chr(10).join(lines[:head]).strip(), _RISK_LINE: cat.strip()}
+    for key, label in _GATE_SECTIONS:
+        if key in bounds:
+            out[label] = chr(10).join(lines[slice(*bounds[key])]).rstrip()
+    return out
+
+
+# ------------------------------------------------------------- test detail
+_SUB = re.compile(r"^\s+[-*]\s+[`*_]*(covers|path|red)[`*_]*\s*:\s*(.*?)\s*$", re.I)
+_ANY_SUB = re.compile(r"^\s+[-*]\s")
+_CONSTRAINED = re.compile(r"constrained\s+by\b", re.I)
+
+
+def lane_detail(text, lane):
+    """{test name: {"covers": …, "path": …, "red": …}} for one evidence lane,
+    in order, a wrapped field joined to its first line."""
+    out, name, field = {}, None, None
+    for line in _lane_block(text, lane):
+        if not line.strip():
+            continue
+        if not line[:1].isspace() and _bullet_names_a_test(line):
+            name, field = _BULLET_NAME.match(line).group(1), None
+            out.setdefault(name, {})
+            continue
+        if name is None:
+            continue
+        m = _SUB.match(line)
+        if m:
+            field = m.group(1).lower()
+            out[name].setdefault(field, m.group(2))
+        elif _ANY_SUB.match(line):
+            field = None
+        elif field is not None and line[:1].isspace():
+            out[name][field] += " " + line.strip()
+    return out
+
+
+def constrained_tests(text):
+    """New-behaviour tests whose `red:` line declares them constrained by a
+    later slice: an honest stub already lets them pass, so step 7 will not
+    show them failing, and the plan says so instead of shaping a stub."""
+    return [n for n, d in lane_detail(text, "new-behavior").items()
+            if _CONSTRAINED.search(d.get("red", ""))]
+
+
+def tests_by_file(text):
+    """`  2 new + 1 pin — <path>` for every file the plan's tests live in:
+    which project holds which group of tests, derived from the `path:` lines
+    rather than written a second time. The altitude table names a layer, and
+    a unit-test project and an integration-test project of one layer read the
+    same there; in one real change seven tests sat in the wrong one of the
+    two and the table matched them all."""
+    rows = {}
+    for lane, word in (("new-behavior", "new"), ("preservation", "pin")):
+        for name, path in lane_tests(text, lane):
+            rows.setdefault(path or "(no path given)", {}).setdefault(word, 0)
+            rows[path or "(no path given)"][word] += 1
+    out = []
+    for path, count in rows.items():
+        bits = []
+        if "new" in count:
+            bits.append(f"{count['new']} new")
+        if "pin" in count:
+            bits.append(f"{count['pin']} pin" + ("" if count["pin"] == 1 else "s"))
+        out.append(f"  {' + '.join(bits)} — {path}")
+    return out
+
+
+def _expectation_text(text):
+    """Everything in a plan that states a test input or an expected value:
+    both evidence lanes, `Changed existing assertions`, and the hold-out's
+    request and hand-check values."""
+    parts = _lane_block(text, "new-behavior") + _lane_block(text, "preservation")
+    lines, bounds = _section_bounds(_untailed(text))
+    if "changed assertions" in bounds:
+        parts += lines[slice(*bounds["changed assertions"])]
+    hb = holdout_block(_untailed(text))
+    if hb:
+        parts += [l for l in hb.group(0).split(chr(10))
+                  if re.match(r"\s*[-*]\s*[`*_]*(request|human.verified)", l, re.I)]
+    return chr(10).join(parts)
+
+
+def _span_tokens(s):
+    toks = set()
+    for span in _TICK.findall(s):
+        toks |= set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", span))
+    return toks
+
+
+def _renamed_in_spans(s, renames):
+    """`s` with each (old, new) applied inside its backticked spans only.
+    Outside them a word like `note` is prose about the thing, not its name."""
+    if not renames:
+        return s
+
+    def fix(m):
+        inner = m.group(1)
+        for old, new in renames:
+            inner = re.sub(r"(?<![A-Za-z0-9_])" + re.escape(old) + r"(?![A-Za-z0-9_])", new, inner)
+        return "`" + inner + "`"
+    return _TICK.sub(fix, s)
+
+
+_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def declared_renames(entries, base, text):
+    """[(old, new)] an amendment entry declares, by one backticked identifier
+    after `Old:` and one after `New:`.
+
+    A rename is told from a swapped value by what a rename leaves behind: the
+    old name is gone from every expectation afterwards, and the new name was
+    in none of them before. `Packed` to `Shipped` is identifier-shaped and
+    fails both, because other tests still say `Packed` and already said
+    `Shipped`. Known limit, stated: a value replaced everywhere by one never
+    used before reads as a rename here. The entry's own old and new forms are
+    in front of the human at that gate either way.
+    """
+    before, after = _span_tokens(_expectation_text(base)), _span_tokens(_expectation_text(text))
+    out = []
+    for entry in entries:
+        old = re.search(r"\bold\s*:(.*?)(?=\bnew\s*:)", entry, re.I | re.S)
+        new = re.search(r"\bnew\s*:(.*)", entry, re.I | re.S)
+        if not (old and new):
+            continue
+        news = [t for t in _TICK.findall(new.group(1)) if _IDENT.fullmatch(t)]
+        for o in (t for t in _TICK.findall(old.group(1)) if _IDENT.fullmatch(t)):
+            # A name the expectations never used renames nothing in them: an
+            # entry about two types moving folders is not a rename of a test
+            # input, whatever identifiers it quotes.
+            if o not in before or o in after:
+                continue
+            n = next((n for n in news if n != o and n not in before), None)
+            if n and (o, n) not in out:
+                out.append((o, n))
+    return out
+
+
+def tests_delta(base, text, renames):
+    """What changed in the two evidence lanes between two revisions of a plan,
+    and whether the expectations outside them moved."""
+    d = {"added": [], "removed": [], "covers": [], "path": [], "red": [], "other": []}
+    for lane in ("new-behavior", "preservation"):
+        b, c = lane_detail(base, lane), lane_detail(text, lane)
+        d["added"] += [n for n in c if n not in b]
+        d["removed"] += [n for n in b if n not in c]
+        for name in c:
+            if name not in b:
+                continue
+            for field in ("covers", "path", "red"):
+                was = b[name].get(field, "")
+                if field != "path":
+                    was = _renamed_in_spans(was, renames)
+                if _squash(was) != _squash(c[name].get(field, "")):
+                    d[field].append(name)
+
+    def outside(t):
+        """(changed assertions, hold-out request, hand-check values)."""
+        lines, bounds = _section_bounds(_untailed(t))
+        changed = chr(10).join(lines[slice(*bounds["changed assertions"])]) \
+            if "changed assertions" in bounds else ""
+        request = values = ""
+        hb = holdout_block(_untailed(t))
+        for line in (hb.group(0).split(chr(10)) if hb else []):
+            m = re.match(r"\s*[-*]\s*[`*_]*(request|human.verified\s+expected\s+values)"
+                         r"[`*_]*\s*:\s*(.*)$", line, re.I)
+            if m and m.group(1).lower().startswith("request"):
+                request = m.group(2)
+            elif m:
+                values = m.group(2)
+        # The list comes and goes with the hold-out decision: it appears on a
+        # decline and returns to `n/a` when the human writes the sealed tests
+        # after all. Neither is a changed expectation. One real amendment did
+        # the second and was told its tests had changed.
+        if _squash(values).lower().rstrip(".") in ("", "n/a", "none", "pending"):
+            values = ""
+        return tuple(_squash(_renamed_in_spans(x, renames)) if t is base else _squash(x)
+                     for x in (changed, request, values))
+    was, now = outside(base), outside(text)
+    if was[0] != now[0]:
+        d["other"].append("`Changed existing assertions` changed")
+    if was[1] != now[1]:
+        d["other"].append("the hold-out's request changed")
+    if was[2] and now[2] and was[2] != now[2]:
+        d["other"].append("the hold-out's hand-check values changed")
+    return d
+
+
+# ------------------------------------------------------------- amendments
+# One place a plan records what changed after it was shown at a gate. A real
+# change invented three ("Decided at the gate", "Amended at Phase 3
+# verification", "Amended at the review packet") and edited four more
+# amendments in place with no record at all, so nothing could print what had
+# changed, and six of nine re-presentations were byte-identical to the block
+# before them. No bullet prefix on the heading: an entry may itself open with
+# the word.
+_AMENDMENTS = r"^\s*(?:#{1,6}\s+)?[`*_]*amendments\b"
+_OLD_FORM = re.compile(r"\bold\s*:", re.I)
+_NEW_FORM = re.compile(r"\bnew\s*:", re.I)
+
+
+def _entries(text, pattern):
+    """The unindented bullets under the heading `pattern` matches, each with
+    its indented continuation lines, ending at the next unindented line that
+    is not a bullet."""
+    lines = text.split(chr(10))
+    start = next((n for n, l in enumerate(lines) if re.match(pattern, l, re.I)), None)
+    if start is None:
+        return []
+    out = []
+    for line in lines[start + 1:]:
+        if not line.strip():
+            continue
+        if not line[:1].isspace() and line.lstrip().startswith(("-", "*")):
+            out.append(line.rstrip())
+        elif line[:1].isspace() and out:
+            out[-1] += chr(10) + line.rstrip()
+        else:
+            break
+    return out
+
+
+def amendment_entries(text):
+    return _entries(text, _AMENDMENTS)
+
+
+def recorded_changes(text):
+    """[(kind, entry)] for every bullet under `Amendments` and under
+    `Decisions confirmed in session`. Field rule 11 already records an
+    answered BLOCKING question in the second; asking for it under both would
+    be the hand-synced duplicate this section exists to end."""
+    decisions = dict(_EXTRA_BOUNDARIES)["decisions confirmed"]
+    return ([("amendment", e) for e in amendment_entries(text)]
+            + [("decision", e) for e in _entries(text, decisions)])
+
+
+def new_changes(base, text):
+    seen = {_squash(e) for _kind, e in recorded_changes(base)}
+    return [(kind, e) for kind, e in recorded_changes(text) if _squash(e) not in seen]
+
+
+# ------------------------------------------------------------- what was shown
+# `--gate` keeps two copies of the plan beside it: `<name>.gate-shown.md`, the
+# plan as its block was last printed, and `<name>.gate-base.md`, what the next
+# block is a delta against. With `<name>.gate-dirty.txt` (see `record_dirty`)
+# they are the only files this script writes.
+# The base is the revision the human last approved; before any approval it is
+# the last plan printed in full. Never merely the last block printed: an
+# amended draft run through `--gate` and then edited again would become a base
+# nobody saw, and the amendment in it would be approved unseen.
+def _sidecar(plan_file, suffix):
+    return os.path.splitext(plan_file)[0] + suffix
+
+
+def _slurp(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def _spit(path, text):
+    try:
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+    except OSError as exc:
+        print(f"check-plan: could not write {path}: {exc}. The next gate will "
+              f"print the full block.", file=sys.stderr)
+
+
+def _rev(raw):
+    return plan_revision(strip_fences(raw))
+
+
+def last_approved(plan_file, approval_path=None):
+    """The revision the approval log's last record names, or None."""
+    if not plan_file or plan_file == "-":
+        return None
+    rec = _slurp(approval_path or _sidecar(plan_file, ".approval.log"))
+    if not rec:
+        return None
+    starts = [m.start() for m in re.finditer(r"(?im)^[ \t]*approved\s+by\s*:", rec)]
+    if not starts:
+        return None
+    m = re.search(r"@([0-9a-f]{12})\b", rec[starts[-1]:])
+    return m.group(1) if m else None
+
+
+def gate_base(plan_file, approval_path=None, promote=False):
+    """(base text, its revision, the approved revision) - each None when
+    there is none. With an approval on record the base is that revision or
+    nothing; `promote` saves it once the approved revision is the one last
+    shown, which only a `--gate` run does."""
+    if not plan_file or plan_file == "-":
+        return None, None, None
+    approved = last_approved(plan_file, approval_path)
+    base_path = _sidecar(plan_file, ".gate-base.md")
+    base, shown = _slurp(base_path), _slurp(_sidecar(plan_file, ".gate-shown.md"))
+    if approved:
+        if (base is None or _rev(base) != approved) and shown is not None \
+                and _rev(shown) == approved:
+            base = shown
+            if promote:
+                _spit(base_path, base)
+        if base is not None and _rev(base) == approved:
+            return base, approved, approved
+        return None, None, approved
+    if base is not None:
+        return base, _rev(base), None
+    return None, None, None
+
+
+def remember_gate(plan_file, raw, revision, approved, full):
+    """Keep what this run printed. A full block printed before any approval
+    becomes the base, and so does the approved revision when it is the one
+    presented."""
+    if not plan_file or plan_file == "-":
+        return
+    _spit(_sidecar(plan_file, ".gate-shown.md"), raw)
+    if (full and not approved) or approved == revision:
+        _spit(_sidecar(plan_file, ".gate-base.md"), raw)
+
+
+def record_dirty(plan_file):
+    """Write `<name>.gate-dirty.txt`: every path git reports changed or
+    untracked while a plan has no approval yet.
+
+    Until a plan is approved the only file the workflow writes is the plan
+    itself, so whatever else is dirty when a gate prints is not this change's:
+    the requester's own edits, there before it began. `check-spec-surface.py
+    --plan` reads the list and does not ask for an `## Intended change` row
+    for those files. Recorded here, by the script, at the one moment the
+    answer is known: a `Baseline:` line handed over at step 8 is one an agent
+    can re-derive after the change exists, and one real session printed
+    exactly that line, with the change's own forty files in it. Passing that
+    would have silenced the report it was meant to tidy.
+    """
+    if not plan_file or plan_file == "-":
+        return
+    code, out = _git(["status", "--porcelain"], os.path.dirname(os.path.abspath(plan_file)))
+    if code != 0:
+        return
+    stem = os.path.splitext(os.path.basename(plan_file))[0]
+    names = []
+    for line in out.split(chr(10)):
+        path = line[3:].strip().strip('"')
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        if path and not os.path.basename(path.rstrip("/")).startswith(stem):
+            names.append(path)
+    _spit(_sidecar(plan_file, ".gate-dirty.txt"), chr(10).join(sorted(names)) + chr(10))
 
 
 def gate_presentation(text, plan_src, tier, required_names, altitude):
@@ -717,46 +1365,110 @@ def gate_presentation(text, plan_src, tier, required_names, altitude):
     hold-out's nine fields became a sentence. The human approved eleven changes
     on sections they had not seen. Nothing checked it, because what reaches the
     terminal was the one step of this workflow left on the agent's honour.
-
-    Read from `approved_region`, never the raw text: after 7.12 appends
-    `## Intended change`, a re-gate would otherwise print that tail as though
-    the approval had covered it.
     """
-    lines, bounds = _section_bounds(approved_region(text))
-    cat = categorical_line(text)
+    visible = _gate_visible(text)
     out = [f"Plan: {plan_src} ({tier})", ""]
-
-    # The summary has no heading - it is everything above the categorical line -
-    # so it is the one gate-visible part with nothing marking it, and the one
-    # the agent is most likely to replace with its own words.
-    head = min([i for i, _ in [bounds[n] for n in bounds]] or [len(lines)])
-    if cat:
-        for i, line in enumerate(lines):
-            if line.strip() == cat.strip():
-                head = i
-                break
-    summary = chr(10).join(lines[:head]).strip()
-    if summary:
-        out += ["Decision summary, verbatim:", "", summary, ""]
-    if cat:
-        out += [cat.strip(), ""]
-
-    # The order the Gate presentation names, by the checker's own section keys.
-    for key, label in (("hold-out decision", "Hold-out"),
-                       ("behavior flow", "Behavior flow"),
-                       ("known gaps", "Known gaps"),
-                       ("assumptions", "Assumptions"),
-                       ("uncovered/ambiguous", "Uncovered or ambiguous")):
-        if key in bounds:
-            out += [chr(10).join(lines[slice(*bounds[key])]).rstrip(), ""]
+    if visible[_SUMMARY]:
+        out += ["Decision summary, verbatim:", "", visible[_SUMMARY], ""]
+    if visible[_RISK_LINE]:
+        out += [visible[_RISK_LINE], ""]
+    for key, label in _GATE_SECTIONS:
+        if label in visible:
+            out += [visible[label], ""]
         elif key in required_names:
             # Unreachable through the workflow, since the same run fails on a
             # missing required section before reaching here. Printed rather
             # than skipped so that a future tier change cannot turn a hole into
             # silence.
             out += [f"{label}: MISSING from the plan file.", ""]
+    by_file = tests_by_file(text)
+    if by_file:
+        out += ["Tests by file:"] + by_file + [""]
     out += altitude or ["Test altitude: no named tests to place.", ""]
+    out += _constrained_line(text)
     return out
+
+
+def _constrained_line(text):
+    names = constrained_tests(text)
+    if not names:
+        return []
+    return ["Not shown red at step 7, as the plan declares — an honest stub already "
+            "passes them, so each is constrained by a later slice: " + ", ".join(names) + ".", ""]
+
+
+def delta_presentation(base, text, plan_src, tier, base_rev, approved, altitude):
+    """(lines, eligible) - the block for a plan amended since `base`: the
+    entries recorded since then, every gate-visible part that changed in full,
+    a line naming the parts that did not, and what happened to the tests.
+
+    `eligible` is the lighter lane's condition, decided here from the two
+    files and not from how the agent describes its edit: the same test names
+    in both lanes with the same `covers:` lines, and the same expectations
+    outside them, once a declared rename is applied.
+    """
+    fresh = new_changes(base, text)
+    was, now = _gate_visible(base), _gate_visible(text)
+    labels = [_SUMMARY, _RISK_LINE] + [label for _key, label in _GATE_SECTIONS]
+    changed = [l for l in labels if l in now and _squash(was.get(l)) != _squash(now[l])]
+    gone = [l for l in labels if l in was and l not in now]
+    same = [l for l in labels if l in now and l not in changed]
+
+    seen = "which you approved" if approved else "the last plan shown in full"
+    out = [f"Plan: {plan_src} ({tier}) — what changed since revision {base_rev}, {seen}", ""]
+    amendments = [e for kind, e in fresh if kind == "amendment"]
+    decisions = [e for kind, e in fresh if kind == "decision"]
+    if amendments:
+        out += ["Amendments since then:"] + amendments + [""]
+    if decisions:
+        out += ["Decisions confirmed since then:"] + decisions + [""]
+    for label in changed:
+        if label == _SUMMARY:
+            out += ["Decision summary, verbatim:", "", now[label], ""]
+        else:
+            out += [now[label], ""]
+    if changed:
+        out += ["Changed since then, and shown in full above: " + ", ".join(changed) + "."]
+    if gone:
+        out += ["Removed since then: " + ", ".join(gone) + "."]
+    if same:
+        out += [f"Otherwise unchanged since revision {base_rev}: " + ", ".join(same) + "."]
+    out += [""]
+
+    renames = declared_renames(amendments, base, text)
+    d = tests_delta(base, text, renames)
+    eligible = not (d["added"] or d["removed"] or d["covers"] or d["other"])
+    count = (f"{len(lane_tests(text, 'new-behavior'))} new-behavior and "
+             f"{len(lane_tests(text, 'preservation'))} preservation")
+    if eligible:
+        apart = ("" if not renames else ", apart from the rename " + ", ".join(
+            f"`{o}` → `{n}`" for o, n in renames))
+        out += [f"Tests: unchanged since then — the same {count} test names, with the same "
+                f"`covers:` lines{apart}. After approval, verification is scoped to what this "
+                f"amendment touches, and the whole verification still runs once before the "
+                f"review packet."]
+    else:
+        what = [f"{word}: {', '.join(d[key])}" for key, word in
+                (("added", "added"), ("removed", "removed"), ("covers", "`covers:` changed"))
+                if d[key]] + d["other"]
+        out += ["Tests: changed since then — " + "; ".join(what) + ". After approval this "
+                "re-enters at the lowest invalidated step: red state again for what changed, "
+                "and the whole verification."]
+    if d["path"]:
+        out += ["Test files moved: " + ", ".join(d["path"]) + "."]
+    if d["red"]:
+        out += ["`red:` changed: " + ", ".join(d["red"]) + "."]
+    out += [""]
+
+    def placing(t):
+        return _squash(chr(10).join(_lane_block(t, "new-behavior")
+                                    + _bullet_section(t, "implementation slices")))
+    if altitude and placing(base) != placing(text):
+        out += altitude
+    out += _constrained_line(text)
+    return out, eligible
+
+
 
 
 def main():
@@ -769,6 +1481,11 @@ def main():
     gate = "--gate" in args
     if gate:
         args = [a for a in args if a != "--gate"]
+    # --full: print the whole block even where a delta would do. The human can
+    # always ask to see all of it again.
+    force_full = "--full" in args
+    if force_full:
+        args = [a for a in args if a != "--full"]
 
     diff_src = None
     if "--diff" in args:
@@ -786,7 +1503,14 @@ def main():
     # so a repository that configured one got an exit-1 CI failure on a correct
     # plan. Configurable and unusable was the worst of both.
     if "--plan-dir" in args:
-        print(plan_dir())
+        pdir = plan_dir()
+        print(pdir)
+        # stdout stays the bare path, because 5.4 captures it. Whether git
+        # ignores the directory goes to stderr: it decides 5.5 (commit the plan
+        # and point at it, or paste it into the description), and a real
+        # session told the human at two gates that the directory was tracked
+        # when `.gitignore` ignored it.
+        print(f"check-plan: {plan_dir_status(pdir)}", file=sys.stderr)
         return 0
 
     from_description = "--from-description" in args
@@ -832,11 +1556,13 @@ def main():
         # Fenced content is quoted, not declared: a withdrawn declaration or a
         # copied worked example inside a fence was read as live, and `Risk:
         # trivial` there skipped all nineteen checks.
-        text = strip_fences(_read(plan_src))
+        raw = _read(plan_src)
+        text = strip_fences(raw)
     except OSError as exc:
         print(f"check-plan: cannot read {plan_src}: {exc}")
         return 2
 
+    plan_file = plan_src
     if from_description:
         resolved, err = _resolve_pointer(text)
         if err:
@@ -844,7 +1570,8 @@ def main():
             return 1
         if resolved is not None:
             try:
-                text = strip_fences(open(resolved, encoding="utf-8").read())
+                raw = open(resolved, encoding="utf-8").read()
+                text = strip_fences(raw)
             except OSError:
                 print(f"check-plan: MR points at {resolved}, but that file is not "
                       f"in the repository. Most likely docs/plans/ is git-ignored — "
@@ -853,6 +1580,7 @@ def main():
                       f"drop the pointer and paste the plan into the description "
                       f"(then CI validates that copy instead).")
                 return 1
+            plan_file = resolved
             print(f"check-plan: validating the canonical plan at {resolved} "
                   f"(resolved from the MR description).")
         elif not TRIVIAL.search(text):
@@ -978,7 +1706,7 @@ def main():
     # the agent obliged to guess the one thing the section titled "BLOCKING — I
     # will not guess" said it would not. Only enforced with --post-approval, since
     # the question must still be open when the plan is first checked.
-    if post_approval:
+    def still_asking():
         blocking = [l for l in text.split("\n")
                     if re.match(r"^\s*(?:[-*]\s+|#{1,6}\s+)?[`*_]*blocking\b", l, re.I)]
         open_q = [l for l in blocking if not re.search(r":\s*none\b", l, re.I)]
@@ -989,7 +1717,11 @@ def main():
             print("Field rule 11: an approved plan must not still be asking. Move "
                   "the answer there and remove the question, or write "
                   "`BLOCKING — I will not guess: none — <reason>`.")
-            return 1
+            return True
+        return False
+
+    if post_approval and still_asking():
+        return 1
 
     if approval is not None:
         # Four decision artifacts are stdout-only, and the Approval record is one
@@ -1008,6 +1740,17 @@ def main():
                   "without it a resumed session cannot establish that 6.4 was "
                   "satisfied without inferring approval from artifacts.")
             return 1
+        # A log, not a slot: read the LAST record and keep the rest as
+        # history. Reading the first meant an appended approval reported STALE
+        # against the record before it, so a real change overwrote the file
+        # and lost the history of five approvals. A record opens at a line
+        # starting `Approved by:` and runs to the next one, so a quoted message
+        # spanning lines stays one record. Earlier records are never judged.
+        starts = [m.start() for m in
+                  re.finditer(r"(?im)^[ \t]*approved\s+by\s*:", rec)]
+        history = max(len(starts) - 1, 0)
+        if starts:
+            rec = rec[starts[-1]:]
         want = plan_revision(text)
         found = re.search(r"@([0-9a-f]{12})\b", rec)
         if not found:
@@ -1090,7 +1833,64 @@ def main():
                   f"derived from the plan revision, so a stale one means the "
                   f"block the human saw was not this plan.")
             return 1
-        print(f"check-plan: approval record verified for revision {want}.")
+        # An approval typed together with the change it dictates covers that
+        # change and nothing else. What a script can hold it to: every entry
+        # recorded since the base quotes the approving message. An extra edit
+        # the agent made on its own account, recorded as its own entry, is
+        # then not covered - the case the owner named when deciding this. An
+        # extra edit folded into the dictated entry, or made with no entry at
+        # all, is not caught here; the delta block puts every changed section
+        # and test in front of the human instead.
+        if re.search(r"covers\s+the\s+amendment", rec, re.I):
+            said_it = re.search(r'approved\s+by\s*:\s*["“]([^"”]+)["”]', rec, re.I)
+            message = _squash(said_it.group(1)).casefold() if said_it else ""
+            prior = _slurp(_sidecar(plan_file, ".gate-base.md")) if plan_file != "-" else None
+            if prior is not None and _rev(prior) != want:
+                fresh = new_changes(strip_fences(prior), text)
+            else:
+                fresh = recorded_changes(text)[-1:]
+            # An answered BLOCKING question is recorded under `Decisions
+            # confirmed in session` by field rule 11, and it answers a
+            # question the gate put to them; only an amendment has to carry
+            # their words.
+            stray = [e for kind, e in fresh if kind == "amendment"
+                     and (not message or message not in _squash(e).casefold())]
+            # The message has to say it approves. The first agent run under
+            # this rule took `A, <a name>` - a choice among two offered fixes -
+            # as an approval that covered its own change, recorded it so and
+            # went on to edit code. Picking a fix dictates the change; it does
+            # not approve the amended plan. Narrow on purpose, and it errs
+            # toward one more `approve` from the human, never one fewer.
+            if not re.search(r"\bapprov", message):
+                print("check-plan: NOT AN APPROVAL — the record says the human's message "
+                      f"covers the amendment it dictated, and that message (\"{said_it.group(1) if said_it else ''}\") "
+                      "does not say it approves.")
+                print("A choice among offered fixes, or an answer to a question, dictates a "
+                      "change and approves nothing. Present the delta block, stop for their "
+                      "approval of it, and record that approval.")
+                return 1
+            if not fresh or stray:
+                print("check-plan: APPROVAL COVERS ONLY WHAT IT DICTATED — the record "
+                      "says the human's message covers the amendment it dictated, and "
+                      + ("the plan records no amendment since the last block they saw."
+                         if not fresh else
+                         "these entries do not quote that message: "
+                         + "; ".join(_squash(e)[:60] for e in stray)))
+                print("Quote their words in each entry they dictated. Anything else is "
+                      "your own amendment: present the delta block, stop for approval "
+                      "of it, and record that approval without `covers the amendment`.")
+                return 1
+        # The record is for this revision, so this is an approved plan, and an
+        # approved plan is not still asking. The same check has sat behind
+        # `--post-approval` since it was written; one reference line named
+        # that flag, no step ran it, and in one real session it never ran. A
+        # stale record never reaches here: a plan amended after approval may
+        # carry a new question, and that is what its next gate is for.
+        if still_asking():
+            return 1
+        print(f"check-plan: approval record verified for revision {want}"
+              + (f" (the last of {history + 1} records; the earlier ones are "
+                 f"history)." if history else "."))
 
     # 4.5 routes a changed existing assertion as an amendment and rule 3 gives it
     # its own section, but the section is conditional and no rule tied it to the
@@ -1116,9 +1916,16 @@ def main():
     # unchecked — and these paths feed `check-redstate --tests-from`, so the gate
     # blessed paths no test file can be written to.
     vague = []
-    for m in re.finditer(r"`([^`\n]{2,120})`", text):
+    for m in re.finditer(r"`([^`\n]{2,120})`", _file_listings(text)):
         tok = m.group(1).strip()
         if "/" not in tok and "." not in tok:
+            continue
+        # A token with no directory that carries a call, an argument list or
+        # a space is code, not a path: `IRepo.SetAsync(..., message, ...)`
+        # failed the gate for its `...`. `(+ tests)` is rule 9's own case and
+        # is judged before this exemption can reach it.
+        if "/" not in tok and not re.search(r"\(\+", tok) \
+                and re.search(r"[(), ]", tok):
             continue
         if re.search(r"[*?]|/\s*$|\(\+[^)]*\)|\bTBD\b|\.\.\.", tok):
             vague.append(tok)
@@ -1127,6 +1934,34 @@ def main():
         print("Field rule 9 requires exact file paths; a wildcard, a bare directory, "
               "`(+ tests)` or `TBD` names no file.")
         return 1
+
+    # A pin's path is checked against the repository: pins assert behaviour
+    # that already exists, so their file is readable now. New-behaviour tests
+    # are not checked - their files are what step 7 writes.
+    if any(p for _n, p in lane_tests(text, "preservation")):
+        root = project_root(plan_file)
+        if root is None:
+            print("check-plan: pin paths not checked — no repository root. Pass "
+                  "the plan by its path inside the repository, or set "
+                  "CLAUDE_PROJECT_DIR.")
+        else:
+            wrong, unwritten = pin_path_findings(text, root)
+            if unwritten:
+                print("check-plan: pins not written yet (7.5 writes them against "
+                      "the current implementation): " + ", ".join(
+                          f"{n} at `{p}`" for n, p in unwritten))
+            if wrong:
+                print("check-plan: PIN NOT AT ITS PATH — the name is not in the "
+                      "file the plan gives, and it is in another:")
+                for name, path, exists, found in wrong:
+                    print(f"  {name} — `{path}` "
+                          f"{'does not contain it' if exists else 'does not exist'}"
+                          f"; found in: {', '.join(found[:4])}"
+                          + (f" (+{len(found) - 4} more)" if len(found) > 4 else ""))
+                print("check-redstate verifies a pin by its name, so a pin pointing "
+                      "at the wrong file passes on another test's run. Correct the "
+                      "path, or the name if the planned test is a different one.")
+                return 1
 
     # The categorical line is what tier, triviality and hold-out all read, and
     # nothing required it to exist. `categorical_line(text) or text` then fell
@@ -1161,6 +1996,13 @@ def main():
     tier = plan_tier(text)
     required = required_for(tier)
     altitude_lines = []
+    # `Structure` is what the FIRST gate shows. A plan approved before the
+    # section existed gains nothing from being failed for it now, and adding
+    # it would move the revision and cost a re-approval: a checker failure for
+    # a reason that is not the plan's.
+    has_structure = bool(re.search(dict(REQUIRED)["structure"], text, re.I | re.M))
+    if not has_structure and last_approved(plan_file, approval):
+        required = [(n, rx) for n, rx in required if n != "structure"]
 
     # A section appearing twice is a corrupted plan, not a complete one. The
     # 2026-08-03 session rewrote its plan 28 times with 16 silent-failing `sed`
@@ -1235,7 +2077,7 @@ def main():
     hidden = hidden_in_intended_change(text, required)
     if hidden:
         print("check-plan: SECTION IN THE UN-APPROVED TAIL — "
-              + ", ".join(sorted(hidden)))
+              + ", ".join(sorted(heading_of(n) for n in hidden)))
         print("`## Intended change` is appended after approval and is excluded "
               "from the plan revision, so a mandatory section written below it "
               "is a section the approval never covered. Move it above.")
@@ -1243,7 +2085,7 @@ def main():
 
     if duplicated:
         print("check-plan: DUPLICATED sections — " +
-              ", ".join(f"{n} (x{c})" for n, c in duplicated))
+              ", ".join(f"{heading_of(n)} (x{c})" for n, c in duplicated))
         print("A section written twice is a corrupted plan; the gate cannot tell "
               "which copy the human approved.")
         return 1
@@ -1252,7 +2094,7 @@ def main():
     # 2026-08-03 wrote `request: 2 sealed tests written and withheld by the
     # human` — the unbounded phrasing plan-format rule 6 exists to replace — and
     # the human had to ask "what is my task".
-    holdout = HOLDOUT_BLOCK.search(text)
+    holdout = holdout_block(text)
     if holdout and _holdout_required(text):
         block = holdout.group(0)
         absent = [f for f in ("options:", "recommended:") if f not in block]
@@ -1311,8 +2153,39 @@ def main():
 
     missing = [name for name, pat in required if not _present(pat)]
     if missing:
-        print(f"check-plan: MISSING sections for a {tier} plan — " + ", ".join(missing))
+        print(f"check-plan: MISSING sections for a {tier} plan — "
+              + ", ".join(heading_of(n) for n in missing))
         print("A plan that omits a section hasn't decided it; it has skipped it.")
+        return 1
+
+    if has_structure and any(n == "structure" for n, _ in required):
+        block = _gate_visible(text).get("Structure", "")
+        absent = [w for w in ("Types", "Ports", "Configuration")
+                  if not re.search(r"(?im)^\s*[-*]\s+[`*_]*" + w + r"\b", block)]
+        if absent:
+            print("check-plan: STRUCTURE INCOMPLETE — no line for: " + ", ".join(absent))
+            print("`Structure` says, one bullet each: `Types` (new or changed public "
+                  "types and where each lives), `Ports` (the abstractions the change "
+                  "crosses) and `Configuration` (bindings). `none` is an answer; an "
+                  "absent line is not. The test project per group is printed for you.")
+            return 1
+
+    # The repository's own standing rules, named where a plan has something to
+    # place and run before anything is built on the placement. One real change
+    # returned a feature-folder type from a port in its first stub and learned
+    # that at the last phase's verification, three approved revisions later -
+    # from a test that had been there the whole time. Not asked of a plan that
+    # already has an approval, for the reason `Structure` is not.
+    if any(n == "implementation slices" for n, _ in required) \
+            and not last_approved(plan_file, approval) \
+            and not any(_INVARIANTS.match(l) for l in _bullet_section(text, "verification")):
+        print("check-plan: NO INVARIANT SUITE — `Verification` has no `- invariants:` line.")
+        print("Name the fast command that checks this repository's standing rules, such "
+              "as its architecture or layering tests, and read what those rules say about "
+              "where new types may live: `- invariants: `<command>` — expected: passes`. "
+              "It runs at step 7.10 and at every checkpoint, so a rule this plan breaks "
+              "fails before implementation and not at the last verification. Where the "
+              "repository has no such suite, write `- invariants: none — <reason>`.")
         return 1
 
     # Test altitude. Runs whenever `Implementation slices` is required (medium
@@ -1333,9 +2206,9 @@ def main():
                   "which is where real plans have put tests at the wrong level.")
             return 1
         owners = {}
-        for owner, names in claims:
+        for owner, names, tokens in claims:
             for nm in names:
-                owners.setdefault(nm, []).append(owner)
+                owners.setdefault(nm, []).append((owner, tokens))
         known = {n for n, _ in tests} | {n for n, _ in lane_tests(text, "preservation")}
         unknown = sorted(set(owners) - known)
         if unknown:
@@ -1344,14 +2217,14 @@ def main():
                   "silently; fix the name on one side.")
             return 1
         layers = configured_layers(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
-        rows, orphans, misplaced = [], [], []
+        rows, orphans, misplaced, unplaced = [], [], [], []
         for name, path in tests:
             own = owners.get(name, [])
             if not own:
                 orphans.append(name)
             t_idx = layer_of(path, layers) if layers else None
-            o_idx = [i for i in (layer_of(o, layers) for o in own) if i is not None] \
-                if layers else []
+            o_idx = [i for i in (owner_layer(o, toks, layers) for o, toks in own)
+                     if i is not None] if layers else []
             need = max(o_idx) if o_idx else None
             t_lbl = layers[t_idx] if t_idx is not None else "?"
             o_lbl = (", ".join(sorted({layers[i] for i in o_idx})) if o_idx
@@ -1360,6 +2233,14 @@ def main():
             if t_idx is not None and need is not None and t_idx != need:
                 misplaced.append((name, t_lbl, layers[need],
                                   "above" if t_idx > need else "below"))
+            # A `?` while layers are configured means no comparison ran. That
+            # used to pass in silence, which reads exactly like a test placed
+            # correctly.
+            if layers and own and (t_idx is None or need is None):
+                unplaced.append((name, "its path resolves to no layer"
+                                 if t_idx is None else
+                                 "no backticked path before `turns green:` "
+                                 "resolves to a layer"))
         if tests:
             body = [f"  {name}  {t_lbl} | {o_lbl}" for name, t_lbl, o_lbl in rows]
             if not layers:
@@ -1376,6 +2257,10 @@ def main():
             # flag existed, header wording included: 5.4's run is the one every
             # plan makes, and moving its output would be a change nobody asked
             # for riding along with one they did.
+            if unplaced:
+                body.append(f"  NOT PLACED — layers are configured and the "
+                            f"comparison did not run for {len(unplaced)} test(s):")
+                body += [f"    {n} — {why}" for n, why in unplaced]
             altitude_lines = ["Test altitude — test layer | owning layer"] + body + [""]
             if not gate:
                 print("check-plan: test altitude — test layer | owning layer")
@@ -1402,8 +2287,12 @@ def main():
     # reading before a human can approve. Nobody chose that — it accrued over 28
     # amendment rounds. A number on the screen at the moment of writing is the
     # cheapest thing that makes the cost visible; the tier already sets the floor.
+    # Under --gate only: it is a cost of reading at the gate. Printed on every
+    # run, it repeated through every 5.4, 8.6 and packet re-check of one real
+    # change (33,575 characters at its first gate, 51,161 at its tenth), where
+    # nobody was about to read the plan.
     words = len(text.split())
-    if words > 1500:
+    if gate and words > 1500:
         print(f"check-plan: plan is {len(text):,} chars / {words:,} words "
               f"(~{round(words/220)} min to read at the gate). The human has to "
               f"read this before approving; consolidate if amendment rounds have "
@@ -1426,6 +2315,35 @@ def main():
     # same path, so without one a pre-amendment approval is textually identical to
     # a current one — and one pilot plan ran to 28 amendment rounds.
     digest = plan_revision(text)
+
+    # An amendment says what it replaced. 8.6 asked for "the old and new form"
+    # in prose and field rule 3 asked the same of a changed assertion; neither
+    # was checked, and four of one change's nine amendments were edited in
+    # place with nothing recording what had been there.
+    formless = [e for e in amendment_entries(text)
+                if not (_OLD_FORM.search(e) and _NEW_FORM.search(e))]
+    if formless:
+        print("check-plan: AMENDMENT WITHOUT OLD AND NEW FORM — "
+              + "; ".join(_squash(e)[:70] for e in formless))
+        print("Each bullet under `Amendments` gives both, as `Old: …` and `New: …`. "
+              "The gate shows the human that bullet in place of the whole plan, so a "
+              "bullet that says only what is now true shows them half of the change.")
+        return 1
+
+    # What the last gate showed, and whether this plan has moved since.
+    base, base_rev, approved_rev = gate_base(plan_file, approval, promote=gate)
+    base_text = strip_fences(base) if base is not None else None
+    amended = base_text is not None and base_rev != digest
+    fresh = new_changes(base_text, text) if amended else []
+    if amended and approved_rev and not fresh:
+        print(f"check-plan: AMENDED WITHOUT AN ENTRY — the plan is not the revision "
+              f"{approved_rev} that was approved, and neither `Amendments` nor "
+              f"`Decisions confirmed in session` records anything since.")
+        print("Every change to an approved plan is an amendment. Record it as one "
+              "bullet under `Amendments`, with `Old:` and `New:`: that bullet is what "
+              "the next gate shows.")
+        return 1
+
     print(f"check-plan: plan revision {digest} — carry it in the Approval record "
           f"and the packet as `plan: <path>@{digest}`.")
     print(f"check-plan: all mandatory sections present for a {tier} plan "
@@ -1436,18 +2354,70 @@ def main():
     # that does not validate would put a human in front of an approval surface
     # the workflow has not cleared.
     if gate:
+        delta = amended and bool(fresh) and not force_full
+        if approved_rev and base is None and approved_rev != digest:
+            print(f"check-plan: no copy of the approved revision {approved_rev} is kept "
+                  f"beside the plan, so there is nothing to compare with and this is the "
+                  f"full block.")
         print()
         print("check-plan: ---- gate presentation: copy this block into your reply unaltered; the human does not see tool output ----")
-        for line in gate_presentation(text, plan_src, tier,
-                                      {n for n, _ in required}, altitude_lines):
+        eligible = None
+        if delta:
+            # After an amendment the human reads what changed, not the plan
+            # again: six of one change's nine re-presentations were
+            # byte-identical to the block before them.
+            lines, eligible = delta_presentation(
+                base_text, text, plan_src, tier, base_rev, bool(approved_rev), altitude_lines)
+        else:
+            lines = gate_presentation(text, plan_src, tier,
+                                      {n for n, _ in required}, altitude_lines)
+        for line in lines:
             print(line)
         # Inside the block deliberately: a token printed outside it could be
         # quoted by an agent that never showed the block to anyone.
         print()
-        print(f"Gate token: {gate_token(digest)} — carry it in the Approval "
-              f"record as `gate-token: {gate_token(digest)}`, which is how a "
+        token = gate_token(digest)
+        print(f"Gate token: {token} — carry it in the Approval "
+              f"record as `gate-token: {token}`, which is how a "
               f"later run can tell this presentation was put in front of you.")
         print("check-plan: ---- end of gate presentation ----")
+        remember_gate(plan_file, raw, digest, approved_rev, full=not delta)
+        if not approved_rev:
+            record_dirty(plan_file)
+
+        # What to do with the block, said here because here is where it is
+        # needed and the record's revision and token are known. The skill's
+        # Output contract used to carry the record's shape and lacked the
+        # token, so a record written to the contract failed `--approval`.
+        log = os.path.splitext(plan_src)[0] + ".approval.log"
+        record = (f'Approved by: "<their message>" (typed at the gate{{}}); '
+                  f'plan: {plan_src}@{digest}; gate-token: {token}')
+        if delta:
+            print(f"check-plan: when the human's own message dictated everything recorded "
+                  f"in this block and also said it approves, append to {log}: "
+                  + record.format("; covers the amendment it dictated")
+                  + " — and carry on without another stop. Each new `Amendments` entry must "
+                  "quote that message; `--approval` checks both. A choice among offered "
+                  "fixes is not an approval. When their message did not say it approves, or "
+                  "any part of this block goes beyond their words, stop for approval of the "
+                  "block and record it as: " + record.format(""))
+            if eligible:
+                print("check-plan: the tests are unchanged, so once approved this amendment "
+                      "takes the lighter lane: test edits through `ctdd-tests`' craft-edit "
+                      "lane, then the build, the plan's invariant suite and the tests the "
+                      "amendment touches. Step 8.3 runs in full once before the review "
+                      "packet.")
+            else:
+                print("check-plan: test expectations changed, so there is no lighter lane: "
+                      "once approved, re-enter at the lowest invalidated step.")
+        else:
+            print(f"check-plan: when the human approves this block, append to {log}: "
+                  + record.format("") + " — write `(selected at the gate)` when they picked "
+                  f"an option — then verify with `--approval {log}`.")
+            print("check-plan: when their reply states a change, record it before anything "
+                  "else: a bullet under `Amendments` with `Old:` and `New:` and their words "
+                  "quoted, or under `Decisions confirmed in session` for an answered "
+                  "question. Run `--gate` again and it prints only what changed.")
     return 0
 
 

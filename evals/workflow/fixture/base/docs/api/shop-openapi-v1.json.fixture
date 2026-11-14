@@ -1,0 +1,15 @@
+{
+  "openapi": "3.0.1",
+  "info": { "title": "Shop API", "version": "v1" },
+  "paths": {
+    "/api/v1/orders/{orderNumber}": {
+      "get": {
+        "operationId": "GetOrder",
+        "summary": "Reads one order.",
+        "description": "Returns the order with the given number.",
+        "responses": { "200": { "description": "The order." }, "404": { "description": "No such order." } }
+      }
+    }
+  },
+  "components": { "schemas": {} }
+}

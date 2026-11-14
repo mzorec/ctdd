@@ -6,6 +6,13 @@ Usage:
     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" name-status.txt
     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git [extra git-diff args...]
     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <base> --plan <plan-path>
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-spec-surface.py" --git <base> [--plan <plan-path>] --stat [--patch <file>]
+
+--stat prints `git diff --stat` against the base and --patch writes the full
+diff to a file, both with the files git does not track yet included. They are
+taken from a copy of the index, so the real one is never changed: nothing is
+staged, unstaged or reset. With --plan the plan's own untracked files beside
+it are left out. Neither prints the inventory or gives a verdict; exit 0.
 
 --plan compares the inventory against the plan in both directions and reports
 three things, none of which moves the verdict or the exit code: planned files
@@ -14,7 +21,11 @@ files with no row under the plan's `## Intended change`. That last one is
 silent when the plan has no such section, which is every plan before 7.12
 appends one and every plan in the `red pause: skip` lane. The plan's own
 artifacts beside it — the verify, red-state, pin-state and approval logs and
-the pre-implementation diff — are excluded by filename stem.
+the pre-implementation diff — are excluded by filename stem, and so are
+`.ctdd.json`, the files `check-plan.py --gate` found dirty before the plan had
+any approval (`<plan>.gate-dirty.txt`) and, with `--baseline "<step-0 Baseline
+line>"`, the files that line lists as already dirty. Planned files are read
+from the plan's `Files likely to change` section only.
 
 Reads `git diff --name-status` output (use -M so renames are detected) and
 classifies every touched path against the SAME test/contract patterns the
@@ -345,19 +356,196 @@ def parse_name_status(text):
     return entries, malformed
 
 
+def _files_heading():
+    """The `Files likely to change` heading, from check-plan.py's own REQUIRED
+    list, so the two scripts cannot disagree on which line opens the section."""
+    path = Path(__file__).resolve().parent / "check-plan.py"
+    spec = importlib.util.spec_from_file_location("check_plan_for_surface", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return re.compile(dict(mod.REQUIRED)["files to change"], re.I)
+
+
+NO_FILES_SECTION = "no-files-section"
+
+
 def plan_paths_from(path):
-    """Backticked repository paths named anywhere in the plan."""
+    """Backticked repository paths under the plan's `Files likely to change`.
+
+    That section only. Reading every backticked path in the document made
+    "planned" mean "mentioned": a legacy file cited as evidence in `Existing
+    behavior`, an amendment's old location and every pin's test file were all
+    reported as planned files the diff never touched, on one real change at
+    three consecutive runs. `None` when the plan cannot be read, and
+    `NO_FILES_SECTION` when it has no such section, which the caller reports
+    rather than falling back to the whole document - the fallback is the
+    defect.
+    """
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
             body = fh.read(200_000)
     except OSError:
         return None
+    heading = _files_heading()
+    lines = body.split("\n")
+    start = next((n for n, l in enumerate(lines) if heading.match(l)), None)
+    if start is None:
+        return NO_FILES_SECTION
+    # The heading line itself may carry the list (`Files likely to change:
+    # `a`, `b``); after it, bullets, their indented continuations and blank
+    # lines, ending at the next unindented line that is not a bullet - the
+    # next section's label.
+    block = [lines[start]]
+    for line in lines[start + 1:]:
+        if line.strip() and not line[:1].isspace() \
+                and not line.lstrip().startswith(("-", "*", "|")):
+            break
+        block.append(line)
     out = set()
-    for m in re.finditer(r"`([^`\n]{3,160})`", body):
+    # A table's first cell is read with or without backticks, as
+    # `intended_change_paths` reads its rows: a table that does not use them
+    # would otherwise extract nothing and switch the comparison off.
+    for line in block:
+        if line.lstrip().startswith("|"):
+            cell = line.strip().strip("|").split("|")[0].strip().strip("`").strip()
+            if "/" in cell and _ROW_PATH.match(cell):
+                out.add(cell)
+    for m in re.finditer(r"`([^`\n]{3,160})`", "\n".join(block)):
         tok = m.group(1).strip()
         if "/" in tok and re.search(r"\.[A-Za-z0-9]{1,6}$", tok) and " " not in tok:
             out.add(tok)
     return out
+
+
+def baseline_dirty(line):
+    """([paths], capped) — the staged, unstaged and untracked names a step-0
+    `Baseline:` line lists, as `gen-baseline.py` prints it.
+
+    `capped` is True when a field ended in `+N more`: the line names only the
+    first few, so the rest are not known here and stay reported.
+    """
+    names, capped = [], False
+    for m in re.finditer(r"\b(?:staged|unstaged|untracked)=([^;]*)", line or ""):
+        value = m.group(1).strip()
+        if value.endswith("."):
+            value = value[:-1]
+        for name in (v.strip() for v in value.split(",")):
+            if not name or name == "none":
+                continue
+            if re.fullmatch(r"\+\d+ more", name):
+                capped = True
+                continue
+            names.append(name.replace("\\", "/"))
+    return names, capped
+
+
+def diff_with_untracked(repo, base_args, want_stat, patch_out, is_plan_artifact=None):
+    """Print the stat, and write the full diff, of the working tree against
+    the base - files git does not track yet included - without touching the
+    index.
+
+    `git diff <base>` leaves untracked files out, and a change's new files are
+    untracked until someone stages them. The way to get them in is to mark
+    them intent-to-add, and doing that to the real index changes what the
+    repository's owner sees staged. So the marking is done to a copy: git is
+    pointed at it with GIT_INDEX_FILE for these commands only.
+
+    Two kinds of untracked file stay out, because neither is the change: the
+    file `--patch` writes, which a second run would otherwise embed in itself,
+    and, with `--plan`, the plan's own logs beside it.
+    """
+    import shutil
+    import tempfile
+
+    def git(args, env=None, raw=False):
+        merged = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
+        merged.update(env or {})
+        if raw:
+            return subprocess.run(["git", *args], cwd=repo, capture_output=True, env=merged)
+        return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", env=merged)
+
+    def failed(what, run):
+        err = run.stderr
+        if not isinstance(err, str):
+            err = err.decode("utf-8", "replace")
+        print(f"check-spec-surface: {what}: {err.strip()}")
+        return 2
+
+    where = git(["rev-parse", "--git-path", "index"])
+    if where.returncode != 0:
+        return failed("git failed", where)
+    index = where.stdout.strip()
+    if not os.path.isabs(index):
+        index = os.path.join(repo, index)
+    top = git(["rev-parse", "--show-toplevel"]).stdout.strip() or repo
+    own = os.path.normcase(os.path.abspath(patch_out)) if patch_out else None
+    tmp = tempfile.mkdtemp(prefix="ctdd-index-")
+    try:
+        copy = os.path.join(tmp, "index")
+        if os.path.exists(index):
+            shutil.copyfile(index, copy)
+        env = {"GIT_INDEX_FILE": copy}
+        # The whole repository, whatever directory this runs from, and NUL-
+        # separated so a quoted or non-ASCII name arrives as the name it is.
+        listed = git(["ls-files", "-z", "--others", "--exclude-standard",
+                      "--full-name", ":/"])
+        if listed.returncode != 0:
+            # Carrying on would print a stat that silently lacks the new files,
+            # which is the defect this mode exists to remove.
+            return failed("could not list untracked files", listed)
+        new, left_out = [], 0
+        for name in listed.stdout.split(chr(0)):
+            if not name:
+                continue
+            if own and os.path.normcase(os.path.abspath(os.path.join(top, name))) == own:
+                continue
+            if is_plan_artifact and is_plan_artifact(name):
+                left_out += 1
+                continue
+            new.append(":(top,literal)" + name)
+        for i in range(0, len(new), 100):
+            added = git(["add", "-N", "--", *new[i:i + 100]], env)
+            if added.returncode != 0:
+                return failed("could not mark untracked files in the copy of the "
+                              "index", added)
+        base = " ".join(base_args)
+        note = ""
+        if left_out:
+            note = (f"; {left_out} untracked file(s) of the plan's own beside it, "
+                    f"the plan and its logs, are left out")
+        if want_stat:
+            stat = git(["diff", "--stat=200,160", "-M", *base_args], env)
+            if stat.returncode != 0:
+                return failed("git failed", stat)
+            print(f"check-spec-surface: diff stat against {base}, untracked files "
+                  f"included; the index is untouched{note}")
+            print(stat.stdout.rstrip() or " nothing changed")
+        if patch_out:
+            # Bytes, as git wrote them: a text read drops the carriage returns
+            # of a CRLF file and replaces what is not UTF-8.
+            full = git(["diff", "-M", *base_args], env, raw=True)
+            if full.returncode != 0:
+                return failed("git failed", full)
+            try:
+                with open(patch_out, "wb") as fh:
+                    fh.write(full.stdout)
+            except OSError as exc:
+                print(f"check-spec-surface: cannot write {patch_out}: {exc}")
+                return 2
+            print(f"check-spec-surface: wrote the full diff against {base} to "
+                  f"{patch_out} ({full.stdout.count(bytes([10]))} lines, untracked "
+                  f"files included; the index is untouched{note})")
+        return 0
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _dirty_at_baseline(path, dirty):
+    """True when `path` is one of the baseline's names, or under one of its
+    untracked directories (`git status` collapses those to `dir/`)."""
+    return any(path == d or (d.endswith("/") and path.startswith(d))
+               for d in dirty)
 
 
 _INTENDED_CHANGE = re.compile(r"^[ \t]*#{1,6}[ \t]*Intended change\b", re.I | re.M)
@@ -447,11 +635,50 @@ def main():
     # directions. Report-only; the verdict is unchanged.
     plan_paths = None
     intended, is_plan_artifact = None, None
+    # --baseline "<step-0 Baseline line>": files already dirty before the
+    # change began belong to the requester, not to this plan, so they are not
+    # reported as missing `## Intended change` rows. That report only: a test
+    # edited before the session is still a changed requirement.
+    dirty, dirty_capped = [], False
+    if "--baseline" in args:
+        i = args.index("--baseline")
+        if i + 1 >= len(args):
+            print("check-spec-surface: --baseline needs the step-0 `Baseline:` line")
+            return 2
+        dirty, dirty_capped = baseline_dirty(args[i + 1])
+        args = args[:i] + args[i + 2:]
+    # --stat / --patch <file>: the diff against the base with untracked files
+    # included, taken from a copy of the index. Only with --git.
+    want_stat = "--stat" in args
+    args = [a for a in args if a != "--stat"]
+    patch_out = None
+    if "--patch" in args:
+        i = args.index("--patch")
+        if i + 1 >= len(args):
+            print("check-spec-surface: --patch needs the file to write the diff to")
+            return 2
+        patch_out = args[i + 1]
+        args = args[:i] + args[i + 2:]
+    if (want_stat or patch_out) and not (args and args[0] == "--git"):
+        print("check-spec-surface: --stat and --patch read the repository, so they "
+              "go with --git <base>.")
+        return 2
+    gate_dirty = False
     if "--plan" in args:
         i = args.index("--plan")
         if i + 1 < len(args):
             plan_paths = plan_paths_from(args[i + 1])
             intended = intended_change_paths(args[i + 1])
+            # What `check-plan.py --gate` found dirty before the plan had any
+            # approval: the requester's files, not this change's.
+            try:
+                with open(os.path.splitext(args[i + 1])[0] + ".gate-dirty.txt",
+                          encoding="utf-8", errors="replace") as fh:
+                    listed = [l.strip().replace("\\", "/") for l in fh if l.strip()]
+                gate_dirty = bool(listed)
+                dirty = dirty + listed
+            except OSError:
+                pass
             # 7.12 puts the red-state log, the pin-state logs, the approval
             # record and the pre-implementation diff *beside the plan*. They
             # are changed files that classify as nothing, so without this they
@@ -497,6 +724,8 @@ def main():
         # "git failed: usage: git diff" and exit 2, so the flag was unreachable in
         # the one mode where an empty diff is most likely — a clean tree.
         git_args = [a for a in args[1:] if a != "--allow-empty"] or ["HEAD"]
+        if want_stat or patch_out:
+            return diff_with_untracked(repo, git_args, want_stat, patch_out, is_plan_artifact)
         cmd = ["git", "diff", "--name-status", "-M", *git_args]
         r = subprocess.run(cmd, capture_output=True, text=True, cwd=repo)
         if r.returncode != 0:
@@ -569,6 +798,11 @@ def main():
     # the run produced the same verdict a clean tree does, so an approved contract
     # change that was never written read as nothing to see.
     untouched_planned = []
+    no_files_section = plan_paths == NO_FILES_SECTION
+    no_planned_paths = plan_paths is not None and not no_files_section \
+        and not plan_paths
+    if no_files_section or no_planned_paths:
+        plan_paths = None
     if plan_paths is not None:
         # Compare against every changed path, not only classified surface: a
         # production file the plan named is touched even though it classifies as
@@ -590,6 +824,13 @@ def main():
 
     print("check-spec-surface: spec-surface inventory (deterministic; "
           "patterns shared with the spec-edit hook, env overrides honored)")
+    if no_files_section:
+        print("\nPlanned vs touched: the plan has no `Files likely to change` "
+              "section, so nothing was compared in either direction.")
+    if no_planned_paths:
+        print("\nPlanned vs touched: the plan's `Files likely to change` names no "
+              "path this checker can read (a backticked or table-cell path with "
+              "a directory and an extension), so nothing was compared.")
     if plan_paths is not None:
         # 8.5 stops only when the inventory EXCEEDS the plan. The deficit is
         # unhandled: a plan naming `openapi.yaml — relax the amount constraint`
@@ -598,13 +839,17 @@ def main():
         seen = {f.split(": ", 1)[-1].split("  (")[0].strip()
                 for group in findings.values() for f in group}
         seen |= set(unread)
-        untouched = sorted(q for q in plan_paths
-                           if not any(q in s or s in q for s in seen))
         unplanned = sorted(s for s in seen
                            if not any(q in s or s in q for q in plan_paths))
-        if untouched:
+        # Printed from the same set the verdict reads. The list used to be
+        # recomputed against `seen` - classified surface only - so every
+        # planned production file was listed as untouched on every run while
+        # the verdict above it, comparing against every changed path, did not
+        # count it. One real session told the human the checker "only sees
+        # committed history"; it had read the diff and printed the wrong set.
+        if untouched_planned:
             print("\nPlanned but untouched:")
-            for q in untouched:
+            for q in untouched_planned:
                 print(f"  - {q}")
             print("  An approved change that never reaches its file does not "
                   "ship.")
@@ -627,9 +872,27 @@ def main():
     # found by probing this check, and the same fail-silent shape `--tests-from`
     # produced three separate times.
     if intended is not None:
-        missing = sorted({p for p in production
-                          if not _covered(p, intended)
-                          and not (is_plan_artifact and is_plan_artifact(p))})
+        # `.ctdd.json` configures this workflow and is not production. A file
+        # dirty at the step-0 baseline is the requester's edit; 7.12's rows
+        # describe what this change builds. Both were reported as missing rows
+        # on a real change. Excluded here only, never from the verdict.
+        missing, predirty = [], []
+        for p in sorted(set(production)):
+            if _covered(p, intended) or (is_plan_artifact and is_plan_artifact(p)):
+                continue
+            if os.path.basename(p) == CONFIG_NAME:
+                continue
+            if _dirty_at_baseline(p, dirty):
+                predirty.append(p)
+                continue
+            missing.append(p)
+        if predirty:
+            when = "before the first gate" if gate_dirty else "at the step-0 baseline"
+            print(f"\nNot counted for `## Intended change`, dirty {when}: "
+                  f"{', '.join(predirty)}")
+        if dirty_capped:
+            print("  The baseline line names only the first few dirty files of "
+                  "a field; any it did not name are still reported below.")
         if missing:
             print(f"\nProduction files with no `## Intended change` row "
                   f"({len(missing)}):")

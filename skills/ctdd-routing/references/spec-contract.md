@@ -37,6 +37,4 @@ subject rather than designing the solution.
 
 This altitude is the conversation's as well as the document's. Resolve observable behavior,
 constraints, measurements and rejected alternatives in the discussion; leave the shape of code
-to the plan gate and the red pause, which review it against code that exists. `brainstorming`'s
-own sectioned design approval is skipped for that reason, and because approving a design in chat
-is a second approval surface competing with the gate at step 6.
+to the plan gate and the red pause, which review it against code that exists.
