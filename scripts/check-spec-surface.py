@@ -21,11 +21,18 @@ files with no row under the plan's `## Intended change`. That last one is
 silent when the plan has no such section, which is every plan before 7.12
 appends one and every plan in the `red pause: skip` lane. The plan's own
 artifacts beside it — the verify, red-state, pin-state and approval logs and
-the pre-implementation diff — are excluded by filename stem, and so are
-`.ctdd.json`, the files `check-plan.py --gate` found dirty before the plan had
-any approval (`<plan>.gate-dirty.txt`) and, with `--baseline "<step-0 Baseline
-line>"`, the files that line lists as already dirty. Planned files are read
-from the plan's `Files likely to change` section only.
+the pre-implementation diff — are excluded by filename stem, and so are the
+files `check-plan.py --gate` found dirty before the plan had any approval
+(`<plan>.gate-dirty.txt`) and, with `--baseline "<step-0 Baseline line>"`, the
+files that line lists as already dirty. Planned files are read from the plan's
+`Files likely to change` section only.
+
+A diff that changes `.ctdd.json`, the workflow's own settings, is listed under
+`Workflow settings` and counts as spec surface: that file decides what the
+rest of this inventory calls a test, a contract or an ADR. With `--git` every
+path is then classified under the settings the diff base had as well as under
+the current ones. A settings file that cannot be read stops the run with exit
+2, and so does a key this plugin reads holding a value it cannot read.
 
 Reads `git diff --name-status` output (use -M so renames are detected) and
 classifies every touched path against the SAME test/contract patterns the
@@ -46,7 +53,7 @@ rename from a dropped requirement — it can only make sure a human looks.
 Exit codes:
     0  no test/contract/ADR surface touched
     1  spec surface touched (attention, not error — see the summary)
-    2  usage or input error
+    2  usage or input error, or a settings file that cannot be read
 """
 
 import importlib.util
@@ -68,6 +75,7 @@ def _load_guard():
     return mod
 
 PATTERN_LOAD_ERROR = None
+_guard = None
 try:
     _guard = _load_guard()
     TEST_PATTERNS = _guard.patterns("CTDD_TEST_PATTERNS", _guard.TEST_DEFAULT)
@@ -84,13 +92,17 @@ except Exception as exc:
 # directory this same script resolved — landed as `other`, and the run reported
 # "no test/contract/ADR surface touched": the verdict the trivial lane opens on.
 # One script, two definitions. Rule 2 says there is one.
-def _adr_patterns():
+def _adr_patterns(named=None):
+    """`named` is the directories another revision of the settings file names;
+    without it, the ones this repository has and the one its settings name."""
     pats = [re.compile(r"(^|/)adrs?/[^/]+\.md$", re.IGNORECASE)]
     # The *configured* directory, resolved exactly as `--adr-dir` resolves it —
     # `adr_dirs()` reports what exists on disk, which is a different question and
     # is empty in a repo that has not written its first ADR yet.
     seen = {"adr", "adrs"}
-    for d in list(adr_dirs()) + [_setting("CTDD_ADR_DIR", "adrDir", None) or ""]:
+    if named is None:
+        named = list(adr_dirs()) + [_setting("CTDD_ADR_DIR", "adrDir", None) or ""]
+    for d in named:
         seg = (d or "").strip("/")
         if not seg or seg.lower() in seen:
             continue
@@ -150,6 +162,80 @@ def _setting_with_source(env_var, config_key, root="."):
 
 
 CONFIG_NAME = ".ctdd.json"
+
+
+def settings_stop(who, root=None):
+    """Say what is wrong with the settings file; True when the run stops.
+
+    A file that cannot be read, or a key this plugin reads that cannot, stops
+    every script that reads settings: each would fall back to its defaults
+    while the repository says otherwise, and pass. A key this plugin does not
+    read is one line on stderr, where it reaches whoever runs the script
+    without becoming part of what the script reports.
+    """
+    if _guard is None:
+        return False
+    stop, notes = _guard.settings_problems(root)
+    for line in notes:
+        print(f"{who}: {line}", file=sys.stderr)
+    for line in stop:
+        print(f"{who}: {line}")
+    if stop:
+        print(f"{who}: none of the file's settings are in force until that is "
+              f"fixed, so nothing was checked and this is not a pass. The file "
+              f"is the human's to change: tell them what is wrong with it.")
+    return bool(stop)
+
+
+def is_settings(path):
+    """True for the workflow's own settings file, wherever it sits in the
+    path: a diff's paths start at the repository's top, and a project that is
+    one folder of it keeps the file in that folder."""
+    return os.path.basename((path or "").replace("\\", "/")) == CONFIG_NAME
+
+
+def settings_at_base(repo, git_args):
+    """The settings as the diff base held them: a dict, empty when the base
+    had no settings file or one that could not be read, and None when git
+    cannot say which revision the diff starts from."""
+    rev = next((a for a in git_args if not a.startswith("-")), "HEAD")
+    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
+    try:
+        # `--revs-only` prints nothing for an argument that is a path, so a
+        # diff limited to some paths and naming no revision is not read as
+        # starting from one of them.
+        told = subprocess.run(["git", "rev-parse", "--revs-only", rev], cwd=repo,
+                              capture_output=True, text=True, env=env)
+        shas = told.stdout.split() if told.returncode == 0 else []
+        # `A..B` and `A...B` print the revision the diff starts from with a
+        # caret; a single revision is that revision.
+        base = next((s[1:] for s in shas if s.startswith("^")),
+                    shas[0] if shas else None)
+        if not base:
+            return None
+        shown = subprocess.run(["git", "show", f"{base}:./{CONFIG_NAME}"], cwd=repo,
+                               capture_output=True, env=env)
+    except OSError:
+        return None
+    if shown.returncode != 0:
+        return {}
+    return _guard.parse_config(shown.stdout)[0]
+
+
+def patterns_under(config):
+    """(contracts, tests, adrs) as `config`, a settings dict, defines them. A
+    list that does not compile reads as the defaults: the scripts refused to
+    run on it at that revision, and the defaults are the widest reading left."""
+    def of(env_var, default):
+        try:
+            return _guard.patterns(env_var, default, config=config)
+        except ValueError:
+            return _guard.patterns(env_var, default, config={})
+    named = _guard.setting("CTDD_ADR_DIR", "adrDir", config=config)
+    return (of("CTDD_CONTRACT_PATTERNS", _guard.CONTRACT_DEFAULT),
+            of("CTDD_TEST_PATTERNS", _guard.TEST_DEFAULT),
+            _adr_patterns(named.split(os.pathsep)))
+
 
 _SKIP_DIRS = {".git", "node_modules", "bin", "obj", "dist", "build",
               "packages", "target", "vendor", ".venv", "__pycache__"}
@@ -285,20 +371,35 @@ def _matches(path, pats):
     return any(pattern.search(path) for pattern in pats)
 
 
-def classify(path):
-    """Return the surface class of one path: 'contract', 'test', 'adr', or None."""
-    ensure_patterns_loaded()
+def _class_under(path, contracts, tests, adrs):
+    """`adrs` is a function, so the ADR directories are looked for only when
+    the path is neither a contract nor a test."""
     p = path.replace("\\", "/")
-    if _matches(p, CONTRACT_PATTERNS):
+    if _matches(p, contracts):
         return "contract"
-    if _matches(p, TEST_PATTERNS):
+    if _matches(p, tests):
         return "test"
-    if _matches(p, ADR_PATTERNS if ADR_PATTERNS is not None else _adr_patterns()):
+    if _matches(p, adrs()):
         return "adr"
     return None
 
 
+def classify(path):
+    """Return the surface class of one path: 'contract', 'test', 'adr', or None."""
+    ensure_patterns_loaded()
+    return _class_under(
+        path, CONTRACT_PATTERNS, TEST_PATTERNS,
+        lambda: ADR_PATTERNS if ADR_PATTERNS is not None else _adr_patterns())
+
+
 STATUS_WORD = {"A": "added", "M": "modified", "D": "deleted", "T": "type-changed"}
+
+EARLIER_SETTINGS = "  (surface under the settings the diff base had, not under these)"
+SETTINGS_WHY = (
+    "  This file decides what the checks read: which paths are test, contract "
+    "and ADR surface, and the layers and harnesses a plan is checked against. "
+    "Changing it changes the workflow, so it counts as spec surface: the change "
+    "summary says what changed in it and why, and a human decides it.")
 
 
 def unquote_git_path(path):
@@ -690,6 +791,9 @@ def main():
         print(__doc__.strip())
         return 0
 
+    if settings_stop("check-spec-surface"):
+        return 2
+
     if "--adr-dir" in args:
         # One answer for every step that reads or writes an ADR, so the two
         # cannot drift apart and split the numbering.
@@ -711,6 +815,7 @@ def main():
               file=sys.stderr)
         return 2
 
+    base_of = None      # (repository, git-diff arguments), when the base is known
     if args and args[0] == "--git":
         # Anchor to the project root: `git ls-files --others` is relative to the
         # current directory, so running from a subdirectory silently omits a new
@@ -724,6 +829,7 @@ def main():
         # "git failed: usage: git diff" and exit 2, so the flag was unreachable in
         # the one mode where an empty diff is most likely — a clean tree.
         git_args = [a for a in args[1:] if a != "--allow-empty"] or ["HEAD"]
+        base_of = (repo, git_args)
         if want_stat or patch_out:
             return diff_with_untracked(repo, git_args, want_stat, patch_out, is_plan_artifact)
         cmd = ["git", "diff", "--name-status", "-M", *git_args]
@@ -761,23 +867,49 @@ def main():
     other, unread, production = 0, [], []
 
     entries, malformed = parse_name_status(text)
+    # A change to the settings file is reported on its own, and when the base
+    # is known every path is classified under the settings it had as well. A
+    # change that rewrote `testPatterns` and weakened a test in the folder the
+    # old value named was reported as touching no surface at all: the file
+    # that decides what counts as a test had been edited by the diff being
+    # judged. So was a first settings file whose `testPatterns` left out the
+    # default folders, since an override replaces the defaults.
+    settings = [(s, o, n) for s, o, n in entries if is_settings(o) or is_settings(n)]
+    earlier = None
+    if settings and base_of is not None:
+        was = settings_at_base(*base_of)
+        earlier = patterns_under(was) if was is not None else None
+
+    def surface_of(path):
+        """(class, only_earlier): the second is True when only the settings
+        the diff base had call the path surface."""
+        cls = classify(path)
+        if cls or earlier is None:
+            return cls, False
+        cls = _class_under(path, earlier[0], earlier[1], lambda: earlier[2])
+        return cls, cls is not None
+
     for status, old, new in entries:
+        if is_settings(old) or is_settings(new):
+            continue
         if status[:1] in ("R", "C"):
             verb = "renamed" if status[:1] == "R" else "copied"
-            old_cls, new_cls = classify(old), classify(new)
+            (old_cls, old_only), (new_cls, new_only) = surface_of(old), surface_of(new)
+            under = EARLIER_SETTINGS if old_only or new_only else ""
             if old_cls and not new_cls:
                 findings[old_cls].append(
                     f"{verb} OUT of {old_cls} surface: {old} -> {new} "
-                    f"(treat as a deletion until shown otherwise)")
+                    f"(treat as a deletion until shown otherwise){under}")
             elif new_cls and not old_cls:
-                findings[new_cls].append(f"{verb} INTO {new_cls} surface: {old} -> {new}")
+                findings[new_cls].append(
+                    f"{verb} INTO {new_cls} surface: {old} -> {new}{under}")
             elif old_cls or new_cls:
-                findings[old_cls or new_cls].append(f"{verb}: {old} -> {new}")
+                findings[old_cls or new_cls].append(f"{verb}: {old} -> {new}{under}")
             else:
                 other += 1
                 production.append(new or old)
         else:
-            cls = classify(old)
+            cls, only_earlier = surface_of(old)
             if cls:
                 word = STATUS_WORD.get(status[:1], status)
                 label = f"{word}: {old}"
@@ -785,6 +917,8 @@ def main():
                     label += "  (consumer contract — blast radius includes another team)"
                 if cls == "test" and status[:1] == "D":
                     label += "  (a deleted test is a silently dropped requirement unless justified)"
+                if only_earlier:
+                    label += EARLIER_SETTINGS
                 findings[cls].append(label)
             elif GITLINK_RX.match(old):
                 unread.append(old)
@@ -810,7 +944,8 @@ def main():
         _seen = {q for _s, o, n in entries for q in (o, n) if q}
         untouched_planned = sorted(q for q in plan_paths
                                    if not any(q in s or s in q for s in _seen))
-    touched = any(findings.values()) or bool(unread) or bool(untouched_planned)
+    touched = (any(findings.values()) or bool(unread) or bool(untouched_planned)
+               or bool(settings))
     if not text.strip() and "--allow-empty" not in sys.argv:
         print("check-spec-surface: empty input — nothing was inspected, so no "
               "verdict is given. If the diff really is empty, pass --allow-empty.")
@@ -872,15 +1007,16 @@ def main():
     # found by probing this check, and the same fail-silent shape `--tests-from`
     # produced three separate times.
     if intended is not None:
-        # `.ctdd.json` configures this workflow and is not production. A file
-        # dirty at the step-0 baseline is the requester's edit; 7.12's rows
-        # describe what this change builds. Both were reported as missing rows
-        # on a real change. Excluded here only, never from the verdict.
+        # A file dirty at the step-0 baseline is the requester's edit; 7.12's
+        # rows describe what this change builds. It was reported as a missing
+        # row on a real change, and so was `.ctdd.json`, which configures this
+        # workflow and is not production. That one no longer reaches this
+        # list: the loop above takes a settings change out of the production
+        # files and it is reported on its own. Excluded here only, never from
+        # the verdict.
         missing, predirty = [], []
         for p in sorted(set(production)):
             if _covered(p, intended) or (is_plan_artifact and is_plan_artifact(p)):
-                continue
-            if os.path.basename(p) == CONFIG_NAME:
                 continue
             if _dirty_at_baseline(p, dirty):
                 predirty.append(p)
@@ -916,6 +1052,27 @@ def main():
             print(f"  - {u}")
         print("  A submodule bump can carry any change. Inspect it in its own "
               "repository, or treat this change as plan-gated.")
+
+    if settings:
+        print(f"\nWorkflow settings ({len(settings)}):")
+        for status, old, new in settings:
+            if new:
+                verb = "renamed" if status[:1] == "R" else "copied"
+                print(f"  - {verb}: {old} -> {new}")
+            else:
+                print(f"  - {STATUS_WORD.get(status[:1], status)}: {old}")
+        print(SETTINGS_WHY)
+        if earlier is not None:
+            print("  Every path is classified under the settings the diff base "
+                  "had as well as under these, so no file leaves this inventory "
+                  "by being reclassified.")
+        elif base_of is None:
+            print("  This run was given a list of paths and no base, so they "
+                  "are classified under the current settings only. `--git "
+                  "<base>` also lists what the earlier settings called surface.")
+        else:
+            print("  Git could not say which revision this diff starts from, so "
+                  "paths are classified under the current settings only.")
 
     for cls, title in (("contract", "Contract surface"),
                        ("test", "Test surface"),

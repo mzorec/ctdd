@@ -26,7 +26,8 @@ spec.loader.exec_module(bf)
 
 HANDCHECK = ("the order stays at 50", "replaced by the one sent", "the order stays at 30")
 TYPES = ("OrderStateOutcome", "OrderStateChange", "SettableOrderState", "SetOrderStateCommand")
-PROJECTS = ("Shop.Persistence.IntegrationTests", "Shop.Application.UnitTests", "Shop.Api.IntegrationTests")
+PROJECTS = ("Shop.Persistence.IntegrationTests", "Shop.Application.UnitTests", "Shop.Api.IntegrationTests",
+            "Shop.Application.IntegrationTests")
 
 
 def slurp(path):
@@ -64,8 +65,26 @@ def check(plugin, repo, *args):
     return r.returncode, r.stdout
 
 
+def placement(plan):
+    """Where the plan puts each new-behavior test, and the reason it gives
+    for a heavier project when it gives one."""
+    out, cur = {}, None
+    block = plan.split(bf.NL + "New-behavior tests", 1)[-1].split(bf.NL + "Case coverage not reached", 1)[0]
+    for line in block.split(bf.NL):
+        m = re.match(r"[-*] `?([A-Za-z_]\w*)`?", line)
+        if m:
+            cur = out.setdefault(m.group(1), {})
+            continue
+        m = re.match(r"\s+[-*] (path|needs)\s*:\s*(.+)$", line)
+        if m and cur is not None:
+            cur[m.group(1)] = m.group(2).strip().strip("`.").strip("`")[:200]
+    return out
+
+
 def reply_facts(text):
     return {
+        "harness_shown": sorted(set(re.findall(r"· ?(UnitTests|IntegrationTests)", text))),
+        "needs_lines_shown": len(re.findall(r"(?m)^\s*needs:", text)),
         "chars": len(text),
         "words": len(text.split()),
         "full_gate_reprinted": "Flow after change" in text and bool(re.search(r"(?m)^\s*-\s*storage:", text)),
@@ -106,7 +125,7 @@ def main():
         before, after = tree(twin), tree(repo)
         before_methods = methods(twin)
         twin_plan = bf.plan_text(state)
-        if state != "plan-only":
+        if state not in bf.PLAN_ONLY:
             twin_plan, _rev, _tok = bf.approve(plugin, twin, twin_plan)
     changed = sorted(p for p in set(before) | set(after) if before.get(p) != after.get(p))
 
@@ -133,7 +152,8 @@ def main():
             "says_old_and_new": bool(re.search(r"\bold\s*:", now, re.I) and re.search(r"\bnew\s*:", now, re.I)),
             "has_structure_section": bool(re.search(r"(?m)^(?:#+\s*)?Structure\b", now)),
             "says_constrained_by": bool(re.search(r"constrained by", now, re.I)),
-            "chars_added": len(now) - len(twin_plan) if state != "plan-only" else None,
+            "chars_added": len(now) - len(twin_plan) if state not in bf.PLAN_ONLY else None,
+            "tests_at": placement(now),
             "names_statusNote": "statusNote" in now,
             "limit_201_200": "201" in now and "200 characters" in now,
         },

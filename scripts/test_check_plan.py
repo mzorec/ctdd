@@ -5,8 +5,10 @@ exemption, the newline bypass fix, and the new trivial-vs-diff cross-check.
 Run:  python3 scripts/test_check_plan.py   (or via pytest)
 """
 
+import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -69,6 +71,7 @@ STILL_ASKING = FULL_PLAN.replace(
 def run(plan_text, extra_args=None, env=None):
     merged = dict(os.environ)
     merged.pop("CTDD_LAYERS", None)          # tests decide the layer config
+    merged.pop("CTDD_HARNESSES", None)       # and the harness kinds
     merged.pop("CLAUDE_PROJECT_DIR", None)   # and the repository root pins resolve in
     merged.update(env or {})
     return subprocess.run([sys.executable, SCRIPT, "-"] + (extra_args or []),
@@ -178,6 +181,19 @@ class CheckPlanTests(unittest.TestCase):
             self.assertEqual(r.returncode, 1)
             self.assertIn("TRIVIAL CLAIM CONTRADICTED", r.stdout)
             self.assertIn("tests/CaptureTests.cs", r.stdout)
+        finally:
+            os.unlink(d)
+
+    def test_trivial_contradicted_by_a_settings_change(self):
+        """`.ctdd.json` decides what this cross-check calls surface, so a diff
+        that changes it was read under settings the diff itself wrote."""
+        d = diff_file("M\t.ctdd.json\nM\tsrc/foo.cs\n")
+        try:
+            r = run("Risk: trivial — small cleanup. Skipping the plan gate.\n",
+                    ["--diff", d])
+            self.assertEqual(r.returncode, 1, r.stdout)
+            self.assertIn("TRIVIAL CLAIM CONTRADICTED — the diff changes `.ctdd.json`",
+                          r.stdout)
         finally:
             os.unlink(d)
 
@@ -1795,6 +1811,273 @@ class TestAltitudeTests(unittest.TestCase):
             self.assertIn("NO OWNER", r.stdout)
 
 
+KINDS = "UnitTests;IntegrationTests"
+UNIT_DIR = "tests/Shop.Application.UnitTests"
+HEAVY_TEST = "tests/Shop.Application.IntegrationTests/T.cs"
+HANDLER = "src/Shop.Application/Handler.cs"
+REASON = "the unique index on the real database."
+
+
+class HarnessTests(unittest.TestCase):
+    """One layer, two test projects. The layer check reads a unit project and
+    an integration project of one layer as the same place, so a real plan put
+    seven handler tests in the heavier of the two, the table matched them all,
+    and the human found it by reading project names. With `harnesses`
+    configured, a test in a heavier project says what it needs from it,
+    wherever a lighter project of the same layer exists to hold it instead.
+    """
+
+    def project(self, *dirs):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, True)
+        for d in dirs:
+            os.makedirs(os.path.join(root, d))
+        return root
+
+    def check(self, test_path=HEAVY_TEST, owner=HANDLER, dirs=(UNIT_DIR,), needs=None,
+              kinds=KINDS, extra=None):
+        plan = layered_plan(test_path, owner)
+        if needs is not None:
+            plan = plan.replace("  - path: `" + test_path + "`.",
+                                "  - path: `" + test_path + "`." + NL + "  - needs: " + needs)
+        env = dict(LAYERS, CLAUDE_PROJECT_DIR=self.project(*dirs))
+        if kinds:
+            env["CTDD_HARNESSES"] = kinds
+        return run(plan, extra, env=env)
+
+    def test_without_the_setting_nothing_is_asked_and_the_table_is_what_it_was(self):
+        r = self.check(kinds=None)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("check-plan: test altitude — test layer | owning layer", r.stdout)
+        self.assertIn("  t  Application | Application", r.stdout)
+        self.assertNotIn("harness", r.stdout.lower())
+
+    def test_a_heavier_test_beside_a_lighter_project_must_say_why(self):
+        r = self.check()
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("HEAVIER HARNESS, NO REASON", r.stdout)
+        self.assertIn("t sits in IntegrationTests (" + HEAVY_TEST + "); the same layer has "
+                      "UnitTests beside it", r.stdout)
+        # The refusal is where the line is taught: no skill or reference names it.
+        self.assertIn("`  - needs: <", r.stdout)
+
+    def test_a_reason_passes_and_is_printed_under_its_test(self):
+        r = self.check(needs=REASON)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("check-plan: test altitude — test layer · harness | owning layer", r.stdout)
+        lines = r.stdout.split(NL)
+        row = lines.index("  t  Application · IntegrationTests | Application")
+        self.assertEqual(lines[row + 1], "      needs: " + REASON)
+
+    def test_the_reason_reaches_the_human_inside_the_gate_block(self):
+        r = self.check(needs=REASON, extra=["--gate"])
+        self.assertEqual(r.returncode, 0, r.stdout)
+        block = r.stdout[r.stdout.index(GatePresentationTests.START):
+                         r.stdout.index(GatePresentationTests.END)]
+        self.assertIn("Test altitude — test layer · harness | owning layer", block)
+        self.assertIn("  t  Application · IntegrationTests | Application" + NL
+                      + "      needs: " + REASON, block)
+
+    def test_no_gate_block_is_printed_while_a_reason_is_owed(self):
+        r = self.check(extra=["--gate"])
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertNotIn(GatePresentationTests.START, r.stdout)
+
+    def test_a_layer_with_one_test_project_is_not_asked(self):
+        """Asked there, the question has one answer and every test gives it."""
+        r = self.check(dirs=())
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("  t  Application · IntegrationTests | Application", r.stdout)
+        self.assertIn("no reason is asked of 1 test(s)", r.stdout)
+
+    def test_the_lightest_harness_is_not_asked_and_shows_no_reason(self):
+        r = self.check(test_path=UNIT_DIR + "/T.cs", needs="left over from a move.")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("  t  Application · UnitTests | Application", r.stdout)
+        self.assertNotIn("needs:", r.stdout)
+
+    def test_words_for_nothing_and_a_placeholder_are_not_a_reason(self):
+        for said in ("none — a fake repository is enough.", "n/a", "Nothing.", "TBD",
+                     "<what only that project can reach>", "", "—", "-"):
+            r = self.check(needs=said)
+            self.assertEqual(r.returncode, 1, repr(said) + NL + r.stdout)
+            self.assertIn("HEAVIER HARNESS, NO REASON", r.stdout)
+
+    def test_a_reason_that_only_begins_with_such_a_word_is_one(self):
+        r = self.check(needs="none of the fakes models the unique index.")
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_a_project_the_setting_does_not_name_is_said(self):
+        """A `?` in the column reads like a test nobody had a question about."""
+        r = self.check(test_path="tests/Shop.Application.Specs/T.cs")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("  t  Application · ? | Application", r.stdout)
+        self.assertIn("HARNESS NOT NAMED", r.stdout)
+
+    def test_only_the_lighter_projects_that_exist_are_named(self):
+        three = "UnitTests;IntegrationTests;EndToEndTests"
+        path = "tests/Shop.Application.EndToEndTests/T.cs"
+        one = self.check(test_path=path, dirs=("tests/Shop.Application.IntegrationTests",), kinds=three)
+        self.assertEqual(one.returncode, 1, one.stdout)
+        self.assertIn("the same layer has IntegrationTests beside it", one.stdout)
+        both = self.check(test_path=path, dirs=("tests/Shop.Application.IntegrationTests", UNIT_DIR),
+                          kinds=three)
+        self.assertIn("the same layer has UnitTests, IntegrationTests beside it", both.stdout)
+
+    def test_the_rest_of_the_project_name_is_kept_when_looking_beside(self):
+        """The directory that carries the kind is renamed, not replaced."""
+        path = "tests/IntegrationTests.Shop.Application/T.cs"
+        self.assertEqual(self.check(test_path=path, dirs=("tests/UnitTests.Shop.Application",)).returncode, 1)
+        self.assertEqual(self.check(test_path=path, dirs=("tests/UnitTests",)).returncode, 0)
+
+    def test_a_kind_named_by_a_folder_is_looked_for_as_a_folder(self):
+        path, kinds = "tests/integration/Application/t.py", "unit;integration"
+        r = self.check(test_path=path, dirs=("tests/unit",), kinds=kinds)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("the same layer has unit beside it", r.stdout)
+        self.assertEqual(self.check(test_path=path, dirs=("tests/units",), kinds=kinds).returncode, 0)
+
+    def test_a_kind_in_the_file_name_always_has_a_lighter_one(self):
+        """A lighter file can sit in the same folder, so there is nothing on
+        disk to look for and the question is always asked."""
+        r = self.check(test_path="tests/Application/order.integration.test.ts", dirs=(),
+                       kinds="unit;integration")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("HEAVIER HARNESS, NO REASON", r.stdout)
+
+    def test_the_repository_file_configures_it(self):
+        root = self.project(UNIT_DIR)
+        with open(os.path.join(root, ".ctdd.json"), "w", encoding="utf-8") as fh:
+            json.dump({"layers": LAYERS["CTDD_LAYERS"], "harnesses": KINDS}, fh)
+        r = run(layered_plan(HEAVY_TEST, HANDLER), env={"CLAUDE_PROJECT_DIR": root})
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("HEAVIER HARNESS, NO REASON", r.stdout)
+
+    # ------------------------------------- the settings file, written wrong
+    def settings(self, text):
+        """The plan the check refuses, in a repository whose `.ctdd.json`
+        holds `text`."""
+        root = self.project(UNIT_DIR)
+        with open(os.path.join(root, ".ctdd.json"), "w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+        return run(layered_plan(HEAVY_TEST, HANDLER), env={"CLAUDE_PROJECT_DIR": root})
+
+    def test_lists_written_as_json_arrays_are_read(self):
+        """Only a string was read, so an array was an unset key: `layers` and
+        `harnesses` both went quiet and this plan passed with exit 0."""
+        r = self.settings(json.dumps({"layers": LAYERS["CTDD_LAYERS"].split(";"),
+                                      "harnesses": KINDS.split(";")}))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("HEAVIER HARNESS, NO REASON", r.stdout)
+
+    def test_a_comma_after_the_last_entry_stops_the_check(self):
+        """It dropped the whole file, `layers` included, and the plan passed."""
+        r = self.settings('{"layers": "%s", "harnesses": "%s",}'
+                          % (LAYERS["CTDD_LAYERS"], KINDS))
+        self.assertEqual(r.returncode, 2, r.stdout)
+        self.assertIn("check-plan: `.ctdd.json` is not valid JSON", r.stdout)
+        self.assertIn("not a pass", r.stdout)
+        self.assertNotIn("test altitude", r.stdout)
+
+    def test_a_known_key_holding_a_number_stops_the_check(self):
+        r = self.settings('{"layers": "%s", "harnesses": 2}' % LAYERS["CTDD_LAYERS"])
+        self.assertEqual(r.returncode, 2, r.stdout)
+        self.assertIn("check-plan: `.ctdd.json`: `harnesses` is a number", r.stdout)
+
+    def test_a_misspelt_key_is_named_and_the_check_runs_without_it(self):
+        r = self.settings('{"layers": "%s", "harness": "%s"}' % (LAYERS["CTDD_LAYERS"], KINDS))
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("check-plan: `.ctdd.json` has a key this plugin does not read: "
+                      "`harness`. Did you mean `harnesses`? It is ignored.", r.stderr)
+        self.assertIn("check-plan: test altitude — test layer | owning layer", r.stdout)
+
+    def test_an_unreadable_file_stops_it_before_it_names_the_plan_folder(self):
+        """Carrying on would answer `docs/plans`, the default, for a
+        repository whose file was pointing somewhere else."""
+        root = self.project()
+        with open(os.path.join(root, ".ctdd.json"), "w", encoding="utf-8") as fh:
+            fh.write('{"planDir": "plans",}')
+        r = run("", ["--plan-dir"], env={"CLAUDE_PROJECT_DIR": root})
+        self.assertEqual(r.returncode, 2, r.stdout)
+        self.assertNotIn("docs/plans", r.stdout)
+
+    def test_a_misplaced_layer_is_settled_before_the_harness(self):
+        """Moving a test to its owner's layer changes which project it is in,
+        so asking about the project first would ask about the wrong one."""
+        r = self.check(owner="src/Shop.Domain/Rule.cs")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("MISPLACED", r.stdout)
+        self.assertNotIn("HEAVIER HARNESS", r.stdout)
+
+    # ------------------------------------------------- a plan already approved
+    def plan_run(self, root, *extra, kinds=KINDS):
+        env = dict(os.environ, **LAYERS)
+        env.pop("CLAUDE_PROJECT_DIR", None)
+        env.pop("CTDD_HARNESSES", None)
+        if kinds:
+            env["CTDD_HARNESSES"] = kinds
+        return subprocess.run([sys.executable, SCRIPT, "p.md", *extra], capture_output=True,
+                              text=True, encoding="utf-8", errors="replace", timeout=20,
+                              env=env, cwd=root)
+
+    def approve(self, root, text):
+        """Present the plan at a gate in a repository that names no harnesses
+        yet, and record the approval."""
+        Path(root, "p.md").write_text(text, encoding="utf-8")
+        r = self.plan_run(root, "--gate", kinds=None)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        rev = re.search(r"plan revision ([0-9a-f]{12})", r.stdout).group(1)
+        tok = re.search(r"Gate token: ([0-9a-f]{8})", r.stdout).group(1)
+        Path(root, "p.approval.log").write_text(
+            f'Approved by: "approve" (typed at the gate); plan: p.md@{rev}; gate-token: {tok}' + NL,
+            encoding="utf-8")
+
+    def test_a_plan_approved_before_the_setting_is_not_asked(self):
+        """Naming the harnesses in the middle of a change must not fail the
+        plans already approved: that is a failure for a reason that is not the
+        plan's, and its fix costs a gate."""
+        root = self.project(UNIT_DIR)
+        self.approve(root, layered_plan(HEAVY_TEST, HANDLER))
+        r = self.plan_run(root)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("they sit where the plan you approved had them", r.stdout)
+
+    def test_a_test_moved_into_a_heavier_project_after_approval_is_asked(self):
+        root = self.project(UNIT_DIR)
+        light = layered_plan(UNIT_DIR + "/T.cs", HANDLER)
+        self.approve(root, light)
+        Path(root, "p.md").write_text(with_amendment(
+            light.replace(UNIT_DIR + "/T.cs", HEAVY_TEST),
+            "- A1. Old: `t` sits in the unit project. New: `t` sits in the integration project."),
+            encoding="utf-8")
+        r = self.plan_run(root)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("HEAVIER HARNESS, NO REASON", r.stdout)
+
+    def test_a_reason_given_at_approval_cannot_be_dropped_afterwards(self):
+        """What was approved was the test there for that reason."""
+        root = self.project(UNIT_DIR)
+        reasoned = layered_plan(HEAVY_TEST, HANDLER).replace(
+            "  - path: `" + HEAVY_TEST + "`.",
+            "  - path: `" + HEAVY_TEST + "`." + NL + "  - needs: " + REASON)
+        self.approve(root, reasoned)
+        Path(root, "p.md").write_text(with_amendment(
+            reasoned.replace(NL + "  - needs: " + REASON, ""),
+            "- A1. Old: `t` says what it needs from the integration project. New: it says nothing."),
+            encoding="utf-8")
+        r = self.plan_run(root)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("HEAVIER HARNESS, NO REASON", r.stdout)
+
+    def test_with_no_copy_of_the_approved_revision_nothing_is_asked(self):
+        root = self.project(UNIT_DIR)
+        self.approve(root, layered_plan(HEAVY_TEST, HANDLER))
+        for kept in ("p.gate-shown.md", "p.gate-base.md"):
+            if os.path.exists(os.path.join(root, kept)):
+                os.remove(os.path.join(root, kept))
+        self.assertEqual(self.plan_run(root).returncode, 0)
+
+
 class SessionDefectTests(unittest.TestCase):
     """Checker failures one real change hit for reasons that were not the plan's.
 
@@ -2133,6 +2416,7 @@ class AmendmentGateTests(unittest.TestCase):
     def run_plan(self, *extra, env=None):
         merged = dict(os.environ)
         merged.pop("CTDD_LAYERS", None)
+        merged.pop("CTDD_HARNESSES", None)
         merged.pop("CLAUDE_PROJECT_DIR", None)
         merged.update(env or {})
         return subprocess.run([sys.executable, SCRIPT, "p.md", *extra],
@@ -2454,6 +2738,16 @@ class AmendmentGateTests(unittest.TestCase):
         self.assertIn("Tests: unchanged since then", b)
         self.assertIn("`red:` changed: t", b)
         self.assertIn("constrained by a later slice: t", b)
+
+    def test_a_changed_needs_line_alone_stays_eligible_and_is_named(self):
+        """Why a test sits in a heavier harness states no input and no
+        expected value, so it is named at the gate and changes nothing else."""
+        b, _ = self.lane(with_amendment(
+            LANE_PLAN.replace("  - red: the stub has no rules.",
+                              "  - red: the stub has no rules." + NL + "  - needs: " + REASON),
+            ENTRY))
+        self.assertIn("Tests: unchanged since then", b)
+        self.assertIn("`needs:` changed: t", b)
 
     # ---------------------------------------------------------- the covering approval
     DICTATED = ('- A1, dictated at the checkpoint ("Domain, approve"). Old: the type lives in the '

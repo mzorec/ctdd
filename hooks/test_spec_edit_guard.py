@@ -8,8 +8,10 @@ runtime review's fixture table, plus the regressions that were actually
 caught during development ('latest.md', 'LoadTest.md', spec-dir YAML).
 """
 
+import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -286,6 +288,194 @@ class AdrMarkerHookTests(unittest.TestCase):
         out = r.stdout + r.stderr
         self.assertNotIn("Traceback", out)
 
+
+
+SETTING_VARS = ("CTDD_TEST_PATTERNS", "CTDD_CONTRACT_PATTERNS", "CTDD_LAYERS",
+                "CTDD_HARNESSES", "CTDD_ADR_DIR", "CTDD_PLAN_DIR")
+
+
+def settings_root(text, encoding="utf-8"):
+    """A throwaway project root holding `text` as its settings file: a string
+    in `encoding`, or bytes as they are."""
+    root = tempfile.mkdtemp()
+    with open(os.path.join(root, ".ctdd.json"), "wb") as fh:
+        fh.write(text if isinstance(text, bytes) else text.encode(encoding))
+    return root
+
+
+class SettingsFileTests(unittest.TestCase):
+    """`.ctdd.json`, as the hook reads it and as the scripts are told about it.
+
+    Three ways of writing the file slightly wrong switched checks off with
+    exit 0: lists as JSON arrays, where only a string was read; a misspelt
+    key; and a comma after the last entry, which dropped the whole file. The
+    hook still reads what it can and says nothing. The scripts ask
+    `settings_problems`: they stop on a file or a known key they cannot read,
+    and name a key they do not know.
+    """
+
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("guard_for_settings", GUARD)
+        self.guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.guard)
+        saved = {k: os.environ.pop(k) for k in SETTING_VARS if k in os.environ}
+        self.addCleanup(os.environ.update, saved)
+
+    def problems(self, text, **how):
+        return self.guard.settings_problems(settings_root(text, **how))
+
+    def stops(self, text, **how):
+        """The one thing that stops the scripts on this file."""
+        stop, notes = self.problems(text, **how)
+        self.assertEqual(1, len(stop), stop)
+        self.assertEqual([], notes)
+        return stop[0]
+
+    # ------------------------------------------------------------- arrays
+    def test_a_json_array_is_the_list_its_strings_make(self):
+        as_array = settings_root('{"layers": ["Domain", "Application"], '
+                                 '"harnesses": ["UnitTests", "IntegrationTests"]}')
+        as_string = settings_root('{"layers": "Domain;Application", '
+                                  '"harnesses": "UnitTests;IntegrationTests"}')
+        for var, key, want in (("CTDD_LAYERS", "layers", "Domain;Application"),
+                               ("CTDD_HARNESSES", "harnesses", "UnitTests;IntegrationTests")):
+            self.assertEqual(want, self.guard.setting(var, key, as_array))
+            self.assertEqual(want, self.guard.setting(var, key, as_string))
+        self.assertEqual(([], []), self.guard.settings_problems(as_array))
+
+    def test_an_array_of_adr_folders_joins_as_the_environment_variable_does(self):
+        root = settings_root('{"adrDir": ["adr", "docs/adr"]}')
+        self.assertEqual("adr" + os.pathsep + "docs/adr",
+                         self.guard.setting("CTDD_ADR_DIR", "adrDir", root))
+
+    def test_the_hook_classifies_by_patterns_written_as_an_array(self):
+        """An override replaces the defaults, in either form."""
+        root = settings_root('{"testPatterns": ["(^|/)quality/", "\\\\.robot$"]}')
+        env = {"CLAUDE_PROJECT_DIR": root}
+        fired = run_guard(post("Edit", "quality/order_rules.py"), env)
+        self.assertIn("changed spec", fired.stdout)
+        robot = run_guard(post("Edit", "suites/orders.robot"), env)
+        self.assertIn("changed spec", robot.stdout)
+        default = run_guard(post("Edit", "src/Payments.Tests/CaptureTests.cs"), env)
+        self.assertEqual("", default.stdout.strip())
+
+    def test_the_environment_still_wins_over_the_file(self):
+        root = settings_root('{"layers": ["Domain", "Application"]}')
+        os.environ["CTDD_LAYERS"] = "Core;Edge"
+        self.addCleanup(os.environ.pop, "CTDD_LAYERS", None)
+        self.assertEqual("Core;Edge", self.guard.setting("CTDD_LAYERS", "layers", root))
+
+    def test_an_entry_holding_the_separator_would_be_read_as_two(self):
+        self.assertIn("entry 2 of `testPatterns` contains `;`",
+                      self.stops('{"testPatterns": ["(^|/)quality/", "a;b"]}'))
+
+    # ----------------------------------------------- a file that is not read
+    def test_a_comma_after_the_last_entry_stops_and_says_where(self):
+        text = '{' + chr(10) + '  "layers": "Domain;Api",' + chr(10) + '}'
+        root = settings_root(text)
+        stop, notes = self.guard.settings_problems(root)
+        self.assertEqual([], notes)
+        self.assertEqual(1, len(stop), stop)
+        # Which line and column depends on the interpreter: one points at the
+        # brace that came too soon, a later one at the comma before it.
+        self.assertRegex(stop[0], r"^`\.ctdd\.json` is not valid JSON, at line [23] "
+                                  r"column \d+: \w")
+        # Nothing in it is in force, which is why the scripts stop.
+        self.assertEqual("", self.guard.setting("CTDD_LAYERS", "layers", root))
+
+    def test_a_utf16_file_with_a_mistake_reports_the_mistake_not_the_encoding(self):
+        self.assertIn("not valid JSON",
+                      self.stops('{"layers": "Domain;Api",}', encoding="utf-16"))
+
+    def test_a_utf16_file_is_read(self):
+        root = settings_root('{"layers": "Domain;Api"}', encoding="utf-16")
+        self.assertEqual("Domain;Api", self.guard.setting("CTDD_LAYERS", "layers", root))
+        self.assertEqual(([], []), self.guard.settings_problems(root))
+
+    def test_an_empty_file_and_json_that_is_not_an_object_stop(self):
+        self.assertIn("is empty", self.stops("  " + chr(10)))
+        for text in ('["layers"]', '"layers"', "3"):
+            self.assertIn("not an object", self.stops(text), text)
+
+    def test_bytes_that_are_not_text_stop_and_say_so(self):
+        self.assertIn("is not text this plugin can decode",
+                      self.stops(bytes([0xFF, 0xFE, 0xFF])))
+
+    def test_something_there_that_cannot_be_opened_stops(self):
+        root = tempfile.mkdtemp()
+        os.mkdir(os.path.join(root, ".ctdd.json"))
+        stop, _notes = self.guard.settings_problems(root)
+        self.assertEqual(1, len(stop), stop)
+        self.assertIn("`.ctdd.json` could not be opened", stop[0])
+
+    def test_no_file_is_no_problem(self):
+        self.assertEqual(([], []), self.guard.settings_problems(tempfile.mkdtemp()))
+
+    # ------------------------------------------------ a key that is not read
+    def test_a_known_key_holding_the_wrong_kind_of_value_stops(self):
+        for text, said in (
+                ('{"layers": 3}', "`layers` is a number; it takes a string with `;` "
+                                  "between entries, or a JSON array of strings"),
+                ('{"harnesses": {"unit": 1}}', "`harnesses` is an object"),
+                ('{"testPatterns": true}', "`testPatterns` is true or false"),
+                ('{"planDir": ["docs/plans"]}', "`planDir` is an array; it takes one string"),
+                ('{"layers": ["Domain", 2]}', "entry 2 of `layers` is a number"),
+                ('{"layers": ["Domain", null]}', "entry 2 of `layers` is null")):
+            stop, notes = self.problems(text)
+            self.assertEqual(1, len(stop), text)
+            self.assertIn(said, stop[0])
+            self.assertEqual([], notes)
+
+    def test_every_unreadable_key_is_named_not_only_the_first(self):
+        stop, _notes = self.problems('{"layers": 3, "harnesses": false}')
+        self.assertEqual(2, len(stop), stop)
+
+    def test_null_and_an_empty_value_are_a_key_switched_off(self):
+        root = settings_root('{"harnesses": null, "layers": "", "testPatterns": []}')
+        self.assertEqual(([], []), self.guard.settings_problems(root))
+        for var, key in (("CTDD_HARNESSES", "harnesses"), ("CTDD_LAYERS", "layers"),
+                         ("CTDD_TEST_PATTERNS", "testPatterns")):
+            self.assertEqual("", self.guard.setting(var, key, root))
+
+    def test_a_misspelt_key_is_named_with_the_key_it_resembles(self):
+        stop, notes = self.problems('{"harness": "UnitTests;IntegrationTests", '
+                                    '"LAYERS": "Domain;Api"}')
+        self.assertEqual([], stop)
+        self.assertEqual(
+            ["`.ctdd.json` has a key this plugin does not read: `harness`. "
+             "Did you mean `harnesses`? It is ignored.",
+             "`.ctdd.json` has a key this plugin does not read: `LAYERS`. "
+             "Did you mean `layers`? It is ignored."], notes)
+
+    def test_an_unrelated_key_is_named_without_a_guess(self):
+        stop, notes = self.problems('{"owner": "platform", "layers": "Domain;Api"}')
+        self.assertEqual([], stop)
+        self.assertEqual(["`.ctdd.json` has a key this plugin does not read: `owner`. "
+                          "It is ignored."], notes)
+
+    def test_every_setting_a_script_reads_is_a_known_key_and_the_reverse(self):
+        """A key missing from the table would be reported as ignored while a
+        script reads it, and a key nothing reads would never be reported."""
+        here = Path(__file__).resolve().parent
+        sources = [here / "spec-edit-guard.py"] + sorted(
+            (here.parent / "scripts").glob("[!t]*.py"))
+        read = set()
+        for source in sources:
+            read |= set(re.findall(r'"CTDD_[A-Z_]+"\s*[,:]\s*"([A-Za-z]+)"',
+                                   source.read_text(encoding="utf-8")))
+        self.assertEqual(set(self.guard.SETTINGS), read)
+
+    # --------------------------------------------------------------- the hook
+    def test_the_hook_reads_what_it_can_and_says_nothing(self):
+        """It runs on every edit, so a typo in the settings must not break
+        editing: it falls back to its defaults and writes nothing to stderr."""
+        for text in ('{"testPatterns": "(^|/)quality/",}', '{"testPatterns": 3}',
+                     '{"harness": "UnitTests"}'):
+            r = run_guard(post("Edit", "src/Payments.Tests/CaptureTests.cs"),
+                          {"CLAUDE_PROJECT_DIR": settings_root(text)})
+            self.assertEqual(0, r.returncode, text)
+            self.assertEqual("", r.stderr.strip(), text)
+            self.assertIn("changed spec", r.stdout, text)
 
 
 if __name__ == "__main__":

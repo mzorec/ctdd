@@ -3,6 +3,9 @@
 import importlib.util
 import os
 import pathlib
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -164,3 +167,149 @@ class UnreadDiffTests(unittest.TestCase):
             _os.chdir(cwd)
         self.assertIsNone(text)
         self.assertIn("exited", why)
+
+
+SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "check-adr-drift.py")
+ADR = "0007-domain-has-no-framework-dependency.md"
+ADR_TEXT = "# ADR-0007: The domain does not depend on frameworks\n\n- Status: Accepted\n"
+REMOVED = ("--- a/src/Rule.cs\n+++ b/src/Rule.cs\n"
+           "-// ADR-0007: the domain does not depend on frameworks\n")
+
+
+class NamedAdrFolderTests(unittest.TestCase):
+    """The folder `adrDir` names is an ADR folder here too.
+
+    This script knew only folders named `adr` or `adrs`. In a repository
+    whose settings named `docs/decisions`, the ADR files were scanned as code,
+    so an ADR titled with its own number kept that marker in the tree and a
+    change that removed the last real one passed as `no ADR lost its last
+    marker`. `check-spec-surface.py --adr-dir` resolved the right folder in
+    the same tree.
+    """
+
+    FILES = {"docs/decisions/" + ADR: ADR_TEXT, "src/Rule.cs": "class Rule {}\n"}
+
+    def setUp(self):
+        saved = os.environ.pop("CTDD_ADR_DIR", None)
+        if saved is not None:
+            self.addCleanup(os.environ.__setitem__, "CTDD_ADR_DIR", saved)
+
+    def named(self, value='"docs/decisions"', files=None):
+        return tree(dict(files or self.FILES, **{".ctdd.json": '{"adrDir": %s}' % value}))
+
+    def _run(self, root, script=SCRIPT):
+        """From another directory: `--root` is what says where the settings
+        and the tree are."""
+        elsewhere = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, elsewhere, True)
+        env = dict(os.environ)
+        env.pop("CLAUDE_PROJECT_DIR", None)
+        return subprocess.run([sys.executable, script, "-", "--root", root], cwd=elsewhere,
+                              input=REMOVED, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", env=env)
+
+    def test_an_adr_in_the_named_folder_does_not_carry_its_own_marker(self):
+        root = self.named()
+        self.assertEqual(drift.orphaned(REMOVED, root), ["7"])
+        self.assertEqual(drift.adr_status("7", root), (ADR, "Accepted"))
+
+    def test_without_the_setting_that_folder_is_documentation(self):
+        """The control: the same tree, and the ADR file counts as a file that
+        still names the decision."""
+        root = tree(self.FILES)
+        self.assertEqual(drift.orphaned(REMOVED, root), [])
+        self.assertEqual(drift.adr_status("7", root), (None, None))
+
+    def test_the_environment_variable_names_the_folder_too(self):
+        root = tree(self.FILES)
+        os.environ["CTDD_ADR_DIR"] = "docs/decisions"
+        self.addCleanup(os.environ.pop, "CTDD_ADR_DIR", None)
+        self.assertEqual(drift.orphaned(REMOVED, root), ["7"])
+
+    def test_the_folder_is_found_however_the_settings_spell_it(self):
+        for value in ('"./docs/decisions/"', '"docs\\\\decisions"', '"Docs/Decisions"',
+                      '["docs/decisions"]'):
+            self.assertEqual(drift.orphaned(REMOVED, self.named(value)), ["7"], value)
+        capitalised = self.named(files={"Docs/Decisions/" + ADR: ADR_TEXT,
+                                        "src/Rule.cs": "class Rule {}\n"})
+        self.assertEqual(drift.orphaned(REMOVED, capitalised), ["7"])
+
+    def test_a_folder_inside_the_named_one_holds_adrs_too(self):
+        root = self.named(files={"docs/decisions/archive/" + ADR: ADR_TEXT,
+                                 "src/Rule.cs": "class Rule {}\n"})
+        self.assertEqual(drift.orphaned(REMOVED, root), ["7"])
+
+    def test_a_folder_that_only_starts_with_the_name_is_not_one(self):
+        root = self.named(files={"docs/decisions-log/notes.md": "Still follows ADR-0007.\n",
+                                 "src/Rule.cs": "class Rule {}\n"})
+        self.assertEqual(drift.orphaned(REMOVED, root), [])
+
+    def test_the_script_names_the_file_and_its_status(self):
+        r = self._run(self.named())
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("ADR-7 lost its last marker (%s, Status: Accepted)" % ADR, r.stdout)
+
+    def test_a_settings_file_that_cannot_be_read_is_not_a_pass(self):
+        r = self._run(self.named('"docs/decisions",'))
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("check-adr-drift: `.ctdd.json` is not valid JSON", r.stdout)
+        self.assertNotIn("no ADR lost its last marker", r.stdout)
+
+    def test_copied_without_its_sibling_it_says_the_setting_was_not_read(self):
+        """It still knows the convention, and says what it could not read
+        instead of passing over a folder it never looked for."""
+        alone = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, alone, True)
+        shutil.copy(SCRIPT, alone)
+        root = tree({"docs/adr/" + ADR: ADR_TEXT, "src/Rule.cs": "class Rule {}\n"})
+        r = self._run(root, os.path.join(alone, "check-adr-drift.py"))
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("`adrDir` was not read", r.stderr)
+
+
+class AdrFileNameTests(unittest.TestCase):
+    """An ADR file is found whatever its name leads with.
+
+    The status lookup anchored on a digit, so a file named `ADR-0007-slug.md`
+    was reported as `no ADR file found`, beside a decision that had just lost
+    its last marker, while `check-spec-surface.py` resolved the same file. The
+    two scripts now read a file name the same way, and a test holds them to
+    the same answer.
+    """
+
+    NAMES = ("0007-domain.md", "7-domain.md", "ADR-0007-domain.md", "adr_0007-domain.md",
+             "ADR0007-domain.md", "ADR-7.md")
+    NOT_THE_ADR = ("notes-on-0007.md", "ADR-template.md", "0070-other.md")
+
+    def setUp(self):
+        saved = os.environ.pop("CTDD_ADR_DIR", None)
+        if saved is not None:
+            self.addCleanup(os.environ.__setitem__, "CTDD_ADR_DIR", saved)
+        self.surface = drift._surface()
+
+    def test_a_file_named_with_the_adr_prefix_is_found_with_its_status(self):
+        root = tree({"docs/adr/ADR-0007-domain.md": ADR_TEXT})
+        self.assertEqual(drift.adr_status("7", root), ("ADR-0007-domain.md", "Accepted"))
+
+    def test_both_scripts_find_the_same_file_under_every_name(self):
+        for name in self.NAMES:
+            root = tree({"docs/adr/" + name: ADR_TEXT})
+            self.assertEqual(self.surface.resolve_adr("7", root), "docs/adr/" + name, name)
+            self.assertEqual(drift.adr_status("7", root)[0], name, name)
+
+    def test_a_file_that_is_not_that_adr_is_found_by_neither(self):
+        for name in self.NOT_THE_ADR:
+            root = tree({"docs/adr/" + name: ADR_TEXT})
+            self.assertIsNone(self.surface.resolve_adr("7", root), name)
+            self.assertEqual(drift.adr_status("7", root), (None, None), name)
+
+    def test_the_script_names_the_file_when_its_decision_loses_its_marker(self):
+        root = tree({"docs/adr/ADR-0007-domain.md": ADR_TEXT, "src/Rule.cs": "class Rule {}\n"})
+        env = dict(os.environ)
+        env.pop("CLAUDE_PROJECT_DIR", None)
+        r = subprocess.run([sys.executable, SCRIPT, "-", "--root", root], cwd=root,
+                           input=REMOVED, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", env=env)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("ADR-7 lost its last marker (ADR-0007-domain.md, Status: Accepted)",
+                      r.stdout)

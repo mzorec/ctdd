@@ -30,6 +30,12 @@ DOMAIN = "src/Shop.Domain/Orders/"
 PINS = ("Get_ReturnsTheOrder_ForAKnownNumber|GetOrder_ForAnUnknownNumber_Returns404|"
         "OpenApiDocument_PublishesNoEmptySummaryOrDescription")
 NL = chr(10)
+# The states in which the plan is written and nothing is approved yet.
+PLAN_ONLY = ("plan-only", "plan-heavy")
+UNIT = "tests/Shop.Application.UnitTests/Orders/"
+INTEGRATION = "tests/Shop.Application.IntegrationTests/Orders/"
+INVARIANTS = ("- invariants: `python tools/run.py test --filter ArchitectureTests` — expected: passes; "
+              "run at step 7.10 and at every checkpoint.")
 
 STRUCTURE = NL.join([
     "Structure",
@@ -113,7 +119,7 @@ def intended_change(plan):
 
 def plan_text(state):
     plan = read(os.path.join(FIX, "plan.md"))
-    if state == "plan-only":
+    if state in PLAN_ONLY:
         plan = plan.replace(
             " Hold-out declined by human: the expected values in the `Hold-out` block are yours to "
             "recompute by hand.",
@@ -123,6 +129,15 @@ def plan_text(state):
         plan = plan.replace(
             "- The hold-out was declined: the transition table rests on this session's reading plus "
             "your hand check of the listed values." + NL, "")
+        if state == "plan-heavy":
+            # The validator's and the handler's tests are planned in the
+            # integration project, beside a unit project of the same layer.
+            # Neither needs a database. Everything else a checker asks of a
+            # first gate is already there, so where those two sit is the only
+            # thing left to decide.
+            plan = plan.replace(UNIT, INTEGRATION)
+            plan = plan.replace(NL + "New-behavior tests" + NL, NL + STRUCTURE + NL + "New-behavior tests" + NL, 1)
+            plan = plan.replace(NL + "Verification" + NL, NL + "Verification" + NL + INVARIANTS + NL, 1)
         return plan
     if state != "red":
         # In the phase states the stubs never registered the route.
@@ -144,8 +159,14 @@ def plan_text(state):
 
 def build_repo(state, repo):
     overlay("base", repo)
+    config = {"layers": "Domain;Persistence;Application;Api"}
+    if state == "plan-heavy":
+        # The service has an integration project beside the Application unit
+        # project, and its configuration names the two kinds.
+        overlay("heavy", repo)
+        config["harnesses"] = "UnitTests;IntegrationTests"
     write(os.path.join(repo, ".gitignore"), "docs/plans/" + NL + "tools/.runlog" + NL + "tools/state.json" + NL)
-    write(os.path.join(repo, ".ctdd.json"), json.dumps({"layers": "Domain;Persistence;Application;Api"}) + NL)
+    write(os.path.join(repo, ".ctdd.json"), json.dumps(config) + NL)
     set_phase(repo, 0)
     git(repo, "init", "-q", "-b", "main")
     git(repo, "add", "-A")
@@ -153,7 +174,7 @@ def build_repo(state, repo):
     diff_base = git(repo, "rev-parse", "--short", "HEAD")
     git(repo, "checkout", "-q", "-b", "feature/set-order-state")
     logs = {}
-    if state == "plan-only":
+    if state in PLAN_ONLY:
         return diff_base, logs
 
     # 7.3 the contract, 7.6 the pins against the unchanged implementation.
@@ -232,9 +253,7 @@ def approve(plugin, repo, plan):
     if r.returncode != 0 and "invariant" in r.stdout.lower():
         # A plugin version that asks for an invariant suite gets the one this
         # service has: its layering tests.
-        plan = plan.replace(NL + "Verification" + NL,
-                            NL + "Verification" + NL + "- invariants: `python tools/run.py test --filter "
-                            "ArchitectureTests` — expected: passes; run at step 7.10 and at every checkpoint." + NL, 1)
+        plan = plan.replace(NL + "Verification" + NL, NL + "Verification" + NL + INVARIANTS + NL, 1)
         write(path, plan)
         r = checker(plugin, repo, PLAN_REL, "--gate")
     if r.returncode != 0:
@@ -328,7 +347,7 @@ def main():
     diff_base, logs = build_repo(state, repo)
     plan = plan_text(state)
     rev = token = None
-    if state == "plan-only":
+    if state in PLAN_ONLY:
         write(os.path.join(repo, PLAN_REL), plan)
     else:
         plan, rev, token = approve(plugin, repo, plan)

@@ -37,6 +37,12 @@ Approval record line to append.
 --approval verifies the approval record against the current revision, and
 refuses a plan that still asks a BLOCKING question, as --post-approval does.
 
+Placement. With `layers` named in `.ctdd.json`, lowest first, a new-behavior
+test must sit at the layer of the file that turns it green. With `harnesses`
+named too, lightest first, a test in a heavier harness must carry a `- needs:`
+line saying what it reaches there, wherever a lighter project of the same
+layer sits on disk beside its own. The altitude table prints the reason.
+
 --from-description keeps CI and the runtime pointing at the SAME artifact. The
 skill writes the canonical plan to docs/plans/<name>.md and puts a pointer in
 the MR description; without this mode CI would validate the description
@@ -64,11 +70,19 @@ touched test or contract surface contradicts "trivial" and fails, whatever
 the narration says. This is the deterministic counterweight the skills point
 at — an edit to an existing test or a contract file is never trivial.
 A diff that only *adds* a test is reported distinctly: that is the
-compressed bug-fix lane (short plan), not the trivial lane.
+compressed bug-fix lane (short plan), not the trivial lane. A diff that
+changes `.ctdd.json` contradicts it too: that file decides what the
+cross-check calls surface.
+
+Settings. `.ctdd.json` is read before anything else. A file that cannot be
+read, or a key this plugin reads holding a value it cannot, stops the run:
+`layers`, `harnesses`, `planDir` and the surface patterns would otherwise
+fall back to their defaults and every check would pass on them. A key this
+plugin does not read is named on stderr and ignored.
 
 Exit 0 = plan OK (sections present, or a trivial claim that survived the check).
 Exit 1 = sections missing, or a trivial claim contradicted by the diff.
-Exit 2 = usage or input error.
+Exit 2 = usage or input error, or a settings file that cannot be read.
 """
 
 import importlib.util
@@ -675,6 +689,90 @@ def layer_of(path, layers):
     return best
 
 
+# ----------------------------------------------------------------- harness
+# A layer has more than one test project, and the layer check reads them as
+# one. A real plan put seven handler tests in the integration project of a
+# layer whose unit project could hold them; test layer and owning layer
+# matched, so the table said nothing, and the human found it by reading
+# project names. What a test needs from the heavier project is a judgement no
+# checker makes, so this asks for it in the plan, per test, before the gate,
+# and prints the answer where the human reads it.
+# Intent-born, 2026-11: the owner asked for the check after that finding, with
+# `Tests by file` only a day old and no pilot run yet showing whether seeing
+# the project at the first gate was enough.
+def configured_harnesses(root):
+    """Test-project kinds, lightest first, from CTDD_HARNESSES or .ctdd.json
+    `harnesses` (`;`-separated, like `layers`). Empty when unconfigured, and
+    then nothing below runs."""
+    raw = os.environ.get("CTDD_HARNESSES", "").strip()
+    if not raw:
+        try:
+            raw = _load_surface()._setting("CTDD_HARNESSES", "harnesses", root)
+        except Exception:
+            raw = ""
+    return [k.strip() for k in raw.split(";") if k.strip()] if raw else []
+
+
+def lighter_beside(path, kinds, idx, root):
+    """The lighter kinds this test could have gone to instead: those with a
+    project on disk beside the test's own, found by renaming the directory
+    that carries the kind. `tests/Shop.Api.IntegrationTests/T.cs` has a
+    lighter one beside it only when `tests/Shop.Api.UnitTests` exists.
+
+    Asking a layer with one test project why its tests are not in another
+    would be asked of every test there and answered the same way each time.
+    Where the kind is in the file's own name (`order.integration.test.ts`) a
+    lighter file can sit in the same folder, so every lighter kind counts.
+    """
+    p = (path or "").replace("\\", "/")
+    m = re.search(r"(?<![A-Za-z0-9])" + re.escape(kinds[idx]) + r"(?![A-Za-z0-9])", p)
+    if not m:
+        return []
+    end = p.find("/", m.end())
+    if end == -1:
+        return list(kinds[:idx])
+    return [k for k in kinds[:idx]
+            if os.path.isdir(os.path.join(root, p[:m.start()] + k + p[m.end():end]))]
+
+
+_NO_REASON = re.compile(r"[`*_\s]*(?:none|nothing|n/?a|tbd|todo)[`*_]*\s*(?:$|[—–.,;:(-])", re.I)
+
+
+def gives_reason(text):
+    """A `needs:` line that says something. A dash, an unfilled
+    `<placeholder>` and the words a plan uses for nothing are not a reason:
+    `needs: none` is the plan saying the test belongs in the lighter project."""
+    said = (text or "").strip()
+    return bool(re.search(r"\w", said)) and not said.startswith("<") \
+        and not _NO_REASON.match(said)
+
+
+def approved_where(plan_file, approval):
+    """Was this test at this path in the revision the human approved?
+
+    Never, while the plan has no approval. Once it has one, a test is asked
+    about only where the plan has moved it or added it since: a repository
+    that names its harnesses in the middle of a change would otherwise fail
+    every plan already approved, for a reason that is not the plan's, and the
+    fix would move the revision and cost a gate. `Structure` and the
+    invariant suite are not asked of an approved plan for the same reason.
+    With no copy of the approved revision kept beside the plan there is
+    nothing to compare with, and nothing is asked. A test that gave a reason
+    in the approved revision still owes one: what was approved was the test
+    there for that reason, and deleting the line afterwards is not that.
+    """
+    if not last_approved(plan_file, approval):
+        return lambda name, path: False
+    was, _revision, _approved = gate_base(plan_file, approval)
+    if was is None:
+        return lambda name, path: True
+    then = strip_fences(was)
+    at = dict(lane_tests(then, "new-behavior"))
+    reasoned = {name for name, detail in lane_detail(then, "new-behavior").items()
+                if gives_reason(detail.get("needs", ""))}
+    return lambda name, path: name in at and at[name] == path and name not in reasoned
+
+
 def plan_tier(text):
     """large | medium | small — derived, so it cannot be claimed.
 
@@ -1009,14 +1107,14 @@ def _gate_visible(text):
 
 
 # ------------------------------------------------------------- test detail
-_SUB = re.compile(r"^\s+[-*]\s+[`*_]*(covers|path|red)[`*_]*\s*:\s*(.*?)\s*$", re.I)
+_SUB = re.compile(r"^\s+[-*]\s+[`*_]*(covers|path|red|needs)[`*_]*\s*:\s*(.*?)\s*$", re.I)
 _ANY_SUB = re.compile(r"^\s+[-*]\s")
 _CONSTRAINED = re.compile(r"constrained\s+by\b", re.I)
 
 
 def lane_detail(text, lane):
-    """{test name: {"covers": …, "path": …, "red": …}} for one evidence lane,
-    in order, a wrapped field joined to its first line."""
+    """{test name: {"covers": …, "path": …, "red": …, "needs": …}} for one
+    evidence lane, in order, a wrapped field joined to its first line."""
     out, name, field = {}, None, None
     for line in _lane_block(text, lane):
         if not line.strip():
@@ -1143,7 +1241,8 @@ def declared_renames(entries, base, text):
 def tests_delta(base, text, renames):
     """What changed in the two evidence lanes between two revisions of a plan,
     and whether the expectations outside them moved."""
-    d = {"added": [], "removed": [], "covers": [], "path": [], "red": [], "other": []}
+    d = {"added": [], "removed": [], "covers": [], "path": [], "red": [], "needs": [],
+         "other": []}
     for lane in ("new-behavior", "preservation"):
         b, c = lane_detail(base, lane), lane_detail(text, lane)
         d["added"] += [n for n in c if n not in b]
@@ -1151,7 +1250,10 @@ def tests_delta(base, text, renames):
         for name in c:
             if name not in b:
                 continue
-            for field in ("covers", "path", "red"):
+            # `needs:` is why a test sits in a heavier harness. Like `red:` it
+            # states no input and no expected value, so a change to it is named
+            # at the gate and leaves the lighter lane's condition alone.
+            for field in ("covers", "path", "red", "needs"):
                 was = b[name].get(field, "")
                 if field != "path":
                     was = _renamed_in_spans(was, renames)
@@ -1458,6 +1560,8 @@ def delta_presentation(base, text, plan_src, tier, base_rev, approved, altitude)
         out += ["Test files moved: " + ", ".join(d["path"]) + "."]
     if d["red"]:
         out += ["`red:` changed: " + ", ".join(d["red"]) + "."]
+    if d["needs"]:
+        out += ["`needs:` changed: " + ", ".join(d["needs"]) + "."]
     out += [""]
 
     def placing(t):
@@ -1476,6 +1580,17 @@ def main():
     if args and args[0] in ("-h", "--help"):
         print(__doc__.strip())
         return 0
+
+    # Before anything reads a setting. A settings file with one comma too many
+    # is no settings at all, and a JSON array where a string was expected read
+    # as an unset key: `layers` and `harnesses` went quiet and the plan that
+    # the harness check refuses passed with exit 0.
+    try:
+        reader = _load_surface()
+    except Exception:
+        reader = None
+    if reader is not None and reader.settings_stop("check-plan"):
+        return 2
 
     # --gate: emit the step 6.1 presentation instead of describing it in prose.
     gate = "--gate" in args
@@ -1655,6 +1770,17 @@ def main():
                       f"test/contract surface: {shown}{more}. An edit to an existing "
                       f"test or a contract file is never trivial; produce the full "
                       f"plan. (check-spec-surface has the complete inventory.)")
+            return 1
+        # The settings file decides what the loop above calls surface, so a
+        # diff that changes it was read under settings the diff itself wrote.
+        # This mode is handed paths and no base, so it cannot read the earlier
+        # ones; check-spec-surface --git does.
+        if any(surface.is_settings(p) for _s, old, new in entries for p in (old, new)):
+            print("check-plan: TRIVIAL CLAIM CONTRADICTED — the diff changes "
+                  "`.ctdd.json`, the settings that decide which paths are test, "
+                  "contract and ADR surface. A change to them is never trivial; "
+                  "produce the full plan. (check-spec-surface --git <base> lists "
+                  "what the earlier settings called surface.)")
             return 1
         # The lane has two conditions and this inspects one. 3.3 is path-based
         # and checkable; 3.4 (a changed limit, validation rule, generated file
@@ -2216,8 +2342,13 @@ def main():
             print("No test bullet names it. A misspelt claim orphans the real test "
                   "silently; fix the name on one side.")
             return 1
-        layers = configured_layers(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+        root = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+        layers = configured_layers(root)
+        kinds = configured_harnesses(root)
+        said = lane_detail(text, "new-behavior") if kinds else {}
+        there_at_approval = approved_where(plan_file, approval) if kinds else None
         rows, orphans, misplaced, unplaced = [], [], [], []
+        unkinded, unasked, unreasoned, settled = [], [], [], []
         for name, path in tests:
             own = owners.get(name, [])
             if not own:
@@ -2229,7 +2360,23 @@ def main():
             t_lbl = layers[t_idx] if t_idx is not None else "?"
             o_lbl = (", ".join(sorted({layers[i] for i in o_idx})) if o_idx
                      else ("—" if not own else "?"))
-            rows.append((name, t_lbl, o_lbl))
+            k_idx = layer_of(path, kinds) if kinds else None
+            reason = ""
+            if kinds and k_idx is None:
+                unkinded.append(name)
+            elif k_idx:
+                beside = lighter_beside(path, kinds, k_idx, root)
+                reason = said.get(name, {}).get("needs", "")
+                if gives_reason(reason):
+                    pass
+                elif not beside:
+                    unasked.append(name)
+                elif there_at_approval(name, path):
+                    settled.append(name)
+                else:
+                    unreasoned.append((name, kinds[k_idx], path, ", ".join(beside)))
+            rows.append((name, t_lbl, o_lbl, kinds[k_idx] if k_idx is not None else "?",
+                         reason if gives_reason(reason) else ""))
             if t_idx is not None and need is not None and t_idx != need:
                 misplaced.append((name, t_lbl, layers[need],
                                   "above" if t_idx > need else "below"))
@@ -2242,7 +2389,14 @@ def main():
                                  "no backticked path before `turns green:` "
                                  "resolves to a layer"))
         if tests:
-            body = [f"  {name}  {t_lbl} | {o_lbl}" for name, t_lbl, o_lbl in rows]
+            # Without `harnesses` every line here is what it was before the
+            # setting existed, header included.
+            body = []
+            for name, t_lbl, o_lbl, k_lbl, reason in rows:
+                body.append(f"  {name}  {t_lbl} · {k_lbl} | {o_lbl}" if kinds
+                            else f"  {name}  {t_lbl} | {o_lbl}")
+                if reason:
+                    body.append(f"      needs: {reason}")
             if not layers:
                 body.append("  (layers not configured — set `layers` in "
                             ".ctdd.json, lowest;…;highest, or CTDD_LAYERS, to "
@@ -2261,9 +2415,23 @@ def main():
                 body.append(f"  NOT PLACED — layers are configured and the "
                             f"comparison did not run for {len(unplaced)} test(s):")
                 body += [f"    {n} — {why}" for n, why in unplaced]
-            altitude_lines = ["Test altitude — test layer | owning layer"] + body + [""]
+            # Said, not skipped, for the reason NOT PLACED is: a `?` in the
+            # column reads like a test nobody had a question about.
+            if unkinded:
+                body.append(f"  HARNESS NOT NAMED — `harnesses` is configured and names "
+                            f"none in the path of {len(unkinded)} test(s): "
+                            + ", ".join(unkinded))
+            if unasked:
+                body.append(f"  (no reason is asked of {len(unasked)} test(s) in a heavier "
+                            f"harness: no lighter project sits beside theirs)")
+            if settled:
+                body.append(f"  (no reason is asked of {len(settled)} test(s) in a heavier "
+                            f"harness: they sit where the plan you approved had them)")
+            columns = ("test layer · harness | owning layer" if kinds
+                       else "test layer | owning layer")
+            altitude_lines = ["Test altitude — " + columns] + body + [""]
             if not gate:
-                print("check-plan: test altitude — test layer | owning layer")
+                print("check-plan: test altitude — " + columns)
                 for line in body:
                     print(line)
         if orphans:
@@ -2281,6 +2449,18 @@ def main():
             print("A test above its owner pays for a boundary it does not assert; "
                   "one below cannot reach the code. The lowest project that "
                   "observes the behaviour is the owning layer's.")
+            return 1
+        if unreasoned:
+            print("check-plan: HEAVIER HARNESS, NO REASON —")
+            for name, kind, path, beside in unreasoned:
+                print(f"  {name} sits in {kind} ({path}); the same layer has {beside} "
+                      f"beside it")
+            print("Move each test to the lighter project (its `path:` line, and its file "
+                  "under `Files likely to change`), or say under it what only the heavier "
+                  "one can reach: `  - needs: <a real database, a broker, the running host "
+                  "— what, and why a stand-in for it would not do>`. A test in the heavier "
+                  "harness pays for it on every run, and the reason is what the human "
+                  "judges at the gate.")
             return 1
     # Gate-reading cost, reported not enforced. Plans have run 5,432 (the canonical
     # example), 17,801, 31,448 and 57,321 characters; the last is ~31 minutes of

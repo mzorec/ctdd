@@ -120,6 +120,63 @@ CONTRACT_MSG = (
 
 CONFIG_NAME = ".ctdd.json"
 
+# Every key this plugin reads from the settings file, and the character that
+# separates the entries of a list written as one string, which is the only way
+# an environment variable can hold one. `None` is a key that takes one value.
+SETTINGS = {
+    "testPatterns": ";",
+    "contractPatterns": ";",
+    "layers": ";",
+    "harnesses": ";",
+    "adrDir": os.pathsep,
+    "planDir": None,
+}
+
+
+def parse_config(raw):
+    """(settings, problem) from the bytes of a settings file. `problem` is None
+    when they hold a JSON object, and otherwise says why they cannot be used."""
+    if not raw.strip():
+        return {}, ("is empty. Write the settings as a JSON object, or remove "
+                    "the file to run on defaults")
+    # PowerShell's `>` writes UTF-16LE and `Set-Content -Encoding UTF8`
+    # writes UTF-8+BOM. Both raised ValueError here and were swallowed, so
+    # every setting silently reverted to defaults on the platform this repo
+    # documents interpreter fallbacks for.
+    errors = []
+    for enc in ("utf-8-sig", "utf-16", "utf-8"):
+        try:
+            loaded = json.loads(raw.decode(enc))
+            break
+        except (UnicodeDecodeError, ValueError) as exc:
+            errors.append(exc)
+    else:
+        # The first encoding that decoded at all gives the error that is about
+        # the file's content; the others are about reading it as the wrong one.
+        said = next((e for e in errors if isinstance(e, json.JSONDecodeError)), None)
+        if said is None:
+            return {}, "is not text this plugin can decode. Save it as UTF-8"
+        return {}, (f"is not valid JSON, at line {said.lineno} column {said.colno}: "
+                    f"{said.msg}. A comma after the last entry, or none between "
+                    f"two entries, is the usual cause")
+    if not isinstance(loaded, dict):
+        return {}, "holds JSON that is not an object. The settings go between `{` and `}`"
+    return loaded, None
+
+
+def _read_config(root=None):
+    """(settings, problem) for the repository's settings file. A file that is
+    not there is no settings and no problem."""
+    root = root or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    try:
+        with open(os.path.join(root, CONFIG_NAME), "rb") as fh:
+            raw = fh.read()
+    except FileNotFoundError:
+        return {}, None
+    except OSError as exc:
+        return {}, f"could not be opened: {exc.strerror or exc}"
+    return parse_config(raw)
+
 
 def repo_config(root=None):
     """The repository's own CTDD settings, from `.ctdd.json` at its root.
@@ -137,43 +194,97 @@ def repo_config(root=None):
     # handful of times, and a cache keyed on the path alone remembers an empty
     # read from before the file existed — which is a stale-config bug in
     # exchange for nothing.
-    root = root or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
-    data = {}
-    try:
-        with open(os.path.join(root, CONFIG_NAME), "rb") as fh:
-            raw = fh.read()
-        # PowerShell's `>` writes UTF-16LE and `Set-Content -Encoding UTF8`
-        # writes UTF-8+BOM. Both raised ValueError here and were swallowed, so
-        # every setting silently reverted to defaults on the platform this repo
-        # documents interpreter fallbacks for.
-        for enc in ("utf-8-sig", "utf-16", "utf-8"):
-            try:
-                loaded = json.loads(raw.decode(enc))
-                break
-            except (UnicodeDecodeError, ValueError):
-                continue
-        else:
-            return {}
-        if isinstance(loaded, dict):
-            data = loaded
-    except (OSError, ValueError):
-        data = {}
-    return data
+    return _read_config(root)[0]
 
 
-def setting(env_var, config_key, root=None):
+def _as_text(key, value):
+    """A setting as the one string its readers split. A JSON array of strings
+    is read as those strings joined by the key's separator, so the two ways
+    of writing a list mean the same thing. Anything else is no setting here,
+    and `settings_problems` is where the scripts hear about it."""
+    if isinstance(value, str):
+        return value.strip()
+    sep = SETTINGS.get(key)
+    if sep and isinstance(value, list) and all(isinstance(v, str) for v in value):
+        return sep.join(value)
+    return ""
+
+
+def setting(env_var, config_key, root=None, config=None):
     """Environment first (a deliberate act for one run), then the repository
-    file (the durable decision), then nothing."""
+    file (the durable decision), then nothing. `config` stands in for the file
+    when the caller holds the settings of another revision of it."""
     raw = os.environ.get(env_var, "").strip()
     if raw:
         return raw
-    value = repo_config(root).get(config_key)
-    return value.strip() if isinstance(value, str) and value.strip() else ""
+    data = repo_config(root) if config is None else config
+    return _as_text(config_key, data.get(config_key))
 
 
-def patterns(env_var, default):
+_JSON_KIND = ((bool, "true or false"), (int, "a number"), (float, "a number"),
+              (dict, "an object"), (list, "an array"), (type(None), "null"))
+
+
+def _kind(value):
+    return next((word for kind, word in _JSON_KIND if isinstance(value, kind)), "a value")
+
+
+def _misuse(key, value):
+    """Why a known key's value cannot be read, or None. `null` and an empty
+    value are an unset key, which is how a setting is switched off on purpose."""
+    if value is None or isinstance(value, str):
+        return None
+    sep = SETTINGS[key]
+    if sep is None:
+        return f"`{key}` is {_kind(value)}; it takes one string"
+    if not isinstance(value, list):
+        return (f"`{key}` is {_kind(value)}; it takes a string with `{sep}` between "
+                f"entries, or a JSON array of strings")
+    for n, entry in enumerate(value, 1):
+        if not isinstance(entry, str):
+            return f"entry {n} of `{key}` is {_kind(entry)}; every entry is a string"
+        if sep in entry:
+            return (f"entry {n} of `{key}` contains `{sep}`, which separates entries "
+                    f"wherever this setting is read, so it would be read as two")
+    return None
+
+
+def settings_problems(root=None):
+    """(stop, notes) about the repository's settings file, for the scripts.
+
+    `stop` is what makes the file unusable, or a key this plugin reads
+    unreadable. Carrying on would run on defaults while the repository says
+    otherwise: a JSON array where a string was expected, or one comma too
+    many, switched `layers` and `harnesses` off and the run still exited 0.
+    `notes` are keys this plugin does not read. They are ignored, and said so,
+    because a misspelt key looks exactly like a setting that is switched on.
+
+    The hook never calls this. It reads the same file on every edit and stays
+    silent, because a typo in a settings file must not break editing.
+    """
+    data, problem = _read_config(root)
+    if problem:
+        return [f"`{CONFIG_NAME}` {problem}."], []
+    stop, notes = [], []
+    for key, value in data.items():
+        if key in SETTINGS:
+            why = _misuse(key, value)
+            if why:
+                stop.append(f"`{CONFIG_NAME}`: {why}.")
+            continue
+        import difflib
+        near = difflib.get_close_matches(key.lower(), [k.lower() for k in SETTINGS],
+                                         n=1, cutoff=0.7)
+        meant = next((k for k in SETTINGS if near and k.lower() == near[0]), None)
+        notes.append(f"`{CONFIG_NAME}` has a key this plugin does not read: `{key}`."
+                     + (f" Did you mean `{meant}`?" if meant else "") + " It is ignored.")
+    return stop, notes
+
+
+def patterns(env_var, default, config=None):
     raw = setting(env_var, {"CTDD_TEST_PATTERNS": "testPatterns",
-                            "CTDD_CONTRACT_PATTERNS": "contractPatterns"}.get(env_var, ""))
+                            "CTDD_CONTRACT_PATTERNS": "contractPatterns"}.get(env_var, ""),
+                  config=config)
     values = default if not raw else [p.strip() for p in raw.split(";") if p.strip()]
     if raw and not values:
         # ";" is truthy, discards the default, and splits to zero segments — no

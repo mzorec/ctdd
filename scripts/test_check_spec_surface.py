@@ -9,6 +9,7 @@ diff can see.
 """
 
 import os
+import shutil
 import subprocess
 import sys
 import re
@@ -1079,6 +1080,16 @@ class PlanComparisonTests(unittest.TestCase):
         r = self._run(plan, self.PROD + [".ctdd.json"])
         self.assertEqual([], self._listed(r.stdout, "Production files with no"),
                          r.stdout)
+
+    def test_a_settings_change_is_not_unplanned_surface(self):
+        """It is listed once, under its own heading. Listed again as surface
+        the plan never named, the requester's own edit to the file would stop
+        every change at 8.5 until it was committed."""
+        plan = self._plan(["Set an order's state."] + self._files_section(self.PROD))
+        r = self._run(plan, self.PROD + [".ctdd.json"])
+        self.assertEqual([], self._listed(r.stdout, "Unplanned surface"), r.stdout)
+        self.assertIn("Workflow settings (1):", r.stdout)
+        self.assertEqual(1, r.returncode, r.stdout)
 
     def test_baseline_dirty_files_need_no_intended_change_row(self):
         """Dirty before the change began is the requester's, not this plan's.
@@ -4330,7 +4341,9 @@ class AdrMarkerTests(unittest.TestCase):
 
     def test_a_malformed_config_is_ignored_rather_than_fatal(self):
         """This file is read on every hook invocation. A typo in it must not
-        break editing."""
+        break editing, so the reader the hook shares ignores a file it cannot
+        parse. The scripts stop on it before they get this far
+        (`SettingsFileStopTests`)."""
         import importlib.util
         spec = importlib.util.spec_from_file_location(
             "css6", str(Path(__file__).resolve().parent / "check-spec-surface.py"))
@@ -4436,6 +4449,320 @@ class AdrMarkerTests(unittest.TestCase):
         self.assertIn("check-spec-surface:", r.stdout)
         self.assertNotIn("Traceback", r.stderr)
 
+
+SETTING_VARS = ("CTDD_TEST_PATTERNS", "CTDD_CONTRACT_PATTERNS", "CTDD_ADR_DIR")
+EARLIER = "  (surface under the settings the diff base had, not under these)"
+
+
+def project(files):
+    """A throwaway project root holding {relative path: text}."""
+    root = Path(tempfile.mkdtemp())
+    for rel, text in files.items():
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8", newline=NL)
+    return root
+
+
+def inventory(root, *args, text=None):
+    """Run the script in `root`, with no setting left over from this shell."""
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
+    for var in SETTING_VARS:
+        env.pop(var, None)
+    return subprocess.run([sys.executable, SCRIPT, *args], cwd=str(root), input=text,
+                          capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", timeout=60, env=env)
+
+
+class SettingsFileStopTests(unittest.TestCase):
+    """A settings file the scripts cannot read is no settings at all, and the
+    run used to carry on with the defaults and pass: a comma after the last
+    entry dropped `testPatterns`, `adrDir` and everything beside them, and the
+    inventory exited 0 on the default patterns. Now a file that does not
+    parse, or a key this plugin reads holding a value it cannot, stops the run
+    and names the fix. A key the plugin does not read is a note on stderr.
+    """
+
+    DIFF = "M" + TAB + "src/Orders/Total.cs" + NL
+
+    def test_a_file_that_is_not_json_stops_the_inventory(self):
+        root = project({".ctdd.json": '{"testPatterns": "(^|/)quality/",}'})
+        r = inventory(root, "-", text=self.DIFF)
+        self.assertEqual(2, r.returncode, r.stdout + r.stderr)
+        self.assertRegex(r.stdout, r"check-spec-surface: `\.ctdd\.json` is not valid "
+                                   r"JSON, at line 1 column \d+: \w")
+        self.assertIn("not a pass", r.stdout)
+        self.assertNotIn("Verdict", r.stdout)
+
+    def test_the_same_diff_is_inventoried_once_the_file_parses(self):
+        """The control: the stop is about the file, not about having one."""
+        root = project({".ctdd.json": '{"testPatterns": "(^|/)quality/"}'})
+        r = inventory(root, "-", text=self.DIFF)
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertIn("Verdict: no test/contract/ADR surface touched", r.stdout)
+
+    def test_it_stops_before_naming_an_adr_folder(self):
+        """Carrying on would answer `docs/adr`, the folder for a repository
+        that has none yet, and the next ADR would be written beside the series
+        the unreadable file was pointing at."""
+        root = project({".ctdd.json": '{"adrDir": "docs/decisions",}',
+                        "docs/decisions/0001-first.md": "# 1. First" + NL})
+        r = inventory(root, "--adr-dir")
+        self.assertEqual(2, r.returncode, r.stdout + r.stderr)
+        self.assertIn("is not valid JSON", r.stdout)
+        self.assertNotIn("docs/adr", r.stdout)
+
+    def test_a_known_key_holding_a_number_stops(self):
+        root = project({".ctdd.json": '{"testPatterns": 3}'})
+        r = inventory(root, "-", text=self.DIFF)
+        self.assertEqual(2, r.returncode, r.stdout + r.stderr)
+        self.assertIn("check-spec-surface: `.ctdd.json`: `testPatterns` is a number",
+                      r.stdout)
+
+    def test_a_key_the_plugin_does_not_read_is_a_note_and_changes_nothing(self):
+        plain = inventory(project({".ctdd.json": '{"layers": "Domain;Api"}'}),
+                          "-", text=self.DIFF)
+        noted = inventory(project({".ctdd.json": '{"layers": "Domain;Api", '
+                                                 '"testPattern": "(^|/)quality/"}'}),
+                          "-", text=self.DIFF)
+        self.assertEqual("", plain.stderr.strip())
+        self.assertEqual(plain.stdout, noted.stdout)
+        self.assertEqual(plain.returncode, noted.returncode)
+        self.assertEqual("check-spec-surface: `.ctdd.json` has a key this plugin does "
+                         "not read: `testPattern`. Did you mean `testPatterns`? It is "
+                         "ignored.", noted.stderr.strip())
+
+    def test_patterns_written_as_an_array_classify(self):
+        root = project({".ctdd.json": '{"testPatterns": ["(^|/)quality/", "(^|/)checks/"]}'})
+        r = inventory(root, "-", text="M" + TAB + "checks/order_rules.py" + NL)
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("  - modified: checks/order_rules.py", r.stdout)
+
+    def test_without_the_hook_beside_it_the_run_ends_on_the_refusal_it_always_gave(self):
+        """The settings are read through the hook's module. Without it there
+        is nothing to ask about them, and the patterns cannot be loaded."""
+        home = Path(tempfile.mkdtemp())
+        (home / "scripts").mkdir()
+        shutil.copy(SCRIPT, home / "scripts")
+        r = subprocess.run([sys.executable, str(home / "scripts" / "check-spec-surface.py"), "-"],
+                           input=self.DIFF, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=60, cwd=str(home))
+        self.assertEqual(2, r.returncode, r.stdout + r.stderr)
+        self.assertIn("could not load the authoritative patterns", r.stderr)
+
+
+class SettingsChangeTests(unittest.TestCase):
+    """The settings file decides what this script calls a test, a contract or
+    an ADR, and the diff being judged can change it. A change that rewrote
+    `testPatterns` and weakened an assertion in the folder the old value named
+    was reported as `no test/contract/ADR surface touched`, exit 0, with the
+    settings file counted among the other files and not named. A first
+    settings file whose `testPatterns` left out the default folders did the
+    same, because an override replaces the defaults.
+
+    A change to the file is now listed on its own and counts as spec surface,
+    and where the base is known every path is classified under the settings it
+    had as well as under the current ones.
+    """
+
+    TEST = "quality/order_rules.py"
+    BASE = {".ctdd.json": '{"testPatterns": "(^|/)quality/"}' + NL,
+            TEST: "def check_total():" + NL + "    assert total() == 12" + NL,
+            "src/rule.py": "def total():" + NL + "    return 12" + NL}
+
+    def _git(self, repo, *args):
+        return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                               "-c", "core.autocrlf=false", *args], cwd=str(repo),
+                              capture_output=True, text=True, encoding="utf-8", errors="replace")
+
+    def _repo(self, files):
+        repo = project(files)
+        self._git(repo, "init", "-q", "-b", "main")
+        self._git(repo, "add", "-A")
+        self._git(repo, "commit", "-q", "-m", "base")
+        return repo
+
+    def _write(self, repo, rel, text):
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel).write_text(text, encoding="utf-8", newline=NL)
+
+    def _weaken(self, repo, test=TEST):
+        self._write(repo, test, "def check_total():" + NL + "    assert total() >= 0" + NL)
+        self._write(repo, "src/rule.py", "def total():" + NL + "    return 13" + NL)
+
+    # ------------------------------------------------ a list of paths, no base
+    def test_a_settings_change_is_listed_and_counts_as_spec_surface(self):
+        paths = "M" + TAB + ".ctdd.json" + NL + "M" + TAB + "src/Orders/Total.cs" + NL
+        r = inventory(project({}), "-", text=paths)
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn(NL + "Workflow settings (1):" + NL + "  - modified: .ctdd.json" + NL,
+                      r.stdout)
+        self.assertIn("so it counts as spec surface", r.stdout)
+        self.assertIn("Verdict: SPEC SURFACE TOUCHED", r.stdout)
+        # Listed once, under its own heading, and not among the other files.
+        self.assertIn("Other files touched: 1", r.stdout)
+        self.assertIn("given a list of paths and no base", r.stdout)
+
+    def test_the_same_paths_without_it_touch_nothing(self):
+        r = inventory(project({}), "-", text="M" + TAB + "src/Orders/Total.cs" + NL)
+        self.assertEqual(0, r.returncode, r.stdout + r.stderr)
+        self.assertNotIn("Workflow settings", r.stdout)
+
+    def test_it_counts_wherever_it_sits_and_however_it_changed(self):
+        for line, said in (
+                ("A" + TAB + "services/orders/.ctdd.json", "added: services/orders/.ctdd.json"),
+                ("D" + TAB + ".ctdd.json", "deleted: .ctdd.json"),
+                ("R100" + TAB + ".ctdd.json" + TAB + "settings.json",
+                 "renamed: .ctdd.json -> settings.json"),
+                ("R100" + TAB + "config/ctdd.json" + TAB + ".ctdd.json",
+                 "renamed: config/ctdd.json -> .ctdd.json")):
+            r = inventory(project({}), "-", text=line + NL)
+            self.assertEqual(1, r.returncode, line)
+            self.assertIn("  - " + said + NL, r.stdout)
+            self.assertIn("Other files touched: 0", r.stdout)
+
+    # ----------------------------------------------------------- with a base
+    def test_a_test_the_rewritten_settings_no_longer_name_is_still_listed(self):
+        repo = self._repo(self.BASE)
+        self._weaken(repo)
+        self._write(repo, ".ctdd.json", '{"testPatterns": "(^|/)checks/"}' + NL)
+        r = inventory(repo, "--git", "HEAD")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("Test surface (1):" + NL + "  - modified: " + self.TEST + EARLIER + NL,
+                      r.stdout)
+        self.assertIn("  - modified: .ctdd.json" + NL, r.stdout)
+        self.assertIn("Other files touched: 1", r.stdout)
+        self.assertIn("classified under the settings the diff base had as well", r.stdout)
+
+    def test_without_a_settings_change_nothing_is_said_about_settings(self):
+        """The control: the same weakened test, listed as it always was."""
+        repo = self._repo(self.BASE)
+        self._weaken(repo)
+        r = inventory(repo, "--git", "HEAD")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("  - modified: " + self.TEST + NL, r.stdout)
+        self.assertNotIn("Workflow settings", r.stdout)
+        self.assertNotIn("diff base had", r.stdout)
+
+    def test_a_first_settings_file_that_leaves_out_the_defaults_hides_nothing(self):
+        repo = self._repo({"tests/test_rule.py": self.BASE[self.TEST],
+                           "src/rule.py": self.BASE["src/rule.py"]})
+        self._weaken(repo, "tests/test_rule.py")
+        self._write(repo, ".ctdd.json", '{"testPatterns": "(^|/)checks/"}' + NL)
+        r = inventory(repo, "--git", "HEAD")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("  - added: .ctdd.json" + NL, r.stdout)
+        self.assertIn("  - modified: tests/test_rule.py" + EARLIER + NL, r.stdout)
+
+    def test_a_settings_change_that_reclassifies_nothing_still_counts(self):
+        """`harnesses` is not a pattern. Removing it switches a plan check
+        off, and nothing else in the diff would say so."""
+        repo = self._repo(dict(self.BASE, **{
+            ".ctdd.json": '{"testPatterns": "(^|/)quality/", "harnesses": "Unit;Integration"}'}))
+        self._write(repo, "src/rule.py", "def total():" + NL + "    return 13" + NL)
+        self.assertEqual(0, inventory(repo, "--git", "HEAD").returncode)
+        self._write(repo, ".ctdd.json", '{"testPatterns": "(^|/)quality/"}' + NL)
+        r = inventory(repo, "--git", "HEAD")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("Workflow settings (1):", r.stdout)
+        self.assertNotIn("Test surface", r.stdout)
+        self.assertIn("Other files touched: 1", r.stdout)
+
+    def test_the_base_is_found_however_the_diff_names_it(self):
+        repo = self._repo(self.BASE)
+        self._git(repo, "checkout", "-q", "-b", "feature")
+        self._weaken(repo)
+        self._write(repo, ".ctdd.json", '{"testPatterns": "(^|/)checks/"}' + NL)
+        self._git(repo, "add", "-A")
+        self._git(repo, "commit", "-q", "-m", "change")
+        for form in (["main"], ["main...HEAD"], ["main..HEAD"], ["main", "HEAD"]):
+            r = inventory(repo, "--git", *form)
+            self.assertEqual(1, r.returncode, form)
+            self.assertIn("  - modified: " + self.TEST + EARLIER + NL, r.stdout, form)
+
+    def test_an_adr_in_the_folder_the_old_settings_named_is_still_adr_surface(self):
+        adr = "docs/decisions/0007-domain-has-no-framework-dependency.md"
+        repo = self._repo({".ctdd.json": '{"adrDir": "docs/decisions"}' + NL,
+                           adr: "# 7. The domain does not depend on frameworks" + NL})
+        self._write(repo, ".ctdd.json", '{"adrDir": "docs/adr"}' + NL)
+        self._write(repo, adr, "# 7. The domain may depend on one framework" + NL)
+        r = inventory(repo, "--git", "HEAD")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("ADR surface (1):" + NL + "  - modified: " + adr + EARLIER + NL, r.stdout)
+
+    def test_a_contract_the_rewritten_settings_no_longer_name_is_still_listed(self):
+        spec = "api-specs/orders.yaml"
+        repo = self._repo({".ctdd.json": '{"contractPatterns": "(^|/)api-specs/"}' + NL,
+                           spec: "openapi: 3.0.0" + NL})
+        self._write(repo, ".ctdd.json", '{"contractPatterns": "(^|/)wire/"}' + NL)
+        self._write(repo, spec, "openapi: 3.1.0" + NL)
+        r = inventory(repo, "--git", "HEAD")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("Contract surface (1):" + NL + "  - modified: " + spec + EARLIER + NL,
+                      r.stdout)
+
+    def test_renames_are_read_under_the_earlier_settings_too(self):
+        repo = self._repo(dict(self.BASE, **{
+            "quality/leaving.py": "def check_tax():" + NL + "    assert tax() == 2" + NL,
+            "src/arriving.py": "def check_fee():" + NL + "    assert fee() == 1" + NL}))
+        self._git(repo, "mv", self.TEST, "quality/renamed_rules.py")
+        self._git(repo, "mv", "quality/leaving.py", "src/leaving.py")
+        self._git(repo, "mv", "src/arriving.py", "quality/arriving.py")
+        self._write(repo, ".ctdd.json", '{"testPatterns": "(^|/)checks/"}' + NL)
+        r = inventory(repo, "--git", "HEAD")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        for said in (
+                "renamed: " + self.TEST + " -> quality/renamed_rules.py",
+                "renamed OUT of test surface: quality/leaving.py -> src/leaving.py "
+                "(treat as a deletion until shown otherwise)",
+                "renamed INTO test surface: src/arriving.py -> quality/arriving.py"):
+            self.assertIn("  - " + said + EARLIER + NL, r.stdout)
+
+    def test_a_project_that_is_one_folder_of_the_repository_reads_its_own_settings(self):
+        """The diff's paths start at the repository's top; the settings file
+        the base had is the one in the project's folder."""
+        repo = self._repo({"services/orders/" + rel: text for rel, text in self.BASE.items()})
+        home = repo / "services" / "orders"
+        self._weaken(home)
+        self._write(home, ".ctdd.json", '{"testPatterns": "(^|/)checks/"}' + NL)
+        r = inventory(home, "--git", "HEAD")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("  - modified: services/orders/.ctdd.json" + NL, r.stdout)
+        self.assertIn("  - modified: services/orders/" + self.TEST + EARLIER + NL, r.stdout)
+
+    def test_a_diff_that_names_no_revision_says_the_base_is_not_known(self):
+        """Limited to paths and naming no revision, the diff starts from the
+        index, which holds no earlier settings to read. Said, and the change
+        to the file still counts."""
+        repo = self._repo(self.BASE)
+        self._weaken(repo)
+        self._write(repo, ".ctdd.json", '{"testPatterns": "(^|/)checks/"}' + NL)
+        r = inventory(repo, "--git", "--", ".")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("Workflow settings (1):", r.stdout)
+        self.assertIn("Git could not say which revision this diff starts from", r.stdout)
+
+    def test_patterns_the_base_could_not_compile_count_as_the_defaults(self):
+        repo = self._repo({".ctdd.json": '{"testPatterns": "("}' + NL,
+                           "tests/test_rule.py": self.BASE[self.TEST],
+                           "src/rule.py": self.BASE["src/rule.py"]})
+        self._weaken(repo, "tests/test_rule.py")
+        self._write(repo, ".ctdd.json", '{"testPatterns": "(^|/)checks/"}' + NL)
+        r = inventory(repo, "--git", "HEAD")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("  - modified: tests/test_rule.py" + EARLIER + NL, r.stdout)
+
+    def test_settings_the_base_could_not_read_count_as_the_defaults(self):
+        """At that revision the file was ignored and the defaults were what
+        ran, so they are what the earlier reading is."""
+        repo = self._repo({".ctdd.json": '{"testPatterns": "(^|/)quality/",}' + NL,
+                           "tests/test_rule.py": self.BASE[self.TEST],
+                           "src/rule.py": self.BASE["src/rule.py"]})
+        self._weaken(repo, "tests/test_rule.py")
+        self._write(repo, ".ctdd.json", '{"testPatterns": "(^|/)quality/"}' + NL)
+        r = inventory(repo, "--git", "HEAD")
+        self.assertEqual(1, r.returncode, r.stdout + r.stderr)
+        self.assertIn("  - modified: tests/test_rule.py" + EARLIER + NL, r.stdout)
 
 
 if __name__ == "__main__":

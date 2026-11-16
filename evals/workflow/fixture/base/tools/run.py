@@ -166,7 +166,7 @@ def verdict(method):
         return True, ""
     known_existing = {"Get_ReturnsTheOrder_ForAKnownNumber", "GetOrder_ForAnUnknownNumber_Returns404",
                       "Domain_Should_Not_Reference_Application", "Expand_QueuesOneMessagePerRoute",
-                      "Deliver_SkipsARouteWithNoClient"}
+                      "Deliver_SkipsARouteWithNoClient", "Expand_WritesOneQueueRowPerRoute"}
     if method in known_existing:
         return True, ""
     # A test this harness has no recording for has no implementation behind it.

@@ -2,7 +2,7 @@
 
 *(Proposed — not yet built.)* That holds for every item below with no **Status** line. Each of those is here for a yes or a no.
 
-Seven items were chosen by the owner the same day and are built in 0.57.0: g, h, i, k, l, n and the diff stat of finding 16. Building h and i also covered c, as far as its rule went. Each of the eight carries a **Status** line saying what was built and where its shape differs from the proposal. The other eleven are still proposals.
+Seven items were chosen by the owner the same day and are built in 0.57.0: g, h, i, k, l, n and the diff stat of finding 16. Building h and i also covered c, as far as its rule went. A ninth, m, was built in 0.58.0 the next day, on the owner's word. Each of the nine carries a **Status** line saying what was built and where its shape differs from the proposal. The other ten are still proposals.
 
 They come from the same session as 0.57.0: one real change that went through ten gate presentations and nine amendments, labelled A1 to A9 below in the order they happened. Evidence marked "eval" is from `evals/workflow/RESULTS-2026-11-14.md`.
 
@@ -147,6 +147,7 @@ One limit holds for every lane proposed here. A lane never applies when a test e
 - **Proposal.** `.ctdd.json` names a harness kind per test project, and the altitude table prints it.
 - **Risk.** New configuration that each repository has to fill in.
 - **Recommendation: wait and see whether `Tests by file` is enough.**
+- **Status: built in 0.58.0, and one rule wider.** The owner asked for it the next day, without waiting. `.ctdd.json` takes `harnesses`, the kinds lightest first, where the proposal had a kind per project, and the altitude table prints the kind beside the layer. The wider part: a new-behavior test in a heavier harness must carry a `- needs:` line wherever a lighter project of the same layer sits on disk beside its own, and `check-plan.py` refuses the plan without one. A layer with one test project is not asked, and neither is a test that sits where an approved plan had it. Measured with `m-heavier-harness`: 2 of 5 assertions before, 5 of 5 after (`evals/workflow/RESULTS-2026-11-15.md`).
 
 ### n. Step 5.5 displaced by what `--plan-dir` prints
 

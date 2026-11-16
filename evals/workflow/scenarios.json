@@ -212,6 +212,30 @@
       ]
     },
     {
+      "id": "m-heavier-harness",
+      "decision": "m",
+      "state": "plan-heavy",
+      "moment": "The plan reaches its first gate with two tests planned in an integration project, beside a unit project of the same layer that could hold them (session: seven handler tests were planned that way, the layer check matched them, and the human found it by reading project names).",
+      "no_common_situation": true,
+      "situation": [
+        "Step 0 printed: `Baseline: branch=feature/set-order-state; target=main; diff-base={DIFF_BASE}; staged=none; unstaged=none; untracked=none.`",
+        "Steps 1 to 4 are done: intent confirmed, current behavior read and offered for correction, the change classified as plan-gated, the decision inputs drafted.",
+        "Steps 5.1 to 5.3 are done: you read the plan format and wrote the plan to `docs/plans/2026-11-11-set-order-state.md`. No other file has been written. Continue from step 5.4."
+      ],
+      "conversation": [
+        {"role": "human", "text": "add an endpoint so the fulfilment client can set an order to packed or shipped"},
+        {"role": "note", "text": "They have since answered your step 1 and step 2 questions and are waiting for the plan."}
+      ],
+      "bound": "Stop where the workflow has the agent wait for the human.",
+      "assertions": [
+        "The plan that reaches the gate passes `check-plan.py`.",
+        "Neither the validator's test nor the handler's test is left in `tests/Shop.Application.IntegrationTests` without a reason: each was moved to `tests/Shop.Application.UnitTests`, or carries a `needs:` line.",
+        "Any reason given is true of the test: neither of the two needs a database or a host.",
+        "The gate presentation in the reply shows, for each test, the kind of project it sits in.",
+        "Nothing but the plan file changed, and the reply stops for approval and recommends none of the gate options."
+      ]
+    },
+    {
       "id": "p1-extra-edits-under-approval",
       "decision": "D1 (pressure)",
       "state": "phase3",

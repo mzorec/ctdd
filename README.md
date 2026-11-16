@@ -109,7 +109,7 @@ This matters, so it gets said plainly: almost everything in this plugin is *prom
 Six pieces are actually deterministic:
 
 - **the spec-edit hook**, when a team enables it, and even then it's advisory, not blocking;
-- **`check-plan.py`**, checks a plan for missing sections, and given a diff, mechanically contradicts a "trivial" claim when the diff actually touched tests or contracts;
+- **`check-plan.py`**, checks a plan for missing sections, and given a diff, mechanically contradicts a "trivial" claim when the diff actually touched tests, contracts or the settings file;
 - **`check-spec-surface.py`**, lists exactly which tests, contracts, and ADRs a diff touches, including the renames and deletions the hook can't see;
 - **`gen-authz-matrix.py`**, derives an authorization matrix from the OpenAPI contract, and with `--check`, fails CI when a new endpoint ships without its rows;
 - **`check-redstate.py`**, verifies from a captured test run that new tests were seen failing before implementation (or with `--expect-pass`, that preservation tests were seen passing);
@@ -153,15 +153,22 @@ An environment variable is set in one shell. It is absent on a fresh clone, on a
   "planDir": "docs/plans",
   "testPatterns": "(^|/)quality/;\\.robot$",
   "contractPatterns": "(^|/)api-specs/",
-  "layers": "Domain;Application;Infrastructure.Persistence;Infrastructure;Api"
+  "layers": "Domain;Application;Infrastructure.Persistence;Infrastructure;Api",
+  "harnesses": "UnitTests;IntegrationTests"
 }
 ```
 
 `layers` lists the repository's layers lowest first, as they appear in project and folder names. With it set, `check-plan.py` checks that every new-behavior test sits at the layer of the production file that turns it green — a test one layer above pays for a boundary it does not assert. Without it the check still requires each test to be claimed, by exact name, in an `Implementation slices` `turns green:` clause, and prints the test/owner table without judging placement.
 
-Environment variables still win when set, for a single deliberate run. Everything else reads the file. A malformed or missing file is ignored rather than fatal — it is read on every hook invocation, and a typo in it must not break editing.
+`harnesses` lists the kinds of test project lightest first, as they appear in project and folder names. A layer often has two, and the layer check reads them as one place. With `harnesses` set, the same table shows the harness beside the layer, and a new-behavior test in a heavier harness must say what it needs from it, on a `- needs:` line under the test, wherever a lighter project of the same layer sits on disk beside the test's own. Without that line `check-plan.py` exits 1 and prints the line to add, and the reason is printed at the gate, where the human judges it. A layer with one test project is not asked, and neither is a test that sits where a plan already approved had it. Without the setting nothing changes.
 
-`adrDir` matters most. The plugin finds ADR directories by the `adr`/`adrs` convention, and both **reads** markers from and **writes** new ADRs into the one it resolves. A repository holding both `adr/` and `docs/adr/` is ambiguous: rather than guess, `check-spec-surface.py --adr-dir` stops and asks you to declare it, because writing into the wrong one restarts the numbering beside an existing series.
+Environment variables still win when set, for a single deliberate run. Everything else reads the file. A list can be written either way: as one string with `;` between entries, as above, or as a JSON array, `"harnesses": ["UnitTests", "IntegrationTests"]`.
+
+A file written slightly wrong used to switch checks off without a word, so the scripts stop on one. `check-plan.py`, `check-spec-surface.py` and `check-adr-drift.py` exit 2 and say what to fix when the file is not valid JSON, where a comma after the last entry is the usual cause, or when a key they read holds a value they cannot read. A key the plugin does not read is named on stderr, with the key it resembles when there is one, and ignored. The hook is the exception: it runs on every edit, so it reads what it can and stays silent, because a typo in this file must not break editing.
+
+A change to the file is reported too, because it decides what the checks read. `check-spec-surface.py` lists it under `Workflow settings` and counts it as spec surface. With `--git <base>` it classifies every path under the settings the base had as well as the current ones, so rewriting `testPatterns` cannot take a changed test out of the inventory. `check-plan.py --diff` refuses a trivial claim over a diff that changes the file.
+
+`adrDir` matters most. The plugin finds ADR directories by the `adr`/`adrs` convention, and both **reads** markers from and **writes** new ADRs into the one it resolves. `check-adr-drift.py` reads the setting too: the folder it names is where that script finds an ADR's status, and its files are not scanned as code that still carries a marker. A repository holding both `adr/` and `docs/adr/` is ambiguous: rather than guess, `check-spec-surface.py --adr-dir` stops and asks you to declare it, because writing into the wrong one restarts the numbering beside an existing series.
 
 Two limits worth knowing. Edits made through Bash (`sed -i`, heredocs, `patch`, `git apply`) never reach the hook: it covers the Edit/Write lane only, deliberately, because scanning Bash command strings would false-fire on every test *run*. And a plugin update may replace the plugin directory, so re-check that your copied `hooks.json` survived after an upgrade.
 
