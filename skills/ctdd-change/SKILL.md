@@ -44,7 +44,7 @@ Do not infer an order among these condition-triggered rules.
 | Contract change | Exact repo-relative contract path listed in the plan | Valid OpenAPI, JSON Schema, protobuf, AsyncAPI, Pact, or repository-native contract syntax. |
 | Test change | Exact repo-relative test path listed in the plan | Behavior-level test names and assertions produced under `ctdd-tests`. |
 | Test evidence logs | `${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>` followed by `.verify.log` (verification), `.redstate.log` (red state), `.pinstate.log` (pin state before), `.pinstate-after.log` (pin state after) | Complete raw output from the named run. |
-| Review packet | `stdout` | The exact field list in `references/execution.md`, assembled at step 9. |
+| Review packet | `stdout`, and `${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.packet.md` | The exact field list in `references/execution.md`, assembled at step 9. |
 | Colocated note | A path from the plan's `Colocated notes` | One sentence; when writing one, read `references/colocated-notes.md` first. |
 ## Ordered change workflow
 Execute steps 0–10 in ascending order. Until an Approval record exists for the current plan revision, the only file you write is the step 5 plan file; an amendment voids the previous one. An amendment re-enters at the lowest invalidated step, or in the lighter lane when the checker's delta block grants it.
@@ -96,7 +96,7 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
    10. Run them before implementing new behavior, save the complete run to the red-state path. Verify red state with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-redstate.py" <red-log> --tests-from <plan-path>`.
    11. Stop on any state other than intended red; read `references/execution.md` now even if read earlier.
    12. Stop unless the approved line says `red pause: skip`; read `references/execution.md` now even if read earlier.
-8. **Implement and verify.** Enter: step 7 satisfied every applicable evidence lane, and at least one lane named a test — pin pass for every preservation pin the plan names, intended red for every new-behavior test the plan names — and 7.12 released any pause, or step 3.6 fired. Emit: verification results. Stop: 8.6, 8.7.
+8. **Implement and verify.** Enter: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" <plan-path> --next` names step 8 or a later one, and 7.12 released any pause, or step 3.6 fired. Emit: verification results. Stop: 8.6, 8.7.
    1. Implement only the behavior approved at step 6, or nothing beyond the declared diff in the trivial lane. Replace any compile-only stub from step 7 with that implementation, and add no other production code.
    2. Do not weaken, delete, skip, or retarget an assertion to obtain green.
    3. When no phase remains, run the contract validator, the focused tests, the broader suite, and the build in the current turn, saving each to the verification path; re-run every preservation pin named in the plan to the pin-state-after path; record `NOT RUN — <reason>` for anything absent, and never reuse an earlier turn's output.
@@ -113,5 +113,7 @@ Execute steps 0–10 in ascending order. Until an Approval record exists for the
 10. **Write a colocated note only when triggered.** Enter: step 9 printed the packet, and before 9.4 hands over the diff. Emit: Colocated note, or nothing.
    1. Write no note for behavior already expressed by a test or contract.
    2. Otherwise, when the change leaves one universal rule, deliberate gap, or durable external fact, write one Colocated note.
+
+Invoked as `resume <plan-path>`: run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" <plan-path> --next` and enter at the step its `Next:` line names, never at step 0; the steps before it left their evidence beside the plan.
 ## Evidence and break points
 Classify every run as **pin pass**, **intended red**, **compile red**, **wrong red**, **premature green**, **pin fail**, **broken pin**, or **weakened green**. Only pin pass and intended red authorize step 8. A checker that cannot run, cannot read its input, or exits `2` leaves its claim unverified. `references/execution.md` carries the required action for every state and break point, the packet assembly, and the standalone-ADR procedure.

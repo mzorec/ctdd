@@ -4,20 +4,21 @@ This repo *is* the CTDD Claude Code plugin. This file is for an agent doing meta
 
 ## What this is
 
-A skills-based plugin that brings Contract- and Test-Driven Development to backend work: four skills (`ctdd-change`, `ctdd-tests`, `ctdd-review`, `ctdd-routing`), an advisory hook, and six deterministic Python scripts. The skills route and instruct; the scripts are the only mechanical enforcement; CI (a README recipe) is where "when run" becomes "always run." A skill can never *reject* — it can only route. Keep that boundary in mind when someone asks the plugin to "enforce" something.
+A skills-based plugin that brings Contract- and Test-Driven Development to backend work: four skills (`ctdd-change`, `ctdd-tests`, `ctdd-review`, `ctdd-routing`), two hooks (one on, one opt-in), and six deterministic Python scripts. The skills route and instruct; the scripts are the only mechanical enforcement; CI (a README recipe) is where "when run" becomes "always run." A skill can never *reject* — it can only route. Keep that boundary in mind when someone asks the plugin to "enforce" something.
 
 ## Layout
 
 - `skills/{ctdd-change,ctdd-tests,ctdd-review,ctdd-routing}/SKILL.md` — the four skills. `ctdd-change` owns the change workflow and the plan gate; `ctdd-tests` owns test craft; `ctdd-review` owns spec-level review; `ctdd-routing` decides which of the three owns a piece of work, and which companion skills from other plugins are superseded. It writes nothing itself.
-- `scripts/` — `check-spec-surface.py` (diff → tests/contracts/ADRs inventory), `check-plan.py` (plan linter + `--diff` trivial-vs-surface cross-check), `gen-authz-matrix.py` (OpenAPI → authz matrix), `check-redstate.py` (verifies named new tests were observed failing before implementation), `check-adr-drift.py` (ADRs whose last `ADR-NNNN` marker a diff removes), `gen-baseline.py` (emits step 0's diff base, refusing when the base is not ours to pick). Each has a `test_*.py` beside it.
+- `scripts/` — `check-spec-surface.py` (diff → tests/contracts/ADRs inventory), `check-plan.py` (plan linter + `--diff` trivial-vs-surface cross-check + `--next`, where a change stands from the files beside its plan), `gen-authz-matrix.py` (OpenAPI → authz matrix), `check-redstate.py` (verifies named new tests were observed failing before implementation), `check-adr-drift.py` (ADRs whose last `ADR-NNNN` marker a diff removes), `gen-baseline.py` (emits step 0's diff base, refusing when the base is not ours to pick). Each has a `test_*.py` beside it.
 - `hooks/spec-edit-guard.py` (+ `test_`, `hooks.json.example`) — advisory PreToolUse reminder on spec-surface edits.
+- `hooks/ctdd-resume.py` (+ `test_`) — SessionStart note after a compaction or a resume: the plan, the evidence on disk, the next step from `check-plan.py --next`, and to invoke `ctdd-change` again as `resume <plan-path>`. It ships enabled in `hooks/hooks.json`; the spec-edit guard stays opt-in (its entries are merged from `hooks.json.example`). The plugin is installed from this checkout as a directory marketplace, so any edit to `hooks/hooks.json` goes live in every new session that has the plugin on, pilot sessions included: what it registers is the owner's decision.
 - `evals/*.json` — trigger cases per skill (incl. pressure scenarios).
 - `docs/` — `ctdd-in-practice.md` (first-timers), `ctdd-in-depth.md` (rationale + status pin), `backlog.md` (deferred ideas + triggers).
 - `.claude-plugin/{plugin.json,marketplace.json}` — manifest + marketplace entry.
 
 ## Non-negotiable rules for changing this repo
 
-**1. Behavior changes ship with tests in the same commit.** This is a hard-learned rule: a `check-plan.py` regex fix once broke a fixture silently because the change had no test. Any edit to a script's behavior updates or adds cases in its `test_*.py`. Run `python3 -m pytest scripts/ hooks/ -q` — it must stay green (currently **681 passing, 1 skipped** across the six script suites and the hook; count by running them, not by grepping `def test_`). `pytest` is not installed on the pilot machine — `python -m unittest scripts.test_<name>` runs each suite there.
+**1. Behavior changes ship with tests in the same commit.** This is a hard-learned rule: a `check-plan.py` regex fix once broke a fixture silently because the change had no test. Any edit to a script's behavior updates or adds cases in its `test_*.py`. Run `python3 -m pytest scripts/ hooks/ -q` — it must stay green (currently **743 passing, 1 skipped** across the six script suites and the two hook suites; count by running them, not by grepping `def test_`). `pytest` is not installed on the pilot machine — `python -m unittest scripts.test_<name>` runs each suite there.
 
 **2. One definition of "spec surface."** `check-spec-surface.py` holds the test/contract/ADR patterns. `check-plan.py` and the hook import or mirror that one definition (env overrides included) — never fork a second copy. If you touch the patterns, touch them there.
 

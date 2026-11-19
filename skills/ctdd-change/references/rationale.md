@@ -12,7 +12,7 @@ Sections are named after the rule they explain; they carry no line numbers, whic
 
 ## Guardrail placement
 
-- Guardrails appeared before the workflow because post-compaction loading retained the opening part of the skill.
+- Guardrails appeared before the workflow because post-compaction loading retained the opening part of the skill. That holds only for a skill the compaction re-attaches: one invoked before a resume is dropped whole at the next compaction (pilot finding #59), which the resume hook and `check-plan.py --next` answer.
 
 ## Evidence and current-turn runs
 

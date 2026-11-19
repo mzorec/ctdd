@@ -699,6 +699,11 @@ class ChangeSkillStructureTests(unittest.TestCase):
     # measured boundary, and on claude-opus-5 the list of results 9.1 resolves
     # to still is not. 18 characters remain under this ceiling, so the next
     # sentence in front of 9.1 is a displacement or a decision.
+    # Same ceiling in v0.60.0, the owner's decision: step 8's `Enter:` became
+    # a `--next` check (-92) and the packet's Output contract row names the
+    # file it is saved to (+57). The stop now starts at 14,047, 53 inside the
+    # ceiling. The resume clause sits after step 10, where it costs this
+    # nothing: it is read when the skill is invoked again, with the whole body.
     MAX_PROBE_OFFSET_CHARS = 14_100
 
     MUST_SURVIVE = {
@@ -1703,7 +1708,22 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # No displacement was found for those: the only candidate was one clause
     # of worked-change.md naming `--post-approval`, 33 characters, and
     # dropping it would have taken that flag out of every surface.
-    MAX_PLAN_GATED_METHODOLOGY_CHARS = 51700
+    #
+    # 51,700 — 52,050 in v0.60.0, the owner's decision on 2026-11-19: +421
+    # for three of the nine decisions that followed a session losing the
+    # whole skill at a compaction. The body is +198: a resume clause after
+    # step 10 (+233) and the packet's file in its Output contract row (+57),
+    # with step 8's `Enter:` displaced into a `--next` check (250 -> 158,
+    # -92), because the script now judges what that sentence listed: each
+    # evidence lane, at least one named test, and a recorded release.
+    # execution.md is +223: the release lines the 7.12 and 8.7 rows have
+    # the agent append (+86, +91), and where step 9.3 saves the packet (+46).
+    # The owner approved 52,000 on an estimate of about 300; it came to 341,
+    # because the script-anchoring guard requires the full command in step 8
+    # and the two release rows were drafted after the estimate. Told of the
+    # 41 over, the owner chose to keep 52,050 the same day rather than take
+    # a displacement for it.
+    MAX_PLAN_GATED_METHODOLOGY_CHARS = 52050
     """ctdd-tests keeps craft work (de-flaking, altitude, renaming) out of the
     plan gate, while every consumer of the diff — this script, the hook, and
     ctdd-review — reads any modified test as a changed requirement. Both are
@@ -3164,9 +3184,22 @@ class CrossSkillAgreementTests(unittest.TestCase):
                 "Enter: step 3 did not fire 3.6, or 3.7 retracted it.",
             "step 8 does not assume a plan in the trivial lane":
                 "in the trivial lane take only 8.3's pin re-run and 8.6 as `n/a`",
-            "step 8 needs at least one named test":
-                "Enter: step 7 satisfied every applicable evidence lane, and at "
-                "least one lane named a test",
+            # v0.60.0: what this sentence listed - every applicable lane, at
+            # least one named test - is judged by `--next`, which runs the
+            # plan checker (NO EVIDENCE LANE) and the red-state checker first.
+            "step 8 is entered when the files say so":
+                'Enter: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" '
+                '<plan-path> --next` names step 8 or a later one, and 7.12 released '
+                'any pause, or step 3.6 fired.',
+            # A compaction can drop the whole skill (finding #59). Invoked again
+            # with `resume`, it must not start the change over.
+            "a resumed change enters where the files say":
+                'Invoked as `resume <plan-path>`: run `python3 "${CLAUDE_PLUGIN_ROOT}/'
+                'scripts/check-plan.py" <plan-path> --next` and enter at the step its '
+                '`Next:` line names, never at step 0',
+            "the packet is saved where --next looks for it":
+                "| Review packet | `stdout`, and "
+                "`${CLAUDE_PROJECT_DIR}/<plan-dir>/<name>.packet.md` |",
         }
         for label, sentence in sentences.items():
             self.assertIn(sentence, t, f"the rule '{label}' no longer reads as written")
@@ -3677,7 +3710,12 @@ class CrossSkillAgreementTests(unittest.TestCase):
         neither door and had no route into implementation."""
         t = (self._skills() / "ctdd-change" / "SKILL.md").read_text(encoding="utf-8")
         step8 = t.split("\n8. **Implement and verify.**", 1)[1].split("\n9. ", 1)[0]
-        self.assertIn("every applicable evidence lane", step8)
+        # v0.60.0: the door is `--next`, which skips a lane the plan names no
+        # test for. That a pin-only plan gets through is now tested where the
+        # rule lives, `NextStepTests.test_a_plan_with_pins_only_reaches_step_eight`;
+        # what is left here is that the step defers to it.
+        self.assertIn('Enter: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" '
+                      '<plan-path> --next` names step 8 or a later one', step8)
         self.assertNotIn("Enter: step 7 recorded intended red, or step 3.6 fired", t)
 
     def test_a_record_with_surplus_columns_is_malformed(self):

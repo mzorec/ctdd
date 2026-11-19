@@ -626,9 +626,11 @@ def names_from_plan(path, want_pins=False, paths=None, constrained=None):
     return list(dict.fromkeys(found)), skipped, unparsed
 
 
-def main():
+def main(argv=None):
+    """`argv` stands in for the command line when another checker runs this
+    one in its own process, as `check-plan.py --next` does."""
     reclassified = False
-    args = sys.argv[1:]
+    args = list(sys.argv[1:] if argv is None else argv)
     if not args:
         print("check-redstate: missing log argument. Pass a log path or '-' for stdin.",
               file=sys.stderr)

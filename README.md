@@ -43,7 +43,7 @@ From a local clone, point the marketplace at the checkout directory instead:
 /plugin install ctdd
 ```
 
-The three skills load automatically and need nothing beyond Claude Code. The optional hook and the CI scripts need Python 3 (see [Requirements](#requirements)).
+The three skills load automatically and need nothing beyond Claude Code. The hooks and the CI scripts need Python 3 (see [Requirements](#requirements)).
 
 You can also skip the plugin entirely and copy `skills/*` into a project's `.claude/skills/`, or into `~/.claude/skills/` to have them everywhere.
 
@@ -51,7 +51,7 @@ You can also skip the plugin entirely and copy `skills/*` into a project's `.cla
 
 - Claude Code with plugin support.
 - The three skills need nothing else.
-- The optional spec-edit hook and the CI scripts need a Python 3 launcher on your `PATH`. On Linux that's `python3`; on Windows it's usually `python` or `py`, and you'll need to adjust the commands accordingly. The only third-party dependency is PyYAML, and only for the authz-matrix script.
+- The two hooks and the CI scripts need a Python 3 launcher on your `PATH`. The resume hook is on as soon as the plugin is; where no launcher works it says nothing, and the skills run without it. On Linux that's `python3`; on Windows it's usually `python` or `py`, and you'll need to adjust the commands accordingly. The only third-party dependency is PyYAML, and only for the authz-matrix script.
 
 A word of warning on that last point: if a CTDD script ever seems to do nothing, check that `python3` actually resolves to a working interpreter. On Windows, `python3` sometimes resolves to a Store shortcut that prints a message and exits without running anything, which looks like success and isn't. The skills fall back to following the plan by hand when Python is missing, but the *deterministic* checks only run when a real Python 3 is on the path.
 
@@ -119,18 +119,13 @@ The only genuinely *blocking* gate in the whole workflow is Claude Code's plan m
 
 There's one honest gap in that list. `check-plan.py` and `check-spec-surface.py` run in CI (see the recipe below), but `check-redstate.py` doesn't: a red-state log belongs to one specific change, and CI can't generically know which log goes with the diff in front of it. So red state is deterministic *when you run it* and reviewed at the gate, but it isn't enforced by the pipeline the way the surface checks are. Closing that properly would need the plan to name its own evidence files, which isn't built yet.
 
-## The hook (optional, off by default)
+## The spec-edit hook (optional, off by default)
 
-The plugin ships a hook (`hooks/spec-edit-guard.py`) that is **not active when you install**. The skills are the product; the hook is an opt-in backstop for teams that want a mechanical reminder that doesn't depend on a skill staying in the model's attention over a long session. It stays dormant until you turn it on, so a company-wide install never interrupts a colleague who didn't ask for it.
+The plugin ships two hooks. The resume note, described at the end of this section, is on. The spec-edit hook (`hooks/spec-edit-guard.py`) is **not active when you install**. The skills are the product; the hook is an opt-in backstop for teams that want a mechanical reminder that doesn't depend on a skill staying in the model's attention over a long session. It stays dormant until you turn it on, so a company-wide install never interrupts a colleague who didn't ask for it.
 
 When enabled, it does two things. When an existing test file is modified, it injects a reminder that a changed test is a changed spec, say which requirement changed and why, because a test weakened to make failing code pass is a spec regression. When a contract file is touched, it injects a boundary-change reminder to state backward compatibility. Creating a *new* test file stays silent; only modifying an existing one fires.
 
-To enable it for your team:
-
-```
-cp hooks/hooks.json.example hooks/hooks.json
-/reload-plugins
-```
+To enable it for your team, add the `PostToolUse` and `PreToolUse` entries of `hooks/hooks.json.example` to `hooks/hooks.json`, beside the resume note's `SessionStart` entry that already ships there, and run `/reload-plugins`. Copying the example over `hooks/hooks.json` would switch the resume note off.
 
 That works from a clone. **For a marketplace install it does not**, and the reason is worth knowing: the plugin lives under `~/.claude/plugins/cache/<version>/`, a fresh directory per version whose predecessor is reclaimed some days after an update — so a file you copy there is both awkward to find and temporary. Either keep a clone for the teams that want the hook, or **merge the `hooks` key from `hooks.json.example` into your project's `.claude/settings.json`** and point it at the plugin's script with `${CLAUDE_PLUGIN_ROOT}`. A standalone `.claude/hooks.json` is not a location Claude Code reads — hooks load from `~/.claude/settings.json`, `.claude/settings.json`, `.claude/settings.local.json`, a plugin's own `hooks/hooks.json`, and skill or subagent frontmatter, and nowhere else, so a file copied there yields a hook that silently never runs. Whether `${CLAUDE_PLUGIN_ROOT}` expands inside project settings is not documented either way: check that the hook fires once before relying on it.
 
@@ -172,7 +167,27 @@ A change to the file is reported too, because it decides what the checks read. `
 
 Two limits worth knowing. Edits made through Bash (`sed -i`, heredocs, `patch`, `git apply`) never reach the hook: it covers the Edit/Write lane only, deliberately, because scanning Bash command strings would false-fire on every test *run*. And a plugin update may replace the plugin directory, so re-check that your copied `hooks.json` survived after an upgrade.
 
-To turn it back off, delete `hooks/hooks.json` (the `.example` stays) and `/reload-plugins`.
+To turn it back off, remove those two entries from `hooks/hooks.json` and `/reload-plugins`.
+
+### After a compaction or a resume: the resume note (on by default)
+
+A long change outlives its context. When Claude Code compacts a conversation it re-attaches the skills it still knows were invoked, and that is not always all of them: a session that was resumed loses, at its next compaction, the skills it invoked before the resume. In one real change two compactions each brought back `ctdd-tests` and not `ctdd-change`, and what followed ran from the summary. The red pause came out without its content, no verification was saved, and step 9 never ran.
+
+`hooks/ctdd-resume.py` is a `SessionStart` hook for the `compact` and `resume` sources, registered in the plugin's own `hooks/hooks.json`, so it runs wherever the plugin is enabled. After a compaction or a resume it finds the plan the session's tools named last, asks `check-plan.py --next` where that change stands, and adds a short note of at most 1,500 characters to the context: the plan, its approved revision, the evidence on disk, the next step, and to invoke `ctdd-change` again, as `resume <plan-path>`, before anything else. `ctdd-change` invoked that way enters at the step `--next` names instead of step 0. The resume is where the loss is decided, so the note comes then too: a skill invoked again after a resume survives the next compaction.
+
+It reads and never writes. It says nothing unless `ctdd-change` ran in the session, and nothing when the change is done or when something it needs cannot be read. Its command tries `py -3` and then `python3`, and says nothing if neither runs, so the same line serves Windows with Git Bash, Linux and macOS. To turn it off, remove its `SessionStart` entry from `hooks/hooks.json` and `/reload-plugins`.
+
+You can ask the same question by hand at any point of a change:
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" docs/plans/<name>.md --next
+```
+
+It prints one `Evidence:` line and one `Next:` line, read from the plan, its approval log and the files steps 7 to 9 save beside it: the pin and red-state logs, the pre-implementation diff, `## Intended change`, the release of the pause and of each phase that the agent records in the approval log, the verification, the pins re-run after the change, and the review packet. It runs no test and writes nothing. Step 8 is entered on what it says.
+
+A release line quotes the human's message as the agent wrote it down, so `--next` reports a release as recorded, not as verified, the same trust an approval record carries.
+
+What was checked and what was not: the hook was run by Claude Code itself after a real `/compact` and after a real resume, on one CLI version on Windows with Git Bash. It has not been run on Linux or macOS, or on a Windows machine without Git Bash, where the command's shell syntax would not parse.
 
 ## Hold-out acceptance tests
 
@@ -277,11 +292,14 @@ ctdd/
 │   ├── ctdd-in-depth.md               ← the full argument: reasoning, weaknesses, prior art
 │   └── backlog.md                     ← deferred ideas and the triggers that would justify building them
 ├── hooks/
-│   ├── hooks.json.example             ← copy to hooks.json to enable (off by default)
+│   ├── hooks.json                     ← registers the resume note (on by default)
+│   ├── hooks.json.example             ← the spec-edit reminder's entries, to merge into hooks.json (off by default)
 │   ├── spec-edit-guard.py             ← the spec-edit reminder
-│   └── test_spec_edit_guard.py        ← its test suite
+│   ├── test_spec_edit_guard.py        ← its test suite
+│   ├── ctdd-resume.py                 ← the note after a compaction or a resume
+│   └── test_ctdd_resume.py            ← its test suite
 ├── scripts/
-│   ├── check-plan.py                  ← lints a plan; --diff cross-checks trivial claims
+│   ├── check-plan.py                  ← lints a plan; --diff cross-checks trivial claims; --next says where a change stands
 │   ├── check-spec-surface.py          ← lists which tests/contracts/ADRs a diff touches
 │   ├── gen-authz-matrix.py            ← authz matrix from OpenAPI (--check is a CI drift gate)
 │   ├── check-redstate.py              ← verifies new tests were seen failing before implementation

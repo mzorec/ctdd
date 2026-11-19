@@ -5,6 +5,7 @@ exemption, the newline bypass fix, and the new trivial-vs-diff cross-check.
 Run:  python3 scripts/test_check_plan.py   (or via pytest)
 """
 
+import importlib.util
 import json
 import os
 import re
@@ -2977,6 +2978,476 @@ class AmendmentGateTests(unittest.TestCase):
             "  - red: the stub has no rules.",
             "  - red: none at step 7 — the honest stub already rejects it; constrained by the validator slice.")))
         self.assertIn("constrained by a later slice: t", b)
+
+
+# A plan with both evidence lanes and a red pause, and the runner lines that
+# verify each lane for it.
+NEXT_PLAN = LANE_PLAN.replace("red pause: skip", "red pause: pause") \
+    .replace("- t — boundary", "- rejects_note_over_500 — boundary") \
+    .replace("turns green: `t`", "turns green: `rejects_note_over_500`") \
+    .replace("Preservation pins — must pass before and after: none" + NL,
+             "Preservation pins — must pass before and after:" + NL
+             + "- currently_accepts_note_of_500 — the limit as it is today" + NL
+             + "  - path: `tests/a_tests.cs`." + NL)
+PIN_GREEN = "  Passed Shop.Tests.a_tests.currently_accepts_note_of_500 [1 ms]" + NL
+PIN_RED = "  Failed Shop.Tests.a_tests.currently_accepts_note_of_500 [1 ms]" + NL
+NEW_RED = "  Failed Shop.Tests.a_tests.rejects_note_over_500 [3 ms]" + NL
+NEW_GREEN = "  Passed Shop.Tests.a_tests.rejects_note_over_500 [3 ms]" + NL
+INTENDED = (NL + "## Intended change" + NL + NL + "| File | Intended change |" + NL
+            + "| --- | --- |" + NL + "| `a.cs` | Accepts the lower amount. |" + NL)
+# The human's release of the 7.12 pause, as `execution.md` has the agent record it.
+RELEASE = 'Pause released by: "looks right, implement it"'
+
+
+class NextStepTests(unittest.TestCase):
+    """`--next` says where a change stands, from the files beside its plan.
+
+    One real session lost the whole skill text at a compaction: the harness
+    re-attached another skill and not this one. It went on from what the
+    summary remembered, so the red pause came out without its content, no
+    verification was saved and step 9 never ran. Every step that matters
+    leaves a file beside the plan, and `--next` reads them: one `Evidence:`
+    line, and one `Next:` line naming the first step whose evidence is
+    missing. Each test below leaves on disk what a change has at one point
+    and reads the two lines back.
+    """
+
+    STEPS = ("approval", "pins", "red", "prered", "intended", "release", "verify",
+             "pins-after", "packet")
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, str(self.dir), True)
+        self.plan = self.dir / "p.md"
+
+    def run_plan(self, *args):
+        env = dict(os.environ)
+        for var in ("CTDD_LAYERS", "CTDD_HARNESSES", "CLAUDE_PROJECT_DIR"):
+            env.pop(var, None)
+        return subprocess.run([sys.executable, SCRIPT, *args], capture_output=True,
+                              text=True, encoding="utf-8", errors="replace", timeout=60,
+                              env=env, cwd=str(self.dir))
+
+    def put(self, name, text):
+        (self.dir / name).write_text(text, encoding="utf-8", newline=NL)
+
+    def approve(self):
+        r = self.run_plan("p.md", "--gate")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        rev = re.search(r"plan revision ([0-9a-f]{12})", r.stdout).group(1)
+        tok = re.search(r"Gate token: ([0-9a-f]{8})", r.stdout).group(1)
+        self.put("p.approval.log", f'Approved by: "approve" (typed at the gate); '
+                                   f'plan: p.md@{rev}; gate-token: {tok}' + NL)
+        return rev
+
+    def reach(self, upto, plan=NEXT_PLAN):
+        """Leave on disk what a change has once every step up to and including
+        `upto` is done. Returns the approved revision, when there is one."""
+        self.put("p.md", plan)
+        done = self.STEPS[:self.STEPS.index(upto) + 1] if upto else ()
+        rev = self.approve() if "approval" in done else None
+        if "pins" in done:
+            self.put("p.pinstate.log", PIN_GREEN)
+        if "red" in done:
+            self.put("p.redstate.log", NEW_RED)
+        if "prered" in done:
+            self.put("p.prered.diff", "diff --git a/tests/a_tests.cs b/tests/a_tests.cs" + NL)
+        if "intended" in done:
+            self.put("p.md", plan + INTENDED)
+        if "release" in done:
+            with open(self.dir / "p.approval.log", "a", encoding="utf-8", newline=NL) as fh:
+                fh.write(RELEASE + NL)
+        if "verify" in done:
+            self.put("p.verify.log", "build: ok" + NL + NEW_GREEN + PIN_GREEN)
+        if "pins-after" in done:
+            self.put("p.pinstate-after.log", PIN_GREEN)
+        if "packet" in done:
+            self.put("p.packet.md", "Business requirement: allow the lower amount" + NL)
+        return rev
+
+    def next(self):
+        """(run, the Evidence line, the Next line)"""
+        r = self.run_plan("p.md", "--next")
+        lines = [l for l in r.stdout.split(NL) if l.strip()]
+        self.assertEqual(2, len(lines), r.stdout + r.stderr)
+        self.assertTrue(lines[0].startswith("Evidence: "), r.stdout)
+        self.assertTrue(lines[1].startswith("Next: "), r.stdout)
+        return r, lines[0], lines[1]
+
+    # ------------------------------------------------------- one row per step
+    def test_a_plan_that_fails_its_checks_is_fixed_first(self):
+        self.reach(None, NEXT_PLAN.replace(
+            "BLOCKING — I will not guess: none — answered before approval" + NL, ""))
+        r, evidence, nxt = self.next()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("plan ✗", evidence)
+        self.assertTrue(nxt.startswith("Next: 5.4: fix the plan and re-run check-plan"), nxt)
+        # The refusal's own heading, not the note check-plan printed before it.
+        self.assertIn("It says: MISSING sections for a medium plan", nxt)
+
+    def test_a_plan_with_no_approval_goes_to_the_gate(self):
+        self.reach(None)
+        r, evidence, nxt = self.next()
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("plan ✓ · approval ✗ · pins before ✗", evidence)
+        self.assertTrue(nxt.startswith("Next: 6: the gate. Print the gate presentation"), nxt)
+
+    def test_a_plan_amended_since_its_approval_goes_back_to_the_gate(self):
+        old = self.reach("red")
+        self.put("p.md", with_amendment(
+            NEXT_PLAN.replace("500 pass", "500 and fewer pass"),
+            "- A1. Old: 500 pass. New: 500 and fewer pass."))
+        r, evidence, nxt = self.next()
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn(f"approval ✗ (approves {old}, the plan is now ", evidence)
+        self.assertTrue(nxt.startswith(f"Next: 6: the gate. Revision {old} was approved"), nxt)
+        self.assertIn("record what changed under `Amendments` first", nxt)
+
+    def test_an_amendment_with_no_entry_is_the_plans_failure_first(self):
+        self.reach("red")
+        self.put("p.md", NEXT_PLAN.replace("500 pass", "500 and fewer pass"))
+        r, _evidence, nxt = self.next()
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertTrue(nxt.startswith("Next: 5.4:"), nxt)
+        self.assertIn("It says: AMENDED WITHOUT AN ENTRY", nxt)
+
+    def test_an_approval_record_the_checker_refuses_is_not_an_approval(self):
+        rev = self.reach("red")
+        self.put("p.approval.log",
+                 f'Approved by: "approve" (typed at the gate); plan: p.md@{rev}' + NL)
+        r, evidence, nxt = self.next()
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("approval ✗ (", evidence)
+        self.assertTrue(nxt.startswith("Next: 6: the gate. The approval record is not "
+                                       "accepted: the approval record carries no gate token"),
+                        nxt)
+
+    def test_while_the_plan_fails_its_approval_is_not_judged(self):
+        """The checker refuses the plan before it reads the record, so judging
+        the record then would report the plan's failure a second time, as the
+        approval's."""
+        broken = NEXT_PLAN.replace(
+            "BLOCKING — I will not guess: none — answered before approval" + NL, "")
+        self.put("p.md", broken)
+        spec = importlib.util.spec_from_file_location("check_plan_for_next_tests", SCRIPT)
+        checker = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(checker)
+        rev = checker.plan_revision(checker.strip_fences(broken))
+        self.put("p.approval.log", f'Approved by: "approve" (typed at the gate); plan: '
+                                   f'p.md@{rev}; gate-token: {checker.gate_token(rev)}' + NL)
+        r, evidence, nxt = self.next()
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("plan ✗ · approval ✗ (not checked while the plan fails) · ", evidence)
+        self.assertTrue(nxt.startswith("Next: 5.4:"), nxt)
+
+    def test_approved_with_no_pin_run_writes_and_runs_the_pins(self):
+        rev = self.reach("approval")
+        r, evidence, nxt = self.next()
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn(f"approval ✓ {rev} · pins before ✗", evidence)
+        self.assertTrue(nxt.startswith("Next: 7.5–7.7: write the preservation pins"), nxt)
+        self.assertIn("p.pinstate.log", nxt)
+
+    def test_a_pin_run_that_is_not_pin_pass_stops_there(self):
+        self.reach("approval")
+        self.put("p.pinstate.log", PIN_RED)
+        _r, evidence, nxt = self.next()
+        self.assertIn("pins before ✗", evidence)
+        self.assertTrue(nxt.startswith("Next: 7.6–7.7: p.pinstate.log does not verify "
+                                       "as pin pass"), nxt)
+
+    def test_pins_passing_with_no_red_run_writes_and_runs_the_new_tests(self):
+        self.reach("pins")
+        _r, evidence, nxt = self.next()
+        self.assertIn("pins before ✓ · red state ✗", evidence)
+        self.assertTrue(nxt.startswith("Next: 7.9–7.11: write the new-behavior tests"), nxt)
+        self.assertIn("p.redstate.log", nxt)
+
+    def test_a_red_run_that_is_not_intended_red_stops_there(self):
+        self.reach("pins")
+        self.put("p.redstate.log", NEW_GREEN)
+        _r, evidence, nxt = self.next()
+        self.assertIn("red state ✗", evidence)
+        self.assertTrue(nxt.startswith("Next: 7.10–7.11: p.redstate.log does not verify "
+                                       "as intended red"), nxt)
+
+    def test_red_state_verified_stops_at_the_pause(self):
+        rev = self.reach("red")
+        r, evidence, nxt = self.next()
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertEqual(
+            f"Evidence: plan ✓ · approval ✓ {rev} · pins before ✓ · red state ✓ · "
+            f"pre-red diff ✗ · Intended change ✗ · release recorded ✗ · verification ✗ · "
+            f"pins after ✗ · packet ✗",
+            evidence)
+        self.assertEqual(
+            "Next: 7.12: print the pause and stop for the release; read "
+            "`references/execution.md` first. Still missing: the pre-implementation diff "
+            "(p.prered.diff) and `## Intended change` in the plan.", nxt)
+
+    def test_the_pause_is_owed_until_both_of_its_records_exist(self):
+        self.reach("prered")
+        _r, evidence, nxt = self.next()
+        self.assertIn("pre-red diff ✓ · Intended change ✗", evidence)
+        self.assertTrue(nxt.endswith("Still missing: `## Intended change` in the plan."), nxt)
+        self.reach("red")
+        self.put("p.md", NEXT_PLAN + INTENDED)
+        os.remove(self.dir / "p.prered.diff") if (self.dir / "p.prered.diff").exists() else None
+        _r, evidence, nxt = self.next()
+        self.assertIn("pre-red diff ✗ · Intended change ✓", evidence)
+        self.assertTrue(nxt.endswith("Still missing: the pre-implementation diff "
+                                     "(p.prered.diff)."), nxt)
+
+    def test_appending_the_intended_change_leaves_the_approval_standing(self):
+        rev = self.reach("intended")
+        _r, evidence, _nxt = self.next()
+        self.assertIn(f"approval ✓ {rev}", evidence)
+
+    def test_a_pause_with_no_release_recorded_waits_for_the_human(self):
+        """Before releases were recorded nothing on disk told a pause still
+        waiting from one the human had released, so a session that lost its
+        context could only guess, and the guess that costs nothing is to
+        implement."""
+        self.reach("intended")
+        r, evidence, nxt = self.next()
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("Intended change ✓ · release recorded ✗ · verification ✗", evidence)
+        self.assertEqual(
+            "Next: 7.12: the pause's records exist and no release is recorded. If the "
+            "pause was not printed in this session, print it; then stop for the human's "
+            "release, and record it as `Pause released by: \"<their message>\"` in "
+            "p.approval.log.", nxt)
+
+    def test_a_recorded_release_sends_it_to_implementation(self):
+        self.reach("release")
+        r, evidence, nxt = self.next()
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("release recorded ✓ · verification ✗", evidence)
+        self.assertEqual("Next: 8: implement what the human released, then 8.3: run the "
+                         "verification and save it to p.verify.log.", nxt)
+
+    def test_a_phased_plan_is_sent_to_the_last_phase_released(self):
+        """The pause's release starts phase 1; `Phase N` is the phase the human
+        released the change to continue to."""
+        phased = NEXT_PLAN.replace("red pause: pause", "red pause: phased")
+        self.reach("release", phased)
+        _r, _evidence, nxt = self.next()
+        self.assertEqual(
+            "Next: 8: implement phase 1, the last one released, and stop at its checkpoint "
+            "(8.7) unless it is already waiting there; when no phase remains, 8.3: run the "
+            "verification and save it to p.verify.log.", nxt)
+        with open(self.dir / "p.approval.log", "a", encoding="utf-8", newline=NL) as fh:
+            fh.write('Phase 3 released by: "go on"' + NL + 'Phase 2 released by: "next"' + NL)
+        _r, _evidence, nxt = self.next()
+        self.assertTrue(nxt.startswith("Next: 8: implement phase 3, the last one released"), nxt)
+
+    def test_release_lines_leave_the_approval_standing(self):
+        """They are appended after the approval record, and `--approval` reads
+        that record to the end of the log."""
+        rev = self.reach("release", NEXT_PLAN.replace("red pause: pause", "red pause: phased"))
+        with open(self.dir / "p.approval.log", "a", encoding="utf-8", newline=NL) as fh:
+            fh.write('Phase 2 released by: "next phase"' + NL)
+        verified = self.run_plan("p.md", "--approval", "p.approval.log")
+        self.assertEqual(verified.returncode, 0, verified.stdout)
+        self.assertIn(f"approval record verified for revision {rev}", verified.stdout)
+        r, evidence, _nxt = self.next()
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn(f"approval ✓ {rev}", evidence)
+
+    def test_the_release_lines_execution_md_teaches_are_the_ones_next_reads(self):
+        """One wording for the agent to write and one for the script to read: a
+        drift between the two would leave every pause waiting forever."""
+        execution = (Path(SCRIPT).resolve().parents[1] / "skills" / "ctdd-change"
+                     / "references" / "execution.md").read_text(encoding="utf-8")
+        pause = re.search(r"`(Pause released by: [^`]+)`", execution)
+        phase = re.search(r"`(Phase <N> released by: [^`]+)`", execution)
+        self.assertIsNotNone(pause, "execution.md no longer teaches the pause's release line")
+        self.assertIsNotNone(phase, "execution.md no longer teaches a phase's release line")
+        self.reach("intended", NEXT_PLAN.replace("red pause: pause", "red pause: phased"))
+        with open(self.dir / "p.approval.log", "a", encoding="utf-8", newline=NL) as fh:
+            fh.write(pause.group(1).replace("<their message>", "yes, implement") + NL)
+            fh.write(phase.group(1).replace("<N>", "2").replace("<their message>", "go") + NL)
+        _r, evidence, nxt = self.next()
+        self.assertIn("release recorded ✓", evidence)
+        self.assertTrue(nxt.startswith("Next: 8: implement phase 2,"), nxt)
+
+    def test_the_packet_path_execution_md_teaches_is_the_one_next_reads(self):
+        execution = (Path(SCRIPT).resolve().parents[1] / "skills" / "ctdd-change"
+                     / "references" / "execution.md").read_text(encoding="utf-8")
+        saved = re.search(r"save it to `<plan-dir>/<name>(\.[a-z.]+)`", execution)
+        self.assertIsNotNone(saved, "execution.md no longer says where the packet is saved")
+        self.reach("pins-after")
+        self.put("p" + saved.group(1), "Business requirement: allow the lower amount" + NL)
+        _r, _evidence, nxt = self.next()
+        self.assertEqual("Next: done: every step left its evidence, the packet included.", nxt)
+
+    def test_a_plan_with_pins_only_reaches_step_eight(self):
+        """A behaviour-preserving change names pins and no new test. Step 8's
+        door is now `--next`, so the script is where a pin-only plan has to get
+        through: an `Enter:` that read only intended red once left it no route
+        into implementation."""
+        pins_only = NEXT_PLAN.replace("red pause: pause", "red pause: skip").replace(
+            "New-behavior tests — must be observed failing first:" + NL
+            + "- rejects_note_over_500 — boundary" + NL
+            + "  - covers: a `note` of 501 characters is rejected with `400`; 500 pass." + NL
+            + "  - path: `tests/a_tests.cs`." + NL
+            + "  - red: the stub has no rules." + NL,
+            "New-behavior tests — must be observed failing first: none — behaviour preserved"
+            + NL).replace("turns green: `rejects_note_over_500`",
+                          "turns green: `currently_accepts_note_of_500`")
+        self.reach("pins", pins_only)
+        r, evidence, nxt = self.next()
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("red state n/a", evidence)
+        self.assertEqual("Next: 8: implement what the plan approves, then 8.3: run the "
+                         "verification and save it to p.verify.log.", nxt)
+
+    def test_a_plan_naming_no_test_cannot_reach_step_eight(self):
+        """Step 8 needs at least one named test, and that rule now lives in the
+        checker that `--next` runs first."""
+        none = NEXT_PLAN.replace(
+            "Preservation pins — must pass before and after:" + NL
+            + "- currently_accepts_note_of_500 — the limit as it is today" + NL
+            + "  - path: `tests/a_tests.cs`." + NL,
+            "Preservation pins — must pass before and after: none" + NL).replace(
+            "New-behavior tests — must be observed failing first:" + NL
+            + "- rejects_note_over_500 — boundary" + NL
+            + "  - covers: a `note` of 501 characters is rejected with `400`; 500 pass." + NL
+            + "  - path: `tests/a_tests.cs`." + NL
+            + "  - red: the stub has no rules." + NL,
+            "New-behavior tests — must be observed failing first: none — nothing new" + NL)
+        self.reach(None, none)
+        r, _evidence, nxt = self.next()
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertTrue(nxt.startswith("Next: 5.4:"), nxt)
+        self.assertIn("NO EVIDENCE LANE", nxt)
+
+    def test_a_plan_that_skips_the_pause_is_not_asked_for_its_records(self):
+        self.reach("red", NEXT_PLAN.replace("red pause: pause", "red pause: skip"))
+        _r, evidence, nxt = self.next()
+        self.assertIn("pre-red diff n/a · Intended change n/a · release recorded n/a · "
+                      "verification ✗", evidence)
+        self.assertEqual("Next: 8: implement what the plan approves, then 8.3: run the "
+                         "verification and save it to p.verify.log.", nxt)
+
+    def test_an_empty_verification_log_is_not_a_verification(self):
+        """A redirect creates the file even when the command behind it never
+        ran, and an empty log saved nothing."""
+        self.reach("verify")
+        self.put("p.verify.log", "")
+        _r, evidence, nxt = self.next()
+        self.assertIn("verification ✗", evidence)
+        self.assertTrue(nxt.startswith("Next: 8: implement what the human released"), nxt)
+
+    def test_verification_saved_with_no_pin_rerun_reruns_the_pins(self):
+        self.reach("verify")
+        _r, evidence, nxt = self.next()
+        self.assertIn("verification ✓ · pins after ✗", evidence)
+        self.assertEqual("Next: 8.3: re-run the preservation pins and save the run to "
+                         "p.pinstate-after.log.", nxt)
+
+    def test_a_pin_that_fails_after_the_change_is_a_broken_pin(self):
+        self.reach("verify")
+        self.put("p.pinstate-after.log", PIN_RED)
+        _r, _evidence, nxt = self.next()
+        self.assertTrue(nxt.startswith("Next: 8.3: p.pinstate-after.log does not verify "
+                                       "as pin pass. A pin that passed before the change"),
+                        nxt)
+
+    def test_everything_but_the_packet_is_step_nine(self):
+        self.reach("pins-after")
+        r, evidence, nxt = self.next()
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("pins after ✓ · packet ✗", evidence)
+        self.assertTrue(nxt.startswith("Next: 9: stop at 9.1 for the hold-out result, or for "
+                                       "the hand check if the hold-out was declined"), nxt)
+        self.assertIn("the 9.4 handover", nxt)
+        self.assertIn("saved as p.packet.md", nxt)
+
+    def test_with_the_packet_saved_it_is_done(self):
+        self.reach("packet")
+        r, evidence, nxt = self.next()
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertNotIn("✗", evidence)
+        self.assertEqual("Next: done: every step left its evidence, the packet included.",
+                         nxt)
+
+    # ------------------------------------------------- evidence out of order
+    def test_the_first_gap_is_named_even_when_later_evidence_is_there(self):
+        """One real plan had its pins re-run after the change and no saved
+        verification. That is step 8.3 still owed, not a finished change."""
+        self.reach("pins-after")
+        os.remove(self.dir / "p.verify.log")
+        _r, evidence, nxt = self.next()
+        self.assertIn("verification ✗ · pins after ✓", evidence)
+        self.assertTrue(nxt.startswith("Next: 8: implement what the human released, then 8.3"),
+                        nxt)
+        self.assertTrue(nxt.endswith("Out of order: pins after is already there."), nxt)
+
+    def test_a_release_never_recorded_is_named_before_later_evidence(self):
+        """The plan the finding came from: its pause was released in the
+        conversation, before releases were recorded, and its pins were re-run
+        after the change. The release is still the first gap; quoting the
+        human's earlier message is how it gets recorded."""
+        self.reach("pins-after")
+        os.remove(self.dir / "p.verify.log")
+        self.put("p.approval.log", (self.dir / "p.approval.log").read_text(
+            encoding="utf-8").replace(RELEASE + NL, ""))
+        _r, evidence, nxt = self.next()
+        self.assertIn("release recorded ✗ · verification ✗ · pins after ✓", evidence)
+        self.assertTrue(nxt.startswith("Next: 7.12: the pause's records exist"), nxt)
+        self.assertTrue(nxt.endswith("Out of order: pins after is already there."), nxt)
+
+    def test_several_later_items_are_all_named(self):
+        self.reach("packet")
+        os.remove(self.dir / "p.pinstate.log")
+        _r, _evidence, nxt = self.next()
+        self.assertTrue(nxt.startswith("Next: 7.5–7.7:"), nxt)
+        self.assertTrue(nxt.endswith("Out of order: red state, pre-red diff, Intended change, "
+                                     "release recorded, verification, pins after, packet are "
+                                     "already there."), nxt)
+
+    # ------------------------------------------------------- skipped lanes
+    def test_a_lane_the_plan_names_no_test_for_is_skipped(self):
+        """As 7.4 and 7.8 skip it: a plan with no pins is not sent to write some."""
+        no_pins = NEXT_PLAN.replace(
+            "Preservation pins — must pass before and after:" + NL
+            + "- currently_accepts_note_of_500 — the limit as it is today" + NL
+            + "  - path: `tests/a_tests.cs`." + NL,
+            "Preservation pins — must pass before and after: none" + NL)
+        self.reach("approval", no_pins)
+        _r, evidence, nxt = self.next()
+        self.assertIn("pins before n/a · red state ✗", evidence)
+        self.assertIn("pins after n/a", evidence)
+        self.assertTrue(nxt.startswith("Next: 7.9–7.11:"), nxt)
+
+    # ------------------------------------------------ it reads and nothing else
+    def test_it_writes_nothing(self):
+        """Not even the copies `--gate` keeps: a plan no gate has printed
+        still has only itself beside it afterwards."""
+        for upto in (None, "red"):
+            self.reach(upto)
+            before = {p.name: p.read_bytes() for p in self.dir.iterdir()}
+            self.next()
+            self.assertEqual(before, {p.name: p.read_bytes() for p in self.dir.iterdir()}, upto)
+
+    def test_it_needs_a_plan_file_it_can_read(self):
+        self.reach("red")
+        for args, said in ((("--next",), "--next takes the plan's path"),
+                           (("-", "--next"), "--next takes the plan's path"),
+                           (("p.md", "extra.md", "--next"), "--next takes the plan's path"),
+                           (("missing.md", "--next"), "cannot read missing.md")):
+            r = self.run_plan(*args)
+            self.assertEqual(r.returncode, 2, r.stdout)
+            self.assertIn(said, r.stdout)
+            self.assertNotIn("Next:", r.stdout)
+
+    def test_a_trivial_declaration_has_nothing_to_resume(self):
+        self.put("p.md", "Risk: trivial — typo in a log message. Skipping the plan gate." + NL)
+        r = self.run_plan("p.md", "--next")
+        self.assertEqual(r.returncode, 2, r.stdout)
+        self.assertIn("trivial-risk declaration", r.stdout)
+        self.assertNotIn("Next:", r.stdout)
 
 
 if __name__ == "__main__":

@@ -8,6 +8,18 @@ Usage:
     echo "$CI_MERGE_REQUEST_DESCRIPTION" | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" - --diff surface.txt
     echo "$CI_MERGE_REQUEST_DESCRIPTION" | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" - --from-description --diff surface.txt
     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" plan.md --gate
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.py" plan.md --next
+
+--next says where a change stands, from the files alone: the plan, its
+approval log and the evidence steps 7 and 8 save beside it, each judged by the
+checker the workflow already uses for it. It prints one `Evidence:` line and
+one `Next:` line naming the first step whose evidence is missing; it runs no
+test and writes nothing. One real session lost the skill's text at a
+compaction and went on without the red pause's content, without a saved
+verification and without step 9. This is what a hook, or a person, reads to
+pick a change up where it is. Exit 0 = a next step is named, or the change is
+done; 1 = the plan fails its checks or was amended since approval; 2 = it
+cannot run.
 
 --gate emits the step 6.1 gate presentation from the plan file, after every
 check has passed and never for a plan that fails one: the path and derived
@@ -85,8 +97,10 @@ Exit 1 = sections missing, or a trivial claim contradicted by the diff.
 Exit 2 = usage or input error, or a settings file that cannot be read.
 """
 
+import contextlib
 import importlib.util
 import hashlib
+import io
 import os
 import re
 import sys
@@ -1575,8 +1589,245 @@ def delta_presentation(base, text, plan_src, tier, base_rev, approved, altitude)
 
 
 
-def main():
-    args = sys.argv[1:]
+# ------------------------------------------------------------------- --next
+# Where a change stands, read from what steps 5 to 9 leave on disk. One real
+# session lost the whole skill at a compaction: the harness re-attached
+# another skill and not this one, and the session went on from what the
+# summary remembered. The red pause came out without its content, no
+# verification was saved and step 9 never ran. Nothing in that conversation
+# could say which step was next. The files could: every step that matters
+# leaves one beside the plan.
+def _load_redstate():
+    """The sibling that verifies a captured run against a plan's named tests."""
+    path = Path(__file__).resolve().parent / "check-redstate.py"
+    spec = importlib.util.spec_from_file_location("check_redstate", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _quiet(run, argv):
+    """(exit code, what it printed) of one of this plugin's checkers, run in
+    this process: `--next` reads their verdicts and copies none of them."""
+    out = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+            code = run(argv)
+    except Exception as exc:      # a checker that crashed verified nothing
+        out.write(f"{type(exc).__name__}: {exc}")
+        code = 2
+    return (code if isinstance(code, int) else 2), out.getvalue()
+
+
+def _says(out, cap=170):
+    """The last line a checker printed under its own name, without the name.
+    A refusal's heading is the last such line; the table and notes a run
+    prints before it are not."""
+    named = [l.strip() for l in out.split("\n") if re.match(r"\s*check-[a-z-]+:", l)]
+    line = re.sub(r"^check-[a-z-]+:\s*", "", named[-1]) if named else ""
+    return line if len(line) <= cap else line[:cap].rstrip() + "…"
+
+
+_RED_PAUSE = re.compile(r"red[ -]?pause\s*[:=—–-]\s*[`*_]*([a-z]+)", re.I)
+_MARK = {"yes": "✓", "no": "✗", "n/a": "n/a"}
+# The human's release of the 7.12 pause, and of each phase checkpoint after it,
+# appended to the approval log as `execution.md` has the agent write them. Under
+# `phased` the pause's release starts phase 1, and `Phase N` names the phase the
+# human released the change to continue to. They quote the human's words as the
+# agent wrote them down, so `--next` reports them as recorded, never as verified.
+# Without them nothing on disk told a pause still waiting for the human from one
+# the human had released, and a session that lost its context could only guess.
+_PAUSE_RELEASE = re.compile(r"(?im)^[ \t]*pause\s+released\s+by\s*:")
+_PHASE_RELEASE = re.compile(r"(?im)^[ \t]*phase\s+(\d+)\s+released\s+by\s*:")
+
+
+def next_step(plan_file):
+    """What the files beside a plan show was done, and the first step that
+    was not.
+
+    Reads files and runs nothing. Returns a dict: `code` (0 a next step is
+    named, 1 the plan needs attention first, 2 nothing could be read, with
+    `why`), `evidence` (one (name, state, note) per item in workflow order,
+    the state `yes`, `no` or `n/a`), `next`, `done`, `revision`, `approved`.
+
+    Evidence does not arrive in order. One real plan had its pins re-run
+    after the change and no saved verification, so the first gap is what is
+    named, and what is already there after it is said beside it.
+    """
+    raw = _slurp(plan_file)
+    if raw is None:
+        return {"code": 2, "why": f"cannot read {plan_file}"}
+    text = strip_fences(raw)
+    if TRIVIAL.search(text):
+        return {"code": 2, "why": "this is a trivial-risk declaration, which has no "
+                                  "gate and leaves no evidence files to read"}
+    revision = plan_revision(text)
+    name = os.path.splitext(os.path.basename(plan_file))[0]
+    items = []
+
+    code, out = _quiet(main, [plan_file])
+    if code not in (0, 1):
+        return {"code": 2, "why": _says(out) or "check-plan could not run on the plan"}
+    plan_ok = code == 0
+    items.append(("plan", "yes" if plan_ok else "no", "" if plan_ok else _says(out)))
+
+    approved = last_approved(plan_file)
+    if approved is None:
+        approval = ("no", "no record")
+    elif approved != revision:
+        approval = ("no", f"approves {approved}, the plan is now {revision}")
+    elif not plan_ok:
+        approval = ("no", "not checked while the plan fails")
+    else:
+        code, out = _quiet(main, [plan_file, "--approval",
+                                  _sidecar(plan_file, ".approval.log")])
+        approval = ("yes", revision) if code == 0 else \
+            ("no", _says(out) or "the record is not accepted")
+    items.append(("approval",) + approval)
+
+    redstate = []
+
+    def lane(label, suffix, named, expect_pass):
+        """A lane the plan names no test for is skipped, as 7.4 and 7.8 skip it."""
+        if not named:
+            items.append((label, "n/a", "the plan names none"))
+            return
+        log = _sidecar(plan_file, suffix)
+        if not os.path.isfile(log):
+            items.append((label, "no", "missing"))
+            return
+        if not redstate:
+            redstate.append(_load_redstate())
+        code, _out = _quiet(redstate[0].main, [log, "--tests-from", plan_file]
+                            + (["--expect-pass"] if expect_pass else []))
+        items.append((label, "yes" if code == 0 else "no", "" if code == 0 else "unverified"))
+
+    pins = lane_tests(text, "preservation")
+    lane("pins before", ".pinstate.log", pins, True)
+    lane("red state", ".redstate.log", lane_tests(text, "new-behavior"), False)
+
+    said = _RED_PAUSE.search(categorical_line(text))
+    pause = said.group(1).lower() if said else ""
+    if pause == "skip":
+        items.append(("pre-red diff", "n/a", "red pause: skip"))
+        items.append(("Intended change", "n/a", "red pause: skip"))
+    else:
+        items.append(("pre-red diff", "yes" if os.path.isfile(
+            _sidecar(plan_file, ".prered.diff")) else "no", ""))
+        items.append(("Intended change",
+                      "yes" if _INTENDED_CHANGE.search(text) else "no", ""))
+    # Any release in the log counts, before an amendment or after it: one taken
+    # since the last approval only would refuse an amendment that the lighter
+    # lane carries on from without a new pause.
+    log = _slurp(_sidecar(plan_file, ".approval.log")) or ""
+    if pause == "skip":
+        items.append(("release recorded", "n/a", "red pause: skip"))
+    else:
+        items.append(("release recorded",
+                      "yes" if _PAUSE_RELEASE.search(log) else "no", ""))
+
+    verify = _sidecar(plan_file, ".verify.log")
+    items.append(("verification", "yes" if os.path.isfile(verify)
+                  and os.path.getsize(verify) > 0 else "no", ""))
+    lane("pins after", ".pinstate-after.log", pins, True)
+    items.append(("packet", "yes" if os.path.isfile(
+        _sidecar(plan_file, ".packet.md")) else "no", ""))
+
+    first = next((n for n, item in enumerate(items) if item[1] == "no"), None)
+    result = {"plan": plan_file, "revision": revision, "approved": approved,
+              "evidence": items, "pause": pause, "done": first is None,
+              "code": 1 if not plan_ok or (approved is not None
+                                           and approval[0] == "no") else 0}
+    if first is None:
+        result["next"] = "done: every step left its evidence, the packet included."
+        return result
+    label, _state, note = items[first]
+    later = [l for l, state, _n in items[first + 1:] if state == "yes"]
+    if label == "plan":
+        nxt = "5.4: fix the plan and re-run check-plan until it exits 0." \
+            + (f" It says: {note}" if note else "")
+    elif label == "approval" and note == "no record":
+        nxt = ("6: the gate. Print the gate presentation with `--gate`, copy it into "
+               "the reply unaltered and stop for the human's approval.")
+    elif label == "approval" and approved != revision:
+        nxt = (f"6: the gate. Revision {approved} was approved and the plan is now "
+               f"{revision}: record what changed under `Amendments` first, then "
+               f"print the gate presentation and stop for approval.")
+    elif label == "approval":
+        nxt = f"6: the gate. The approval record is not accepted: {note}"
+    elif label == "pins before" and note == "missing":
+        nxt = (f"7.5–7.7: write the preservation pins through `ctdd-tests`, run them "
+               f"against the unchanged implementation, save the run to "
+               f"{name}.pinstate.log and verify it with check-redstate `--expect-pass`.")
+    elif label == "pins before":
+        nxt = (f"7.6–7.7: {name}.pinstate.log does not verify as pin pass. Run "
+               f"check-redstate on it with `--expect-pass` and stop on any other state.")
+    elif label == "red state" and note == "missing":
+        nxt = (f"7.9–7.11: write the new-behavior tests through `ctdd-tests`, run them "
+               f"before implementing, save the run to {name}.redstate.log and verify "
+               f"it with check-redstate.")
+    elif label == "red state":
+        nxt = (f"7.10–7.11: {name}.redstate.log does not verify as intended red. Run "
+               f"check-redstate on it and stop on any other state.")
+    elif label in ("pre-red diff", "Intended change"):
+        owed = [what for key, what in (
+            ("pre-red diff", f"the pre-implementation diff ({name}.prered.diff)"),
+            ("Intended change", "`## Intended change` in the plan"))
+            if ("no" in [s for l, s, _n in items if l == key])]
+        later = [l for l in later if l not in ("pre-red diff", "Intended change")]
+        nxt = ("7.12: print the pause and stop for the release; read "
+               "`references/execution.md` first. Still missing: "
+               + " and ".join(owed) + ".")
+    elif label == "release recorded":
+        nxt = (f"7.12: the pause's records exist and no release is recorded. If the "
+               f"pause was not printed in this session, print it; then stop for the "
+               f"human's release, and record it as `Pause released by: \"<their "
+               f"message>\"` in {name}.approval.log.")
+    elif label == "verification" and pause == "skip":
+        nxt = (f"8: implement what the plan approves, then 8.3: run the verification "
+               f"and save it to {name}.verify.log.")
+    elif label == "verification" and pause == "phased":
+        phase = max([int(n) for n in _PHASE_RELEASE.findall(log)] or [1])
+        nxt = (f"8: implement phase {phase}, the last one released, and stop at its "
+               f"checkpoint (8.7) unless it is already waiting there; when no phase "
+               f"remains, 8.3: run the verification and save it to {name}.verify.log.")
+    elif label == "verification":
+        nxt = (f"8: implement what the human released, then 8.3: run the verification "
+               f"and save it to {name}.verify.log.")
+    elif label == "pins after" and note == "missing":
+        nxt = (f"8.3: re-run the preservation pins and save the run to "
+               f"{name}.pinstate-after.log.")
+    elif label == "pins after":
+        nxt = (f"8.3: {name}.pinstate-after.log does not verify as pin pass. A pin "
+               f"that passed before the change and fails after it is a broken pin: "
+               f"stop and report it.")
+    else:
+        nxt = ("9: stop at 9.1 for the hold-out result, or for the hand check if the "
+               "hold-out was declined at the gate; then the review packet (9.3, read "
+               f"`references/execution.md`), saved as {name}.packet.md, and the 9.4 "
+               "handover.")
+    if later:
+        nxt += (" Out of order: " + ", ".join(later)
+                + (" is" if len(later) == 1 else " are") + " already there.")
+    result["next"] = nxt
+    return result
+
+
+def next_lines(result):
+    """The two lines `--next` prints."""
+    cells = []
+    for label, state, note in result["evidence"]:
+        cell = f"{label} {_MARK[state]}"
+        if label == "approval" and state == "yes":
+            cell += f" {note}"
+        elif label == "approval" and note != "no record":
+            cell += f" ({note})"
+        cells.append(cell)
+    return ["Evidence: " + " · ".join(cells), "Next: " + result["next"]]
+
+
+def main(argv=None):
+    args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] in ("-h", "--help"):
         print(__doc__.strip())
         return 0
@@ -1591,6 +1842,22 @@ def main():
         reader = None
     if reader is not None and reader.settings_stop("check-plan"):
         return 2
+
+    # --next: where the change stands, from the files beside the plan.
+    if "--next" in args:
+        rest = [a for a in args if a != "--next"]
+        if len(rest) != 1 or rest[0].startswith("-"):
+            print("check-plan: --next takes the plan's path and nothing else: "
+                  "`check-plan.py <plan-path> --next`. It reads the plan and the "
+                  "files beside it.")
+            return 2
+        result = next_step(rest[0])
+        if result["code"] == 2:
+            print(f"check-plan: --next cannot say where this stands: {result['why']}.")
+            return 2
+        for line in next_lines(result):
+            print(line)
+        return result["code"]
 
     # --gate: emit the step 6.1 presentation instead of describing it in prose.
     gate = "--gate" in args
@@ -1813,8 +2080,9 @@ def main():
 
     # A plan naming no test in either lane derives `large` and then
     # passes at 19 of 19 — and dead-ends: 7.4 and 7.8 skip both evidence lanes, so
-    # step 8's Enter ("at least one lane named a test") can never be met, after a
-    # human has already approved. Reachable on a mechanical refactor in an
+    # step 8's Enter can never be met, after a human has already approved. Since
+    # v0.60.0 that Enter is `--next` naming step 8, and `--next` runs this check
+    # first, so this refusal is the rule that a plan names at least one test. Reachable on a mechanical refactor in an
     # untested area: plan-gated by 3.5, nothing to pin, no new behaviour. Reject
     # it here, where the cost is a re-plan rather than a dead session.
     if not _names_a_test(text):

@@ -144,7 +144,7 @@ def plan_text(state):
         unmapped = "  - red: the route is not mapped yet, so the answer is `404`."
         plan = plan.replace("  - red: nothing writes the state yet, so it is still 30.", unmapped)
         plan = plan.replace("  - red: the stub handler answers success, so the answer is `204`.", unmapped)
-    if state in ("packet", "phase1-clean"):
+    if state in ("packet", "phase1-clean", "red-done"):
         for name in ("OrderStateOutcome.cs", "OrderStateChange.cs"):
             plan = plan.replace(ORDERS + name, DOMAIN + name)
     if state == "packet":
@@ -191,7 +191,19 @@ def build_repo(state, repo):
     overlay("base", repo, only=["src/Shop.Api/Endpoints/"])
     if state == "red-ok":
         return diff_base, logs
+    if state == "red-done":
+        # The two outcome types sit in the Domain, as the plan for this state
+        # has them, so the layering suite passes on the stubs. The first run
+        # of the compaction scenario left them in the feature folder: the
+        # stand-in ran the invariant suite as check-redstate tells it to, met
+        # the failure three other scenarios are built on, and never reached
+        # the pause this state exists for.
+        to_domain(repo)
     logs["redstate"] = runner(repo, "test", "--filter", "OrderState")
+    if state == "red-done":
+        # Step 7 is finished up to its pause: the red run is saved and
+        # verifies, and nothing of 7.12 or step 8 exists yet.
+        return diff_base, logs
 
     # Step 8, as far as the state says.
     overlay("feature", repo, only=["src/"])
@@ -325,6 +337,128 @@ def brief(scenario, common, facts):
     ]))
 
 
+STALE_REV = "5c0e7a41b2d9"      # a revision the plan had before its approved one
+SKILLS = (
+    "ctdd:ctdd-change: drive a change to backend behavior, from the plan and its gate to the "
+    "tests, the implementation and the review packet.",
+    "ctdd:ctdd-tests: write or review tests as the spec; owns test authorship and red state.",
+    "ctdd:ctdd-review: judge an existing diff, branch or PR without editing it.",
+    "ctdd:ctdd-routing: decide which of the three owns a piece of work.",
+)
+
+
+def session_transcript(path):
+    """A transcript for the session a compacted scenario describes: the skill
+    call that started the change, the plan check, the later skill call. It is
+    what a SessionStart hook is given to read."""
+    def call(name, **inputs):
+        return {"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "toolu_" + name.lower(), "name": name, "input": inputs}]}}
+    records = [
+        call("Skill", skill="ctdd:ctdd-change",
+             args="Let the fulfilment client move an order to Packed or Shipped."),
+        call("Bash", command=f"python3 check-plan.py {PLAN_REL} --gate"),
+        call("Skill", skill="ctdd:ctdd-tests", args="Write the new-behavior tests."),
+        {"type": "system", "subtype": "compact_boundary", "content": "Conversation compacted"},
+    ]
+    write(path, "".join(json.dumps(r) + NL for r in records))
+
+
+def hook_note(plugin, repo, transcript):
+    """What this plugin's resume hook says after the compaction, or None when
+    the plugin has no such hook or the hook stays silent."""
+    hook = os.path.join(plugin, "hooks", "ctdd-resume.py")
+    if not os.path.isfile(hook):
+        return None
+    payload = {"session_id": "eval", "transcript_path": transcript, "cwd": repo,
+               "hook_event_name": "SessionStart", "source": "compact"}
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
+    env.pop("CLAUDE_PROJECT_DIR", None)
+    r = subprocess.run([sys.executable, hook], input=json.dumps(payload), cwd=repo, env=env,
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    try:
+        return json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    except (ValueError, KeyError):
+        return None
+
+
+def compacted_brief(scenario, facts, note):
+    """The brief for a scenario that starts just after a compaction. The
+    stand-in is given what the harness leaves in context then, and nothing
+    else: the summary, the one skill that was re-attached, a hook's output
+    when the plugin under test has the hook, and the latest messages. It is
+    not told which skill the session was following."""
+    def fill(text):
+        for key, value in facts.items():
+            text = text.replace("{" + key + "}", str(value))
+        return text
+    talk = []
+    for turn in scenario["conversation"]:
+        label = {"human": "**The human:**", "assistant": "**You, the agent:**",
+                 "note": "*(note)*"}[turn["role"]]
+        talk.append(label + NL + NL + turn["text"])
+    parts = [
+        "# Stand-in brief",
+        "",
+        "You are standing in for a coding agent in the middle of a working session, for exactly one reply. "
+        "The session's context has just been compacted. The numbered sections below are what the harness "
+        "left in the agent's context, in its order, and the agent has nothing else. Behave exactly as that "
+        "agent would with this in its context, and produce the reply it would send next. This is not a "
+        "discussion of the session; do the work.",
+        "",
+        "## What you can and cannot do here",
+        "",
+        "The session has the ctdd plugin at `{PLUGIN}`. You cannot use the Skill tool. Where the agent would "
+        "invoke a skill, read that skill's `SKILL.md` under `{PLUGIN}/skills/<skill>/` completely instead: "
+        "that read is the invocation, and you then follow what it says. Use no other copy of these skills. "
+        "`${CLAUDE_PLUGIN_ROOT}` means `{PLUGIN}` and `${CLAUDE_PROJECT_DIR}` means `{REPO}`. For Python use "
+        "`\"{PY}\"`: `python` and `python3` on PATH are dead stubs here, and that includes the repository's "
+        "own `python tools/run.py` commands. `{REPO}` is the git repository being changed. Work only inside "
+        "it, and run the plugin's checkers from it with `CLAUDE_PROJECT_DIR` set to it.",
+        "",
+        "The skills the harness lists as available:",
+        "",
+        NL.join("- " + s for s in SKILLS),
+        "",
+        "## 1. The summary the compaction wrote",
+        "",
+        NL.join(scenario["summary"]),
+        "",
+        "## 2. The skill the harness re-attached",
+        "",
+        "One skill came back with the summary: `" + scenario["reattached"]["skill"] + "`. Its text is `{PLUGIN}/skills/"
+        + scenario["reattached"]["skill"] + "/SKILL.md`. Read that file now: it is in the agent's context. It was "
+        "invoked with these arguments:",
+        "",
+        "> " + scenario["reattached"]["arguments"],
+        "",
+    ]
+    number = 3
+    if note:
+        parts += ["## 3. What a SessionStart hook added after the compaction", "",
+                  NL.join("> " + line for line in note.split(NL)), ""]
+        number = 4
+    parts += [
+        f"## {number}. The most recent messages, kept verbatim",
+        "",
+        (NL + NL).join(talk),
+        "",
+        "## What to do",
+        "",
+        "Do what the agent does next, with real actions: edit files, run the checkers, run the repository's "
+        "commands, as the agent would at this point. " + scenario["bound"],
+        "",
+        "Then write the reply the agent sends to the human, the complete text the human would see and nothing "
+        "else, to `{OUT}/reply.md`. Output that only appeared in your tool results is not part of the reply "
+        "unless you put it there.",
+        "",
+        "Finish by returning four lines: what you did, where you stopped, why there, and every file under "
+        "`{PLUGIN}` you read, in the order you read them.",
+        "",
+    ]
+    return fill(NL.join(parts))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("scenario")
@@ -351,7 +485,7 @@ def main():
         write(os.path.join(repo, PLAN_REL), plan)
     else:
         plan, rev, token = approve(plugin, repo, plan)
-        if state not in ("red", "red-ok"):
+        if state not in ("red", "red-ok", "red-done"):
             write(os.path.join(repo, PLAN_REL), plan.rstrip(NL) + NL + intended_change(plan))
     for name, text in logs.items():
         write(os.path.join(repo, f"{STEM}.{name}.log"), text)
@@ -362,8 +496,17 @@ def main():
     slash = lambda p: p.replace(os.sep, "/")
     facts = {"SCENARIO": a.scenario, "PLUGIN": slash(plugin), "REPO": slash(repo), "OUT": slash(out),
              "PY": slash(sys.executable), "DIFF_BASE": diff_base,
-             "REV": rev or "", "TOKEN": token or "", "PLAN": PLAN_REL}
-    write(os.path.join(run_dir, "brief.md"), brief(scenario, spec["common_situation"], facts))
+             "REV": rev or "", "TOKEN": token or "", "PLAN": PLAN_REL, "STALE_REV": STALE_REV}
+    if scenario.get("compacted"):
+        # After a compaction the agent is not handed the skill it was
+        # following. What a plugin's own hook adds comes from that plugin.
+        transcript = os.path.join(run_dir, "transcript.jsonl")
+        session_transcript(transcript)
+        note = hook_note(plugin, repo, transcript)
+        facts["HOOK_NOTE"] = "yes" if note else "no"
+        write(os.path.join(run_dir, "brief.md"), compacted_brief(scenario, facts, note))
+    else:
+        write(os.path.join(run_dir, "brief.md"), brief(scenario, spec["common_situation"], facts))
     write(os.path.join(run_dir, "facts.json"), json.dumps(facts, indent=2) + NL)
     print(json.dumps({"scenario": a.scenario, "state": state, "brief": slash(os.path.join(run_dir, "brief.md")),
                       "revision": rev, "diff_base": diff_base}))
