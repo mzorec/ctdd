@@ -1482,7 +1482,7 @@ class CrossSkillAgreementTests(unittest.TestCase):
     # Raised once, deliberately, for plan tiers (v0.24.0). This ratchet measures
     # agent context — loaded once, cached, cheap. Tiering spends ~700 characters
     # of it to take roughly 2,000 words off every small plan a human reads at the
-    # gate, on every change; the 2026-07-27 Flik plan ran to 3,166 words and ~14
+    # gate, on every change; the 2026-07-27 plan ran to 3,166 words and ~14
     # minutes. The proxy cannot see what is being bought, and refusing a good
     # trade because a proxy says no is the wrong use of a guard. Two blocks of
     # rehearsed checker output were cut from worked-change.md first, so the raise

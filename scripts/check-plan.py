@@ -193,7 +193,7 @@ TRIVIAL = re.compile(r"^\s*[`*_]*risk\s*(level)?\s*[:—-]\s*trivial\b[^\n]{3,}"
                      re.I | re.M)
 
 # --- Plan tiers -------------------------------------------------------------
-# The 2026-07-27 Flik change produced a 31,448-character plan: 3,166 words, ~14
+# The 2026-07-27 change produced a 31,448-character plan: 3,166 words, ~14
 # minutes to read at the gate, 5.8x the canonical example. The format had one
 # gear, and closing the "no diff exists" triviality hole in v0.23.0 routed every
 # fresh change into it. A gate a human skims is a gate that does not gate

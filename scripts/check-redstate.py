@@ -240,7 +240,7 @@ def looks_like_pass(line):
 def _verdicts(log, name):
     """Every verdict the log carries for this name, in order.
 
-    A name can appear in more than one test project — the 2026-07-27 Flik change
+    A name can appear in more than one test project — the 2026-07-27 change
     had two preservation pins sharing a name across the V1 and V2 handler test
     files. The previous implementation returned on the *first* line matching the
     direction it wanted, so a name that failed in one project and passed in the

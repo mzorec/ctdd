@@ -725,7 +725,7 @@ class CheckPlanTests(unittest.TestCase):
         self.assertEqual(cp.plan_tier(base), "small")
 
     def test_the_tier_is_derived_from_declarations_not_claimed(self):
-        """The 2026-07-27 Flik plan ran to 31,448 chars — ~14 minutes to read at
+        """The 2026-07-27 plan ran to 31,448 chars — ~14 minutes to read at
         the gate, 5.8x the canonical example — because the format had one gear
         and v0.23.0's triviality fix routed every fresh change into it. Tiers
         shrink documentation, never evidence: both test headings, the gate, and

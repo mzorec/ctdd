@@ -4,6 +4,7 @@
 
 _Docs and other non-runtime edits collect here and fold into the next runtime release. Version numbers move only when the skills, scripts, or hooks change._
 
+- **Rule 6 clean-up** — four session notes left the repository, and finding #56 in `docs/pilot-findings.md` and a comment in each of five scripts now describe a change by its shape instead of by name.
 - **Recorded, not decided: the design-front-end alternatives** (`docs/backlog.md`, Tier 3) — upstream brainstorming adapted by routing (running); a ctdd-owned design skill replacing it with superpowers off per repo (judged the better end state, sequenced after three to five sessions); abandoning ctdd for superpowers whole (raised and declined by the owner the same day: implementation under ctdd is preferred and there is no ceremony complaint, so the live question is the design half only); and superpowers plus ctdd's diff-based checks in CI. Written because the question returned in several forms across two days and each round re-derived the options. Also recorded, verified against the official docs: per-skill disabling of plugin skills does not exist, so a design skill is a replacement or nothing.
 
 ## 0.60.0 — 2026-11-19

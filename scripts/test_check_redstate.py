@@ -949,7 +949,7 @@ class StackTraceTests(unittest.TestCase):
 
 
 class DuplicateNameTests(unittest.TestCase):
-    """Found by the 2026-07-27 Flik change: two preservation pins shared a name
+    """Found by the 2026-07-27 change: two preservation pins shared a name
     across the V1 and V2 handler test files. Both matchers returned on the first
     line matching the direction asked, so a name failing in one project and
     passing in the other was verified either way — the eleventh defect of the
