@@ -49,13 +49,16 @@ only planned artifacts. Investigate in scratch space, or revert before planning.
 ## 3. Stated requirement → `ctdd-change`
 
 The default path, and the only one that writes production code. Plan gate at step 6, red state at
-7, implementation at 8, packet at 9. Two choices are yours at the gate, on the categorical line:
+7, implementation at 8, packet at 9. One choice is yours at the gate, on the categorical line:
 
-- `red pause: skip` — small changes: straight from red state to implementation.
-- `red pause: pause` — medium: one stop after red state showing the diff, the intended-change
-  table, and what no flow step covers.
-- `red pause: phased` — large, or three-plus phases: that stop, plus one after each implementation
-  phase with its diff, build result, pin state, and red-set check.
+- `red pause: skip` — straight from red state to implementation, with no stop on the way. Drafted
+  when the plan has a single phase.
+- `red pause: phased` — one stop after red state showing the diff and the intended changes by
+  phase, where you say how far to go: one phase, several, or all. The next stop comes after the
+  last phase you released, with its diff, build result, pin state, and red-set check. Drafted
+  when the plan has more than one phase.
+
+A plan approved with `red pause: pause` before 0.61.0 still stops once after red state.
 
 ## 4. Isolation needed → `using-git-worktrees`, then `ctdd-change`
 

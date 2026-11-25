@@ -704,6 +704,10 @@ class ChangeSkillStructureTests(unittest.TestCase):
     # file it is saved to (+57). The stop now starts at 14,047, 53 inside the
     # ceiling. The resume clause sits after step 10, where it costs this
     # nothing: it is read when the skill is invoked again, with the whole body.
+    # Same ceiling in v0.61.0: step 8.7 now says the agent implements the
+    # phases the human released (+14), so the stop starts at 14,061, 39 inside.
+    # The stop's own sentence lost its hand-check clause (-55), which sits
+    # after the probe and moves nothing here.
     MAX_PROBE_OFFSET_CHARS = 14_100
 
     MUST_SURVIVE = {
@@ -1348,6 +1352,57 @@ class TwoEndedRuleTests(unittest.TestCase):
                       "its pins and its invariant suite", row)
         self.assertIn("8.3's whole list waits until no phase remains", row)
         self.assertIn("say so", row)
+
+    def test_the_human_says_how_far_a_phased_plan_goes(self):
+        """From 0.42.0 a phased plan implemented one phase and stopped, every
+        time. Measured over six weeks of real changes, the human answered 23
+        of the 33 stops that showed a phase block with a bare go-ahead: a round
+        trip each, for a decision already made. Since 0.61.0 the human
+        releases as many phases as they choose where the phases are shown, and
+        the agent stops after the last of them.
+
+        The rule is said in four places, and they have to agree: the step that
+        implements, the row that asks at the pause, the row that asks at a
+        checkpoint and records the release, and the plan rule that says what
+        `phased` means. One left behind would put the stop after every phase
+        back, or ask a question whose answer the next step ignores."""
+        step = self._line(self.skill, "7. With `red pause: phased`")
+        self.assertIn("implement the phases the human released; stop after the last and read",
+                      step)
+        self.assertNotIn("one phase at a time", self.skill)
+        pause = self._line(self.execution, "| 7.12 stops and the approved line")
+        self.assertIn("Ask to proceed as a Decision prompt; under `phased` ask how far instead "
+                      "(one phase, several, or all) and recommend nothing.", pause)
+        self.assertIn("and under `phased` the last phase it covers as the next row records it.",
+                      pause)
+        checkpoint = self._line(self.execution, "| 8.7 stops with `red pause: phased`")
+        self.assertIn("Print the diff since the last stop and its evidence", checkpoint)
+        self.assertIn("ask how far to continue as a Decision prompt: the next phase, several, "
+                      "or all that remain; recommend nothing.", checkpoint)
+        self.assertIn('`Phase <N> released by: "<their message>"`, N the last phase released.',
+                      checkpoint)
+        rule = self._line(self.plan_format, "13. Set the red pause")
+        self.assertIn("and the human says how far to go: one phase, several, or all.", rule)
+        self.assertIn("It stops again after the last phase they released, with its diff and "
+                      "evidence, while any remain.", rule)
+
+    def test_phased_is_drafted_for_more_than_one_phase_and_pause_is_not(self):
+        """0.42.0 drafted the red pause by tier and width: `skip` at small,
+        `pause` at medium, `phased` at large or at three phases, because the
+        tier measures risk and the phase count measures width. Since 0.61.0
+        the human chooses the stops, so the draft only decides whether they
+        are asked, and they are asked whenever there is more than one phase to
+        choose from. `pause` is no longer drafted. A plan approved with it
+        keeps working, which is 7.12's side of this rule: it stops for every
+        value that is not `skip`."""
+        rule = self._line(self.plan_format, "13. Set the red pause")
+        self.assertIn("Draft `phased` when the planned files form more than one phase, "
+                      "otherwise `skip`; the human flips it at the gate.", rule)
+        for gone in ("`pause`", "at medium", "at large", "three or more phases"):
+            self.assertNotIn(gone, rule, f"rule 13 still drafts by tier: {gone!r}")
+        skeleton = self.plan_format.split("```markdown")[1].split("```")[0]
+        self.assertIn("red pause: <phased | skip>", skeleton)
+        self.assertIn("12. Stop unless the approved line says `red pause: skip`;", self.skill)
 
     def test_the_invariant_suite_is_asked_for_and_run_at_checkpoints(self):
         """`check-plan.py` requires the line and `check-redstate.py` says to
@@ -3461,28 +3516,39 @@ class CrossSkillAgreementTests(unittest.TestCase):
         self.assertIn("from the changed tests alone", t)
         self.assertIn("beside the business requirement", t)
 
-    def test_the_holdout_decline_path_keeps_what_makes_it_independent(self):
-        """These three fell out across 0.21.3 and 0.23.0 in compression passes —
-        one changelog claimed "every rule intact", another never got an entry.
-        None was decided against. They went unnoticed because the hold-out has
-        zero executions in seven changes, so nothing ever exercised them, and
-        the `must_survive` probes never covered them.
+    def test_a_declined_holdout_is_a_waiver_and_asks_for_nothing(self):
+        """Until 0.61.0 a hold-out declined at the gate stopped at 9.1 for a
+        hand check: the human recomputed the expected values from the business
+        requirement, never from the code. This guard held the three clauses
+        that kept that fallback independent, after compression passes in
+        0.21.3 and 0.23.0 had dropped them with no decision against them.
 
-        They are a chain. Without the arithmetic clause the fallback is not an
-        independent reading: verifying by opening the implementation and
-        agreeing inherits the very misunderstanding the hold-out exists to
-        break. Without "never the equivalent" the cheap path silently becomes
-        the guard — which already happened. Without "waiver" a decline is one of
-        four neutral enum values, indistinguishable in the packet from a decline
-        on a rename."""
-        fmt = (self._skills() / "ctdd-change" / "references"
-               / "plan-format.md").read_text(encoding="utf-8")
-        self.assertIn("recompute each one by hand from the business requirement", fmt)
-        # never by reading the code is the clause that makes the fallback a second
-        # reading rather than a countersignature on the first.
-        self.assertIn("never by reading the code that produced it", fmt)
-
-        self.assertIn("never as the equivalent", fmt)
+        In 0.61.0 the owner removed the hand check by decision. The hold-out
+        had run zero times in seven changes, so the fallback was arithmetic
+        nobody did and one more stop to wait at. Those clauses are gone on
+        purpose this time, and a guard that still demanded them would put them
+        back. What it holds now is what the decision left. A decline stops
+        nothing and asks for nothing in its place. It is still a waiver and
+        not one of four neutral enum values, because without that word a
+        decline on a money path reads in the packet like a decline on a
+        rename. And the review still reports it on a high-risk change."""
+        change = self._skills() / "ctdd-change"
+        skill = (change / "SKILL.md").read_text(encoding="utf-8")
+        step = [l for l in skill.split(chr(10)) if "sealed hold-out result" in l]
+        self.assertEqual(len(step), 1, "9.1 moved")
+        self.assertIn("asking write / decline; when it was declined at the gate, do not stop.",
+                      step[0])
+        fmt = (change / "references" / "plan-format.md").read_text(encoding="utf-8")
+        rule = [l for l in fmt.split(chr(10)) if l.startswith("8. When the human declines")]
+        self.assertEqual(len(rule), 1, "plan-format rule 8 moved")
+        self.assertIn("at the gate or at step 9.1, record `declined by human` and ask for "
+                      "nothing in its place.", rule[0])
+        # The hand check is asked for nowhere the agent reads on the way to 9.1.
+        for name in ("SKILL.md", "references/plan-format.md", "references/execution.md",
+                     "references/worked-change.md", "references/rationale.md"):
+            text = (change / name).read_text(encoding="utf-8").lower()
+            for gone in ("hand check", "recompute each one by hand", "human-verified"):
+                self.assertNotIn(gone, text, f"{name} still asks for the hand check: {gone!r}")
         self.assertIn("is a waiver, not a neutral outcome", fmt)
         rev = (self._skills() / "ctdd-review" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("hold-out as a finding on a high-risk", rev)

@@ -120,15 +120,22 @@ def intended_change(plan):
 def plan_text(state):
     plan = read(os.path.join(FIX, "plan.md"))
     if state in PLAN_ONLY:
-        plan = plan.replace(
-            " Hold-out declined by human: the expected values in the `Hold-out` block are yours to "
-            "recompute by hand.",
-            " Hold-out: two sealed tests are asked of you; declining them is recorded as a waiver.")
-        plan = plan.replace("- result: declined by human — a waiver, not a pass", "- result: pending")
-        plan = re.sub(r"- human-verified expected values: [^\n]*", "- human-verified expected values: n/a", plan)
-        plan = plan.replace(
-            "- The hold-out was declined: the transition table rests on this session's reading plus "
-            "your hand check of the listed values." + NL, "")
+        # Before the first gate the hold-out is still a question. Each of the
+        # three lines must be found: a `replace` that matches nothing would
+        # hand the first-gate scenarios a plan whose hold-out is already
+        # declined, and they would still build.
+        for old, new in (
+                (" Hold-out declined by human: recorded as a waiver, and nothing is asked of you "
+                 "in its place.",
+                 " Hold-out: two sealed tests are asked of you; declining them is recorded as a "
+                 "waiver."),
+                ("- result: declined by human — a waiver, not a pass", "- result: pending"),
+                ("- The hold-out was declined: the transition table rests on this session's "
+                 "reading alone." + NL, "")):
+            if plan.count(old) != 1:
+                raise SystemExit("the fixture plan no longer carries the line a first-gate "
+                                 "state rewrites: " + old.strip())
+            plan = plan.replace(old, new)
         if state == "plan-heavy":
             # The validator's and the handler's tests are planned in the
             # integration project, beside a unit project of the same layer.
@@ -204,6 +211,13 @@ def build_repo(state, repo):
         # Step 7 is finished up to its pause: the red run is saved and
         # verifies, and nothing of 7.12 or step 8 exists yet.
         return diff_base, logs
+
+    # 7.12 left the pre-implementation diff beside the plan: what steps 7.3 to
+    # 7.9 wrote, new files included. From 0.60.0 `--next` reads that file, and
+    # a phase state without it was sent back to print the pause again.
+    git(repo, "add", "-A", "-N")
+    logs["prered"] = git(repo, "diff", "--no-color", diff_base) + NL
+    git(repo, "reset", "-q")
 
     # Step 8, as far as the state says.
     overlay("feature", repo, only=["src/"])
@@ -487,8 +501,20 @@ def main():
         plan, rev, token = approve(plugin, repo, plan)
         if state not in ("red", "red-ok", "red-done"):
             write(os.path.join(repo, PLAN_REL), plan.rstrip(NL) + NL + intended_change(plan))
+    released = scenario.get("released")
+    if released:
+        # What the plugin under test has the agent record at the 7.12 pause:
+        # the release, and from 0.61.0 the last phase it covers. A fixture
+        # built against an older version carries the older record.
+        lines = [f'Pause released by: "{released["message"]}"']
+        if "the last phase it covers" in read(os.path.join(
+                plugin, "skills", "ctdd-change", "references", "execution.md")):
+            lines.append(f'Phase {released["through"]} released by: "{released["message"]}"')
+        with open(os.path.join(repo, STEM + ".approval.log"), "a", encoding="utf-8",
+                  newline=NL) as fh:
+            fh.write(NL.join(lines) + NL)
     for name, text in logs.items():
-        write(os.path.join(repo, f"{STEM}.{name}.log"), text)
+        write(os.path.join(repo, f"{STEM}.{name}" + (".diff" if name == "prered" else ".log")), text)
     runlog = os.path.join(repo, "tools", ".runlog")
     if os.path.exists(runlog):
         os.remove(runlog)

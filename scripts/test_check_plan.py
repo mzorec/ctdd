@@ -869,6 +869,10 @@ class CheckPlanTests(unittest.TestCase):
         r = run(self._holdout("NOT RUN — deferred by the human at packet time"))
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("defers", r.stdout)
+        # A decline records the waiver and asks for nothing more: the hand check
+        # of expected values that used to follow it was removed in 0.61.0.
+        self.assertIn("`declined by human` is what records the waiver. Choose one.", r.stdout)
+        self.assertNotIn("hand-computed", r.stdout)
 
     def test_the_sanctioned_holdout_results_are_accepted(self):
         """The other way to get this wrong is to reject everything. `NOT RUN`
@@ -2997,6 +3001,13 @@ INTENDED = (NL + "## Intended change" + NL + NL + "| File | Intended change |" +
             + "| --- | --- |" + NL + "| `a.cs` | Accepts the lower amount. |" + NL)
 # The human's release of the 7.12 pause, as `execution.md` has the agent record it.
 RELEASE = 'Pause released by: "looks right, implement it"'
+# The same plan with a required hold-out, its result still pending: the block
+# is the one `HOLDOUT_PLAN` carries, so the two cannot drift apart.
+NEXT_HOLDOUT = NEXT_PLAN.replace(
+    "hold-out: not required", "hold-out: required: 1 sealed test").replace(
+    "Hold-out: not required " + chr(8212) + " read path",
+    HOLDOUT_PLAN[HOLDOUT_PLAN.index("Hold-out" + NL + "- decision: required"):
+                 HOLDOUT_PLAN.index(NL + "Files likely to change")])
 
 
 class NextStepTests(unittest.TestCase):
@@ -3227,19 +3238,22 @@ class NextStepTests(unittest.TestCase):
                          "verification and save it to p.verify.log.", nxt)
 
     def test_a_phased_plan_is_sent_to_the_last_phase_released(self):
-        """The pause's release starts phase 1; `Phase N` is the phase the human
-        released the change to continue to."""
+        """The pause's release starts phase 1; `Phase N` is the last phase the
+        human released. One release may cover several phases, so the line says
+        `through`: the agent implements up to that phase and stops after it,
+        not after each one on the way."""
         phased = NEXT_PLAN.replace("red pause: pause", "red pause: phased")
         self.reach("release", phased)
         _r, _evidence, nxt = self.next()
         self.assertEqual(
-            "Next: 8: implement phase 1, the last one released, and stop at its checkpoint "
-            "(8.7) unless it is already waiting there; when no phase remains, 8.3: run the "
-            "verification and save it to p.verify.log.", nxt)
+            "Next: 8: implement through phase 1, the last one released, and stop at its "
+            "checkpoint (8.7) unless it is already waiting there; when no phase remains, "
+            "8.3: run the verification and save it to p.verify.log.", nxt)
         with open(self.dir / "p.approval.log", "a", encoding="utf-8", newline=NL) as fh:
             fh.write('Phase 3 released by: "go on"' + NL + 'Phase 2 released by: "next"' + NL)
         _r, _evidence, nxt = self.next()
-        self.assertTrue(nxt.startswith("Next: 8: implement phase 3, the last one released"), nxt)
+        self.assertTrue(nxt.startswith("Next: 8: implement through phase 3, the last one "
+                                       "released"), nxt)
 
     def test_release_lines_leave_the_approval_standing(self):
         """They are appended after the approval record, and `--approval` reads
@@ -3269,7 +3283,7 @@ class NextStepTests(unittest.TestCase):
             fh.write(phase.group(1).replace("<N>", "2").replace("<their message>", "go") + NL)
         _r, evidence, nxt = self.next()
         self.assertIn("release recorded ✓", evidence)
-        self.assertTrue(nxt.startswith("Next: 8: implement phase 2,"), nxt)
+        self.assertTrue(nxt.startswith("Next: 8: implement through phase 2,"), nxt)
 
     def test_the_packet_path_execution_md_teaches_is_the_one_next_reads(self):
         execution = (Path(SCRIPT).resolve().parents[1] / "skills" / "ctdd-change"
@@ -3355,14 +3369,120 @@ class NextStepTests(unittest.TestCase):
                         nxt)
 
     def test_everything_but_the_packet_is_step_nine(self):
+        """This plan requires no hold-out, so step 9 has no stop before the
+        hand-over, and the line says so instead of sending the agent to 9.1."""
         self.reach("pins-after")
         r, evidence, nxt = self.next()
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertIn("pins after ✓ · packet ✗", evidence)
-        self.assertTrue(nxt.startswith("Next: 9: stop at 9.1 for the hold-out result, or for "
-                                       "the hand check if the hold-out was declined"), nxt)
-        self.assertIn("the 9.4 handover", nxt)
-        self.assertIn("saved as p.packet.md", nxt)
+        self.assertEqual(
+            "Next: 9: the review packet (9.3, read `references/execution.md`), saved as "
+            "p.packet.md, and the 9.4 handover. 9.1 owes no stop: the plan requires no "
+            "hold-out, or its result is already recorded.", nxt)
+
+    def test_step_nine_stops_for_a_holdout_that_still_waits(self):
+        self.reach("pins-after", NEXT_HOLDOUT)
+        _r, _evidence, nxt = self.next()
+        self.assertEqual(
+            "Next: 9: stop at 9.1 for the hold-out result; then the review packet (9.3, "
+            "read `references/execution.md`), saved as p.packet.md, and the 9.4 handover.",
+            nxt)
+
+    def test_step_nine_asks_nothing_after_a_decline(self):
+        """Until 0.61.0 a hold-out declined at the gate stopped here for a hand
+        check of the expected values. The owner removed that stop: a decline is
+        recorded as the waiver it is, and nothing is asked in its place."""
+        self.reach("pins-after", NEXT_HOLDOUT.replace("- result: pending",
+                                                     "- result: declined by human"))
+        _r, _evidence, nxt = self.next()
+        self.assertTrue(nxt.startswith("Next: 9: the review packet (9.3"), nxt)
+        self.assertIn("9.1 owes no stop", nxt)
+        self.assertNotIn("hand check", nxt)
+
+    # ------------------------------------------------- where the change waits
+    def stop(self):
+        """The stop `next_step` reports. `--next` prints two lines and the stop
+        hook reads this key, so it is read the way the hook reads it: the
+        script loaded as a module, from the plan's own folder."""
+        code = ("import importlib.util, sys; "
+                "spec = importlib.util.spec_from_file_location('check_plan_stop', sys.argv[1]); "
+                "mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); "
+                "found = mod.next_step(sys.argv[2]); "
+                "assert found['stop'] in mod.STOPS, found['stop']; print(found['stop'])")
+        env = dict(os.environ)
+        for var in ("CTDD_LAYERS", "CTDD_HARNESSES", "CLAUDE_PROJECT_DIR"):
+            env.pop(var, None)
+        r = subprocess.run([sys.executable, "-c", code, SCRIPT, "p.md"], capture_output=True,
+                           text=True, encoding="utf-8", errors="replace", timeout=60,
+                           env=env, cwd=str(self.dir))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return r.stdout.strip()
+
+    def at(self, upto, plan=NEXT_PLAN):
+        """The stop at one point of a change, in a folder that holds nothing
+        from another point."""
+        for old in self.dir.iterdir():
+            old.unlink()
+        self.reach(upto, plan)
+        return self.stop()
+
+    def test_before_an_approval_stands_the_change_waits_at_the_gate(self):
+        self.assertEqual("gate", self.at(None))
+        self.assertEqual("gate", self.at(None, NEXT_PLAN.replace(
+            "BLOCKING — I will not guess: none — answered before approval" + NL, "")))
+        self.at("red")
+        self.put("p.md", with_amendment(
+            NEXT_PLAN.replace("500 pass", "500 and fewer pass"),
+            "- A1. Old: 500 pass. New: 500 and fewer pass."))
+        self.assertEqual("gate", self.stop())
+
+    def test_writing_the_tests_is_the_agents_own_step(self):
+        """Between the approval and the red pause nothing is owed to the human:
+        the pins and the failing tests are the agent's to write and run."""
+        self.assertEqual("none", self.at("approval"))
+        self.assertEqual("none", self.at("pins"))
+
+    def test_the_red_pause_waits_until_its_release_is_recorded(self):
+        self.assertEqual("pause", self.at("red"))
+        self.assertEqual("pause", self.at("prered"))
+        self.assertEqual("pause", self.at("intended"))
+        self.assertEqual("none", self.at("release"))
+
+    def test_a_plan_that_skips_the_pause_never_waits_at_it(self):
+        self.assertEqual("none", self.at(
+            "red", NEXT_PLAN.replace("red pause: pause", "red pause: skip")))
+
+    def test_a_phased_plan_waits_at_its_phases_until_verification_is_saved(self):
+        """The files cannot tell a finished phase from the middle of one, so the
+        whole stretch reads as waiting and the stop hook stays silent in it,
+        a release of every phase included."""
+        phased = NEXT_PLAN.replace("red pause: pause", "red pause: phased")
+        self.assertEqual("phase", self.at("release", phased))
+        with open(self.dir / "p.approval.log", "a", encoding="utf-8", newline=NL) as fh:
+            fh.write('Phase 3 released by: "all of them"' + NL)
+        self.assertEqual("phase", self.stop())
+        self.assertEqual("none", self.at("verify", phased))
+
+    def test_step_nine_without_a_holdout_is_the_agents_own(self):
+        self.assertEqual("none", self.at("pins-after"))
+
+    def test_step_nine_waits_only_for_a_holdout_that_has_no_answer(self):
+        for result, stop in (("pending", "hold-out"),
+                             ("failed — the sealed test for 33.33 fails", "hold-out"),
+                             ("passed", "none"),
+                             ("declined by human", "none"),
+                             ("NOT RUN — the sealed runner is not installed here", "none")):
+            plan = NEXT_HOLDOUT.replace("- result: pending", "- result: " + result)
+            self.assertEqual(stop, self.at("pins-after", plan), result)
+
+    def test_a_required_holdout_does_not_wait_before_step_nine(self):
+        """It is asked for at 9.1 and nowhere earlier, so a pending result does
+        not hold up the steps before it."""
+        self.assertEqual("none", self.at("pins", NEXT_HOLDOUT))
+        self.assertEqual("none", self.at("verify", NEXT_HOLDOUT))
+
+    def test_a_saved_packet_is_the_handover(self):
+        self.assertEqual("done", self.at("packet"))
 
     def test_with_the_packet_saved_it_is_done(self):
         self.reach("packet")

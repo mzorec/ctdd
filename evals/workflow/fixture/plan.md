@@ -1,4 +1,4 @@
-A fulfilment client moves an order to `Packed` or `Shipped` through a new `PUT /api/v1/orders/{orderNumber}/state`: one repository call checks the move and writes the state and an optional note, and anything else is refused with nothing changed. Highest risk: the transition rule is new code on the order lifecycle. Refusable: `Cancelled` is not settable here; a repeat of the current state succeeds; the note is trimmed and cleared when none is sent; no ADR. Hold-out declined by human: the expected values in the `Hold-out` block are yours to recompute by hand.
+A fulfilment client moves an order to `Packed` or `Shipped` through a new `PUT /api/v1/orders/{orderNumber}/state`: one repository call checks the move and writes the state and an optional note, and anything else is refused with nothing changed. Highest risk: the transition rule is new code on the order lifecycle. Refusable: `Cancelled` is not settable here; a repeat of the current state succeeds; the note is trimmed and cleared when none is sent; no ADR. Hold-out declined by human: recorded as a waiver, and nothing is asked of you in its place.
 Risk: high-risk · contract: additive · ADR: none · red pause: phased · hold-out: required: 2 sealed tests from human
 Business requirement: A fulfilment client can move an order to Packed (40) or Shipped (50); a paid order (30) may only move to Packed, and no order moves backwards.
 Intended behavior: `PUT /api/v1/orders/{orderNumber}/state` with `{ state ∈ {Packed, Shipped}, note? }` answers `204` and writes the order's state and note; an unknown order answers `404` `order-not-found`; a refused move answers `409` `state-change-not-allowed`; a state outside the settable set or a note over 500 characters answers `400`.
@@ -103,12 +103,11 @@ Hold-out
 - decision: required
 - reason: state-machine semantics: which starting states admit which target.
 - request: 2 sealed tests. (1) An order at Shipped (50) asked to move to Packed (40): assert the HTTP status and the order's state afterwards, computed by you from the requirement. (2) An order at Packed (40) asked to move to Packed again: assert the status and the stored note. Your own words, not the names above.
-- options: `write` — 2 assertions, ~10 minutes; `decline` — recorded as `declined by human`, and this plan then lists the values you must verify by hand.
+- options: `write` — 2 assertions, ~10 minutes; `decline` — recorded as `declined by human`; nothing is asked of you in its place.
 - recommended: `write` — the transition table was derived by this session from the same requirement the implementation reads.
 - storage: outside this repository, unavailable to this session
 - runner: you, against the branch once the visible suite is green
 - result: declined by human — a waiver, not a pass
-- human-verified expected values: recompute each by hand from the business requirement, not from the code: (1) Shipped (50) → Packed (40): `409` `state-change-not-allowed`, the order stays 50; (2) Packed (40) → Packed (40): `204`, the stored note is replaced by the sent one; (3) Paid (30) → Shipped (50): `409` `state-change-not-allowed`, the order stays 30.
 
 Files likely to change
 - `docs/api/shop-openapi-v1.json` — the new operation.
@@ -128,4 +127,4 @@ Files likely to change
 
 Residual risk
 - Concurrent moves of one order are last-write-wins.
-- The hold-out was declined: the transition table rests on this session's reading plus your hand check of the listed values.
+- The hold-out was declined: the transition table rests on this session's reading alone.

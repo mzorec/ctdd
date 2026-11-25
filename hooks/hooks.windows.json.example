@@ -2,9 +2,11 @@
 #
 # hooks.json cannot contain comments, so this is a reference copy. On Windows the
 # `python3` launcher often doesn't exist; use `py -3` (the Python launcher, present
-# with any python.org install) or `python`. Merge the two entries below into
+# with any python.org install) or `python`. Merge the entries you want below into
 # hooks/hooks.json, beside the resume note's SessionStart entry that ships there,
-# adjusting the launcher to whatever resolves on PATH.
+# adjusting the launcher to whatever resolves on PATH. PostToolUse and PreToolUse
+# are the spec-edit reminder; Stop is the continue hook. Each works without the
+# other.
 #
 # The scripts are identical across platforms — only the launcher token changes.
 
@@ -30,6 +32,17 @@
             "type": "command",
             "command": "py -3 \"${CLAUDE_PLUGIN_ROOT}/hooks/spec-edit-guard.py\"",
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3 \"${CLAUDE_PLUGIN_ROOT}/hooks/ctdd-continue.py\"",
+            "timeout": 30
           }
         ]
       }

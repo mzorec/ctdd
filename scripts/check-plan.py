@@ -296,9 +296,11 @@ def _first_line(text, m):
 
 # 7.12 mandates appending the intended-change table to the plan as
 # `## Intended change`, "dating it after approval - a record of what will be
-# built, never part of what was approved", and rules 7 and 8 mandate replacing
+# built, never part of what was approved", and rules 7 and 8 mandated replacing
 # the hold-out `result:` and `human-verified expected values:` before the
-# packet. All three are post-approval by the skill's own instruction, and the
+# packet (the second left the format in 0.61.0 with the hand check, and is
+# still normalised here for the plans approved with it). All three are
+# post-approval by the skill's own instruction, and the
 # digest covered every byte - so obeying the skill invalidated the approval it
 # had just recorded. Two real changes each spent a turn writing a note
 # explaining that nothing approved had changed. The prose is the side with
@@ -1632,13 +1634,42 @@ _RED_PAUSE = re.compile(r"red[ -]?pause\s*[:=—–-]\s*[`*_]*([a-z]+)", re.I)
 _MARK = {"yes": "✓", "no": "✗", "n/a": "n/a"}
 # The human's release of the 7.12 pause, and of each phase checkpoint after it,
 # appended to the approval log as `execution.md` has the agent write them. Under
-# `phased` the pause's release starts phase 1, and `Phase N` names the phase the
-# human released the change to continue to. They quote the human's words as the
+# `phased` the pause's release starts phase 1, and `Phase N` names the last
+# phase the human released: one release may cover several phases, and the agent
+# stops after the last of them. They quote the human's words as the
 # agent wrote them down, so `--next` reports them as recorded, never as verified.
 # Without them nothing on disk told a pause still waiting for the human from one
 # the human had released, and a session that lost its context could only guess.
 _PAUSE_RELEASE = re.compile(r"(?im)^[ \t]*pause\s+released\s+by\s*:")
 _PHASE_RELEASE = re.compile(r"(?im)^[ \t]*phase\s+(\d+)\s+released\s+by\s*:")
+# Where a change waits for the human, as `next_step` reports it in `stop`. The
+# workflow stops at a closed list of moments and at nothing else, so every
+# other value of the first gap is the agent's own next step, and that is what
+# the stop hook reads before it sends an agent back to work.
+#   gate      no approval record, a stale one, or a plan that fails its checks
+#   pause     the red pause is not `skip` and its release is not recorded
+#   phase     `phased`, the pause released, verification not saved: the files
+#             cannot tell a finished phase from the middle of one
+#   hold-out  everything through the pins is saved, and a required hold-out
+#             still waits for its result
+#   done      the packet is saved, which is the hand-over
+#   none      anything else
+STOPS = ("gate", "pause", "phase", "hold-out", "done", "none")
+_HOLDOUT_RESULT = re.compile(r"(?mi)^\s*[-*]?\s*result\s*:\s*(.+?)\s*$")
+# What 9.1 no longer waits for: a result the human or the runner already gave.
+_HOLDOUT_ANSWERED = ("passed", "declined by human", "not run")
+
+
+def holdout_owed(text):
+    """True while a required hold-out still waits at step 9.1: its `result:`
+    is `pending`, absent, or `failed`, which blocks. A pass, a decline and a
+    `NOT RUN` are answers, and after one of them 9.1 owes no stop."""
+    if not _holdout_required(text):
+        return False
+    block = holdout_block(_untailed(text))
+    found = _HOLDOUT_RESULT.search(block.group(0)) if block else None
+    value = found.group(1).lower() if found else ""
+    return not value.startswith(_HOLDOUT_ANSWERED)
 
 
 def next_step(plan_file):
@@ -1648,7 +1679,9 @@ def next_step(plan_file):
     Reads files and runs nothing. Returns a dict: `code` (0 a next step is
     named, 1 the plan needs attention first, 2 nothing could be read, with
     `why`), `evidence` (one (name, state, note) per item in workflow order,
-    the state `yes`, `no` or `n/a`), `next`, `done`, `revision`, `approved`.
+    the state `yes`, `no` or `n/a`), `next`, `done`, `revision`, `approved`,
+    and `stop`, one of `STOPS`: the stop the change is waiting at, or `none`
+    when the next step is the agent's own.
 
     Evidence does not arrive in order. One real plan had its pins re-run
     after the change and no saved verification, so the first gap is what is
@@ -1739,9 +1772,21 @@ def next_step(plan_file):
               "code": 1 if not plan_ok or (approved is not None
                                            and approval[0] == "no") else 0}
     if first is None:
+        result["stop"] = "done"
         result["next"] = "done: every step left its evidence, the packet included."
         return result
     label, _state, note = items[first]
+    waits = holdout_owed(text)
+    if label in ("plan", "approval"):
+        result["stop"] = "gate"
+    elif label in ("pre-red diff", "Intended change", "release recorded"):
+        result["stop"] = "pause"
+    elif label == "verification" and pause == "phased":
+        result["stop"] = "phase"
+    elif label == "packet" and waits:
+        result["stop"] = "hold-out"
+    else:
+        result["stop"] = "none"
     later = [l for l, state, _n in items[first + 1:] if state == "yes"]
     if label == "plan":
         nxt = "5.4: fix the plan and re-run check-plan until it exits 0." \
@@ -1788,8 +1833,8 @@ def next_step(plan_file):
                f"and save it to {name}.verify.log.")
     elif label == "verification" and pause == "phased":
         phase = max([int(n) for n in _PHASE_RELEASE.findall(log)] or [1])
-        nxt = (f"8: implement phase {phase}, the last one released, and stop at its "
-               f"checkpoint (8.7) unless it is already waiting there; when no phase "
+        nxt = (f"8: implement through phase {phase}, the last one released, and stop at "
+               f"its checkpoint (8.7) unless it is already waiting there; when no phase "
                f"remains, 8.3: run the verification and save it to {name}.verify.log.")
     elif label == "verification":
         nxt = (f"8: implement what the human released, then 8.3: run the verification "
@@ -1802,10 +1847,13 @@ def next_step(plan_file):
                f"that passed before the change and fails after it is a broken pin: "
                f"stop and report it.")
     else:
-        nxt = ("9: stop at 9.1 for the hold-out result, or for the hand check if the "
-               "hold-out was declined at the gate; then the review packet (9.3, read "
-               f"`references/execution.md`), saved as {name}.packet.md, and the 9.4 "
-               "handover.")
+        packet = ("the review packet (9.3, read `references/execution.md`), saved as "
+                  f"{name}.packet.md, and the 9.4 handover.")
+        if waits:
+            nxt = "9: stop at 9.1 for the hold-out result; then " + packet
+        else:
+            nxt = ("9: " + packet + " 9.1 owes no stop: the plan requires no hold-out, "
+                   "or its result is already recorded.")
     if later:
         nxt += (" Out of order: " + ", ".join(later)
                 + (" is" if len(later) == 1 else " are") + " already there.")
@@ -2527,8 +2575,8 @@ def main(argv=None):
                       % value[:70])
                 print("Deferral is not an outcome. `NOT RUN` is for a runner "
                       "that is unavailable; a human who will not run it now "
-                      "declines, and `declined by human` is what carries the "
-                      "waiver and the hand-computed expected values. Choose one.")
+                      "declines, and `declined by human` is what records the "
+                      "waiver. Choose one.")
                 return 1
 
     # Count the same lines the duplicate scan counts. That scan excludes the

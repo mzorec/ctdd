@@ -51,7 +51,7 @@ You can also skip the plugin entirely and copy `skills/*` into a project's `.cla
 
 - Claude Code with plugin support.
 - The three skills need nothing else.
-- The two hooks and the CI scripts need a Python 3 launcher on your `PATH`. The resume hook is on as soon as the plugin is; where no launcher works it says nothing, and the skills run without it. On Linux that's `python3`; on Windows it's usually `python` or `py`, and you'll need to adjust the commands accordingly. The only third-party dependency is PyYAML, and only for the authz-matrix script.
+- The hooks and the CI scripts need a Python 3 launcher on your `PATH`. The resume hook is on as soon as the plugin is; where no launcher works it says nothing, and the skills run without it. On Linux that's `python3`; on Windows it's usually `python` or `py`, and you'll need to adjust the commands accordingly. The only third-party dependency is PyYAML, and only for the authz-matrix script.
 
 A word of warning on that last point: if a CTDD script ever seems to do nothing, check that `python3` actually resolves to a working interpreter. On Windows, `python3` sometimes resolves to a Store shortcut that prints a message and exits without running anything, which looks like success and isn't. The skills fall back to following the plan by hand when Python is missing, but the *deterministic* checks only run when a real Python 3 is on the path.
 
@@ -121,7 +121,7 @@ There's one honest gap in that list. `check-plan.py` and `check-spec-surface.py`
 
 ## The spec-edit hook (optional, off by default)
 
-The plugin ships two hooks. The resume note, described at the end of this section, is on. The spec-edit hook (`hooks/spec-edit-guard.py`) is **not active when you install**. The skills are the product; the hook is an opt-in backstop for teams that want a mechanical reminder that doesn't depend on a skill staying in the model's attention over a long session. It stays dormant until you turn it on, so a company-wide install never interrupts a colleague who didn't ask for it.
+The plugin ships three hooks. The resume note, described further down in this section, is on. The other two are **not active when you install**: the spec-edit hook (`hooks/spec-edit-guard.py`), described here, and the continue hook, described at the end of this section. The skills are the product; the spec-edit hook is an opt-in backstop for teams that want a mechanical reminder that doesn't depend on a skill staying in the model's attention over a long session. It stays dormant until you turn it on, so a company-wide install never interrupts a colleague who didn't ask for it.
 
 When enabled, it does two things. When an existing test file is modified, it injects a reminder that a changed test is a changed spec, say which requirement changed and why, because a test weakened to make failing code pass is a spec regression. When a contract file is touched, it injects a boundary-change reminder to state backward compatibility. Creating a *new* test file stays silent; only modifying an existing one fires.
 
@@ -188,6 +188,18 @@ It prints one `Evidence:` line and one `Next:` line, read from the plan, its app
 A release line quotes the human's message as the agent wrote it down, so `--next` reports a release as recorded, not as verified, the same trust an approval record carries.
 
 What was checked and what was not: the hook was run by Claude Code itself after a real `/compact` and after a real resume, on one CLI version on Windows with Git Bash. It has not been run on Linux or macOS, or on a Windows machine without Git Bash, where the command's shell syntax would not parse.
+
+### Between the stops: the continue hook (off by default)
+
+A change made with ctdd stops for the human at a short list of moments: the gate, the red pause and the checkpoints of a phased plan, an amendment, a question or a finding, and the hold-out. Nothing held an agent to that list. An agent that ends its turn anywhere else has stopped for nothing, and the change then waits until someone looks.
+
+`hooks/ctdd-continue.py` is a `Stop` hook. When a turn ends it finds the plan the session's tools named last and asks `check-plan.py` where that change stands. If the plan is approved at its current revision and the next step is the agent's own, it blocks the stop and names that step. The agent goes on, or asks what it needs to ask and stops again.
+
+It reads and never writes, and when in doubt it lets the stop stand. It says nothing when a stop hook already continued this turn, in plan mode, while a background task or a scheduled wake-up is pending, when the agent's last message asks something or names a finding, when the turn edited nothing and ran nothing, when `ctdd-change` did not run in the session or no plan is found, and when the change is waiting at one of its stops. It never approves anything and never answers a question, and a second attempt to stop always succeeds.
+
+To enable it, add the `Stop` entry of `hooks/hooks.json.example` to `hooks/hooks.json` and run `/reload-plugins`. `hooks/hooks.windows.json.example` has the same entry with the `py -3` launcher. It is independent of the spec-edit hook's two entries, so take either or both. To turn it off, remove the entry.
+
+Two limits. Under a phased plan it says nothing from the release of the pause until the verification is saved, because the files beside the plan cannot tell a finished phase from the middle of one. And what was checked is narrow. Claude Code itself ran the hook in four real sessions, on one CLI version on Windows with Git Bash, each against a synthetic approved plan. In two the next step was the agent's own and the model ended on a plain report: the hook's block reached the model, the turn continued, and the next stop passed. In the third the model ended on a question, and in the fourth the plan was phased with its pause released: the hook said nothing in both. Its other decisions are covered by its tests. It has not yet run inside a real change, nor on Linux or macOS.
 
 ## Hold-out acceptance tests
 
@@ -293,11 +305,13 @@ ctdd/
 │   └── backlog.md                     ← deferred ideas and the triggers that would justify building them
 ├── hooks/
 │   ├── hooks.json                     ← registers the resume note (on by default)
-│   ├── hooks.json.example             ← the spec-edit reminder's entries, to merge into hooks.json (off by default)
+│   ├── hooks.json.example             ← the two opt-in hooks' entries, to merge into hooks.json (off by default)
 │   ├── spec-edit-guard.py             ← the spec-edit reminder
 │   ├── test_spec_edit_guard.py        ← its test suite
 │   ├── ctdd-resume.py                 ← the note after a compaction or a resume
-│   └── test_ctdd_resume.py            ← its test suite
+│   ├── test_ctdd_resume.py            ← its test suite
+│   ├── ctdd-continue.py               ← sends an agent back to work between the stops
+│   └── test_ctdd_continue.py          ← its test suite
 ├── scripts/
 │   ├── check-plan.py                  ← lints a plan; --diff cross-checks trivial claims; --next says where a change stands
 │   ├── check-spec-surface.py          ← lists which tests/contracts/ADRs a diff touches

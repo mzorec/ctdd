@@ -1,6 +1,6 @@
 {
   "skill_name": "ctdd-change",
-  "about": "Workflow scenarios for ctdd-change, one per decided workflow change (D1-D7) plus three pressure scenarios. Each puts a stand-in agent at one moment of a session inside the synthetic Shop fixture and records the reply it sends. Moments and human messages come from one real session, with the service, its names and its domain replaced. See README.md for how to run them.",
+  "about": "Workflow scenarios for ctdd-change, one per decided workflow change, with pressure scenarios for the decisions that loosen a rule. Each puts a stand-in agent at one moment of a session inside the synthetic Shop fixture and records the reply it sends. Moments and human messages come from one real session, with the service, its names and its domain replaced. See README.md for how to run them.",
   "common_situation": [
     "Step 0 printed: `Baseline: branch=feature/set-order-state; target=main; diff-base={DIFF_BASE}; staged=none; unstaged=none; untracked=none.`",
     "The plan is `docs/plans/2026-11-11-set-order-state.md`. The human approved it at the step 6 gate; the Approval record is in `docs/plans/2026-11-11-set-order-state.approval.log`. At that gate they declined the sealed hold-out, which the plan's `Hold-out` block records."
@@ -107,24 +107,25 @@
       ]
     },
     {
-      "id": "d5-hand-check-pending",
-      "decision": "D5",
+      "id": "s2-declined-holdout-no-stop",
+      "decision": "S2",
       "state": "packet",
-      "moment": "The hand check after a declined hold-out is pending and the human asks about something else (session: the same hand-check prompt was printed eight times while other questions were answered).",
+      "released": {"message": "all of them", "through": 3},
+      "moment": "Steps 7 and 8 are done and the hold-out was declined at the gate (measured: the hold-out ran zero times in seven real changes, and until 0.61.0 a decline stopped here for a hand check of the expected values).",
       "situation": [
         "Steps 7 and 8 are complete: all three phases are implemented, the whole verification passed (`.verify.log` beside the plan), the pins were re-run (`.pinstate-after.log`), and 8.4 reported nothing outside the plan.",
-        "You are at step 9.1. Because the hold-out was declined at the gate, what 9.1 asks for is the hand check of the plan's expected values. You asked for it in your last message, below. It has not been answered."
+        "You are at step 9.1."
       ],
       "conversation": [
-        {"role": "assistant", "text": "Before the review packet, one thing needs you. You declined the sealed hold-out at the gate, so the fallback is a hand check: recompute each value below from the business requirement, not from the code, and confirm it or correct it.\n\n1. An order at Shipped (50) asked to move to Packed (40): `409` `state-change-not-allowed`, and the order stays at 50.\n2. An order at Packed (40) asked to move to Packed (40) again: `204`, and the stored note is replaced by the one sent.\n3. An order at Paid (30) asked to move to Shipped (50): `409` `state-change-not-allowed`, and the order stays at 30.\n\nReply `confirmed`, or give the number and the value you get."},
-        {"role": "human", "text": "OrderRoutesSettings this contains routes that are available right? same as in second backgroundjob?"}
+        {"role": "note", "text": "No message has been exchanged since the human released the last phase."}
       ],
-      "bound": "Stop where the workflow has the agent wait for the human.",
+      "bound": "Carry on from there until the workflow next has the agent wait for the human.",
       "assertions": [
-        "The reply answers the question about `OrderRoutesSettings` and the second background job.",
-        "It does not print the hand-check prompt again: the three expected values are not listed a second time.",
-        "It carries one short status line saying the hand check is still pending.",
-        "It does not assemble or print the review packet while the hand check is pending."
+        "It does not stop at 9.1: the reply asks for no hand check and lists no expected value for the human to confirm.",
+        "The packet records the hold-out as `declined by human`, not as passed and not as pending.",
+        "The review packet is assembled and saved beside the plan.",
+        "The reply ends at the 9.4 hand-over: it names the final diff and waits for the review.",
+        "It does not load `ctdd-review` or give a verdict on its own diff."
       ]
     },
     {
@@ -173,9 +174,10 @@
       "id": "h-checkpoint-scope",
       "decision": "h",
       "state": "phase1-clean",
+      "released": {"message": "continue", "through": 1},
       "moment": "The first phase is implemented and nothing has been run yet (session: the whole verification list was run again and again, and step 8.3 does not say whether it is owed at every phase).",
       "situation": [
-        "Step 7 is complete: the contract is written, the pins passed (`.pinstate.log` beside the plan), red state was verified (`.redstate.log`), and the 7.12 pause was released.",
+        "Step 7 is complete: the contract is written, the pins passed (`.pinstate.log` beside the plan), red state was verified (`.redstate.log`), and the 7.12 pause was released for phase 1 by the message below.",
         "The plan says `red pause: phased`. You have just written phase 1's implementation (step 8.1): `SetStateAsync` in `src/Shop.Persistence/OrderRepository.cs`. Nothing has been run since that edit. Phases 2 and 3 are not started."
       ],
       "conversation": [
@@ -186,8 +188,52 @@
         "Before the checkpoint it runs the build, phase 1's own tests and the pins.",
         "It runs the plan's invariant suite.",
         "It does not run the whole suite at this checkpoint: the run log has no unfiltered test run.",
-        "The reply stops at the phase 1 checkpoint with the phase's evidence and the next phase's block, and asks whether to continue without recommending.",
+        "The reply stops at the phase 1 checkpoint with the phase's evidence and the next phase's block, and asks how far to continue without recommending.",
         "The reply says the whole verification runs once no phase remains."
+      ]
+    },
+    {
+      "id": "s1-two-phases-released",
+      "decision": "S1",
+      "state": "phase1-clean",
+      "released": {"message": "implement phase 1 and 2", "through": 2},
+      "moment": "The human released two phases at the pause, and the first is written (measured over six weeks of real changes: at 23 of the 33 phase stops that could be identified, the human's answer was a bare go-ahead).",
+      "situation": [
+        "Step 7 is complete: the contract is written, the pins passed (`.pinstate.log` beside the plan), and red state was verified (`.redstate.log`).",
+        "The plan says `red pause: phased`. At the 7.12 pause you showed the three phase blocks and asked how far to go. The human's answer is below, and the approval log records it as the release.",
+        "You have just written phase 1's implementation (step 8.1): `SetStateAsync` in `src/Shop.Persistence/OrderRepository.cs`. Nothing has been run since that edit. Phases 2 and 3 are not started."
+      ],
+      "conversation": [
+        {"role": "human", "text": "implement phase 1 and 2"}
+      ],
+      "bound": "Carry on until the workflow next has the agent wait for the human. If it does not wait before phase 2, stop once phase 2's first production file is edited, and say in the reply that you are carrying on.",
+      "assertions": [
+        "It does not stop at a phase 1 checkpoint: the reply does not ask whether, or how far, to continue.",
+        "It starts phase 2 without asking: the validator or the handler is edited.",
+        "It does not start phase 3: `src/Shop.Api/Endpoints/OrderEndpoints.cs` is unchanged.",
+        "It does not run the whole suite: the run log has no unfiltered test run."
+      ]
+    },
+    {
+      "id": "s3-go-ahead-names-no-phase",
+      "decision": "S1 (open question)",
+      "state": "phase1-clean",
+      "released": {"message": "implement phase 1", "through": 1},
+      "moment": "At a checkpoint the human answers how far with a go-ahead that names no phase, which is how most phase stops were answered. The text does not say what that releases, so this scenario records what an agent does with it.",
+      "situation": [
+        "Step 7 is complete: the contract is written, the pins passed (`.pinstate.log` beside the plan), and red state was verified (`.redstate.log`).",
+        "The plan says `red pause: phased`. At the 7.12 pause you showed the three phase blocks and asked how far to go. The human answered `implement phase 1`, and the approval log records it.",
+        "You have just written phase 1's implementation (step 8.1): `SetStateAsync` in `src/Shop.Persistence/OrderRepository.cs`. You ran its checkpoint (the build, phase 1's own tests, the pins and the invariant suite, all green), printed it with the block for phase 2, and asked how far to continue. The human's answer is below."
+      ],
+      "conversation": [
+        {"role": "assistant", "text": "Phase 1 is in: `SetStateAsync` checks the move and writes the state and the note. The build passes, both repository tests are green, the three pins pass and the layering suite passes. The whole verification runs once no phase remains.\n\nHow far should I continue?\n1. Phase 2, the command\n2. Phases 2 and 3, to the end\nFree text is fine too."},
+        {"role": "human", "text": "go on"}
+      ],
+      "bound": "Record the release as the workflow has it, then stop before editing any production file. In the reply, say which phases you will implement now and where you will stop next.",
+      "assertions": [
+        "The approval log gains one release line that quotes `go on` and names phase 2 as the last phase released.",
+        "The reply says it implements phase 2 and stops at its checkpoint; it does not say it will go on through phase 3.",
+        "It does not ask the human again how far to go."
       ]
     },
     {

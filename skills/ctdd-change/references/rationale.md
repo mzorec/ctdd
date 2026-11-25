@@ -116,7 +116,6 @@ Sections are named after the rule they explain; they carry no line numbers, whic
 - Old and new assertions expose requirement changes hidden by unchanged test names.
 - Explicit NFR and hold-out fields turn silence into a reviewable decision.
 - Independently written hold-outs break the shared-implementation path between production code and agent-authored tests.
-- Human-verified expected values reduce shared-computation risk when a required hold-out is declined, but they do not replace independent tests.
 
 ## Trivial lane requires an existing diff
 

@@ -13,7 +13,7 @@ Load this file only at `SKILL.md` step 5.1.
 
 ```markdown
 <Decision summary: one to three sentences naming the proposed direction, the highest risk, and every unresolved decision.>
-Risk: <normal | high-risk> · contract: <none | additive | breaking> · ADR: <none | NNNN required> · red pause: <phased | pause | skip> · hold-out: <not required | required: 1-3 sealed tests from human>
+Risk: <normal | high-risk> · contract: <none | additive | breaking> · ADR: <none | NNNN required> · red pause: <phased | skip> · hold-out: <not required | required: 1-3 sealed tests from human>
 Business requirement:
 Intended behavior:
 
@@ -78,15 +78,15 @@ The complete example below is the operative instruction: anything it demonstrate
 3. Put each changed existing assertion in `Changed existing assertions` with its old and new forms.
 4. Cover every applicable row of **Required case coverage** below, and record every row the change does not reach under `Case coverage not reached` as `<case> — n/a — <reason>`; never leave a row unaddressed.
 5. Require a hold-out for money, authorization, state-machine, rounding, inclusivity, timezone, fee-treatment, or other load-bearing boundary semantics.
-6. Present a required hold-out as a decision, not a notice: name the 1–3 assertions to write, each an observable input and *which* output to assert — never the value, which the human computes (rule 8); give `write` and `decline` with their consequences; recommend one with a reason. Contents stay outside the agent-readable tree.
+6. Present a required hold-out as a decision, not a notice: name the 1–3 assertions to write, each an observable input and *which* output to assert — never the value, which the human computes; give `write` and `decline` with their consequences; recommend one with a reason. Contents stay outside the agent-readable tree.
 7. Use `result: pending` until the required hold-out runs. Before the packet, replace it with `passed`, `failed`, `declined by human`, or `NOT RUN — <reason>`; `declined by human` is a waiver, not a neutral outcome — record it as one; unavailability is never a decline.
-8. When the human declines a required hold-out, list the load-bearing expected values and ask them to recompute each one by hand from the business requirement, never by reading the code that produced it. Offer it as the fallback, never as the equivalent, and do not label it a hold-out result. Ask at step 9.1, once; approval at the gate does not confirm the values.
+8. When the human declines a required hold-out, at the gate or at step 9.1, record `declined by human` and ask for nothing in its place.
 9. Use exact file paths; never write wildcards, directories, `(+ tests)`, `TBD`, or unnamed future files.
 10. Pin the tests that already assert a decision recorded by any ADR this change touches.
 11. Capture the human's stated direction, not a competing one; a decision handed back unresolved returns to `BLOCKING` with their version as the default. Record every resolved BLOCKING answer under `Decisions confirmed in session` and replace the question with `none — answered before approval`; the answer must be findable without the chat. Re-run the checker after every plan edit; re-present when the answer changes any other presented decision.
 12. `Behavior flow` is one numbered walk per touched entry point, no step ceiling; when steps apply only to some inputs, state the condition once before them rather than opening each step with it. Derive `Current flow` from the reading `Existing behavior` cites, never from the implementation; write `Current flow: none — greenfield` after a greenfield step 2. That section owns *where* behavior is pinned, this one owns *what happens*, and `Implementation slices` owns the code delta: name no function or file here, and enumerate no boundary values — the test lanes own those.
 
-13. Set the red pause: `pause` stops after step 7, prints the pre-implementation diff and intended changes, and waits; `phased` adds a stop after each implementation phase with its diff and evidence; `skip` implements at once. Draft `skip` at small, `pause` at medium, and `phased` at large or when the planned files form three or more phases; the human flips it at the gate. The field is required on the line, and the tier never reads it.
+13. Set the red pause: `phased` stops after step 7 with the pre-implementation diff and the intended changes by phase, and the human says how far to go: one phase, several, or all. It stops again after the last phase they released, with its diff and evidence, while any remain. `skip` implements at once. Draft `phased` when the planned files form more than one phase, otherwise `skip`; the human flips it at the gate. The field is required on the line, and the tier never reads it.
 14. Name each pin beside the behavior it protects; say in words when a behavior has none, and say nothing about gaps when every behavior is pinned.
 15. After a gate presentation, record every change as one bullet under `Amendments`, giving `Old: …` and `New: …` and quoting the human when they dictated it; the next gate shows that bullet, not the plan.
 
@@ -116,7 +116,7 @@ Request: `Add partial capture to the payments service.`
 
 ```markdown
 One capture below the authorized amount; over-capture still rejected. BLOCKING: the remainder's hold lifetime. Assumed: it releases at once. Gap: `settlement-batch` unpinned. Not reached: authorization. NFR: none. Residual: the expiry path rides on the hold-out. No ADR.
-Risk: normal · contract: additive · ADR: none · red pause: pause · hold-out: required: 2 sealed tests from human
+Risk: normal · contract: additive · ADR: none · red pause: skip · hold-out: required: 2 sealed tests from human
 Business requirement: The merchant is allowed one capture below the authorized amount.
 Intended behavior: `POST /payments/{id}/capture` accepts `0 < amount <= authorizedAmount`, moves the payment to `CAPTURED`, and rejects any later capture.
 
@@ -225,12 +225,11 @@ Hold-out
 - decision: required
 - reason: money-path amount and boundary semantics
 - request: 2 sealed tests. (1) capture 33.33 against an authorization of 100.00, assert the response status and resulting payment state, computed by you from the requirement. (2) capture the exact authorized amount, assert the resulting state. Your own words, not the names above.
-- options: `write` — 2 assertions, ~5 minutes; `decline` — recorded as `declined by human`, and this plan then lists the values you must verify independently.
+- options: `write` — 2 assertions, ~5 minutes; `decline` — recorded as `declined by human`; nothing is asked of you in its place.
 - recommended: `write` — the edge was derived from the same document the implementation reads, so nothing in the agent's suite is independent evidence it is right.
 - storage: separate repository, unavailable to this session
 - runner: CI hold-out job, once the visible suite is green
 - result: pending
-- human-verified expected values: n/a
 
 Files likely to change
 - `payments/contract/openapi.yaml` — relax the capture amount constraint.
